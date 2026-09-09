@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PyLive5"
+version = "0.1.0"
+description = "Development workspace for PyFlow5 and its supporting libraries."
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "pyflow5"
+]
+
+[tool.setuptools]
+packages = []
+
+[tool.uv.sources]
+pyflow5 = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "myqtx", 
+    "PyFlow5", 
+    "PyGraphRT", 
+    "ScriptGraph",
+    "QDAGEditor5", 
+    "QScriptEdit2"
+]
+
+[dependency-groups]
+dev = ["pytest"]

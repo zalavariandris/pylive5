@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pygraphrt"
+version = "0.1.0"
+authors = [
+    { name = "András Zalavári", email = "zalavariandris@gmail.com" }
+]
+description = "Runtime for Python dataflow graphs."
+requires-python = ">=3.10"
+dependencies = [
+    "qtpy",
+    "dictdiffer",
+    "pytools",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pygraphrt", "pygraphrt.*"]
+namespaces = false
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", ".venv_/*"]

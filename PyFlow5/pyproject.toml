@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyflow5"
+version = "0.1.0"
+authors = [
+    { name = "András Zalavári", email = "zalavariandris@gmail.com" }
+]
+description = "Application for live Python dataflow graph coding."
+requires-python = ">=3.12"
+dependencies = [
+    "qtpy",
+    "pyqt6",
+    "myqtx",
+    "pygraphrt",
+    "qdageditor5",
+    "QScriptEdit2",
+]
+
+[tool.uv.sources]
+myqtx = { workspace = true }
+pygraphrt = { workspace = true }
+qdageditor5 = { workspace = true }
+QScriptEdit2 = { workspace = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pyflow5", "pyflow5.*"]
+namespaces = false
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", ".venv_/*"]

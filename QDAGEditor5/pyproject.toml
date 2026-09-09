@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qdageditor5"
+version = "0.1.0"
+authors = [
+    { name = "András Zalavári", email = "zalavariandris@gmail.com" }
+]
+description = "Reusable Qt editor for directed graphs."
+requires-python = ">=3.12"
+dependencies = [
+    "qtpy",
+    "networkx",
+    "bidict",
+    "grandalf",
+    "pydot",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["qdageditor5", "qdageditor5.*"]
+namespaces = false
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", ".venv_/*"]
+
