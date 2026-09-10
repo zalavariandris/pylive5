@@ -1,12 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Mapping
 
 
-@dataclass(frozen=True)
-class ImportSpec:
-    path: str
-    module: str
-    alias: str
+
 
 
 @dataclass(frozen=True)
@@ -22,25 +18,35 @@ class OperatorRef:
     name: str
 
 @dataclass(frozen=True)
-class ModuleSpec:
-    operators: dict[OperatorRef, OperatorSpec]
+class ImportSpec:
+    path: str
+    module: str
+    alias: str
 
 @dataclass(frozen=True)
 class OperatorSpec:
-    imports: list[ImportSpec]
+    imports: tuple[ImportSpec, ...]
     source: str
+
+@dataclass(frozen=True)
+class ModuleSpec:
+    operators: Mapping[OperatorRef, OperatorSpec]
+
+
+type LiteralValue = None | bool | int | float | str
+type Value = NodeRef | LiteralValue
 
 @dataclass(frozen=True)
 class NodeSpec:
     operator: OperatorRef
-    args: tuple = field(default_factory=tuple)
-    kwargs: dict[str, Any] = field(default_factory=dict)
+    args: tuple[Value, ...] = ()
+    kwargs: Mapping[str, Value] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class GraphSpec:
-    modules: dict[ModuleRef, ModuleSpec]
-    nodes: dict[NodeRef, NodeSpec]
+    modules: Mapping[ModuleRef, ModuleSpec]
+    nodes: Mapping[NodeRef, NodeSpec]
     output: NodeRef
 
 
@@ -63,3 +69,7 @@ class GraphDiff:
 
 def diff(graph1: GraphSpec, graph2: GraphSpec) -> GraphDiff:
     ...
+
+def apply(graph: GraphRT, changes: GraphDiff):
+    ...
+    
