@@ -14,27 +14,21 @@ class ModuleRef:
     name: str
 
 @dataclass(frozen=True)
-class ModuleSpec:
-    imports: list[ImportSpec]
-    operators: dict[OperatorRef, OperatorSpec]
-
-
-
-
-@dataclass(frozen=True)
 class NodeRef:
     name: str
-
 
 @dataclass(frozen=True)
 class OperatorRef:
     name: str
 
+@dataclass(frozen=True)
+class ModuleSpec:
+    operators: dict[OperatorRef, OperatorSpec]
 
 @dataclass(frozen=True)
 class OperatorSpec:
+    imports: list[ImportSpec]
     source: str
-
 
 @dataclass(frozen=True)
 class NodeSpec:
@@ -46,7 +40,6 @@ class NodeSpec:
 @dataclass(frozen=True)
 class GraphSpec:
     modules: dict[ModuleRef, ModuleSpec]
-    operators: dict[OperatorRef, OperatorSpec]
     nodes: dict[NodeRef, NodeSpec]
     output: NodeRef
 
@@ -67,6 +60,6 @@ def unparse(graph: GraphSpec) -> str:
 @dataclass(frozen=True)
 class GraphDiff:
     ...
-    
+
 def diff(graph1: GraphSpec, graph2: GraphSpec) -> GraphDiff:
     ...
