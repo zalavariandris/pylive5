@@ -1,7 +1,24 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from pygraphrt.graph_rt import GraphRT
+
+@dataclass(frozen=True)
+class ImportSpec:
+    path: str
+    module: str
+    alias: str
+
+
+@dataclass(frozen=True)
+class ModuleRef:
+    name: str
+
+@dataclass(frozen=True)
+class ModuleSpec:
+    imports: list[ImportSpec]
+    operators: dict[OperatorRef, OperatorSpec]
+
+
 
 
 @dataclass(frozen=True)
@@ -21,18 +38,20 @@ class OperatorSpec:
 
 @dataclass(frozen=True)
 class NodeSpec:
-    operator: str
+    operator: OperatorRef
     args: tuple = field(default_factory=tuple)
     kwargs: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class GraphSpec:
-    nodes: dict[NodeRef, NodeSpec]
+    modules: dict[ModuleRef, ModuleSpec]
     operators: dict[OperatorRef, OperatorSpec]
+    nodes: dict[NodeRef, NodeSpec]
     output: NodeRef
 
 
+from pygraphrt.graph_rt import GraphRT
 def parse(script:str)->GraphSpec:
     ...
 
@@ -45,5 +64,9 @@ def snapshot(runtime: GraphRT) -> GraphSpec:
 def unparse(graph: GraphSpec) -> str:
     ...
 
-def diff(graph1: GraphSpec, graph2: GraphSpec) -> str:
+@dataclass(frozen=True)
+class GraphDiff:
+    ...
+    
+def diff(graph1: GraphSpec, graph2: GraphSpec) -> GraphDiff:
     ...
