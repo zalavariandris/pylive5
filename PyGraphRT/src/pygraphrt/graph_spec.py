@@ -4,12 +4,12 @@ from typing import Any
 from pygraphrt.graph_rt import GraphRT
 
 
-@dataclass
+@dataclass(frozen=True)
 class NodeRef:
     name: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class OperatorRef:
     name: str
 
@@ -26,7 +26,7 @@ class NodeSpec:
     kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(frozen=True)
 class GraphSpec:
     nodes: dict[NodeRef, NodeSpec]
     operators: dict[OperatorRef, OperatorSpec]
