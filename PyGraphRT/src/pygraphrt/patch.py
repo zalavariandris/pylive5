@@ -25,6 +25,9 @@ def _resolve_kwargs(graph: GraphRT, kwargs:dict):
             resolved_kwargs[key] = value
     return resolved_kwargs
 
+def patch_operators(graph1: GraphRT, operators: dict):
+    ...
+
 def patch(graph1: GraphRT, graph2: GraphRT):
     op_changes = dictdiffer.diff(graph1.to_dict()['operators'], graph2.to_dict()['operators'], dot_notation=False)
     
@@ -43,7 +46,6 @@ def patch(graph1: GraphRT, graph2: GraphRT):
                     graph1.remove_operator(op) # remove operator from graph
 
             case 'change', (_, ):
-                
                 operator_name = path[0]
                 op = graph1.get_operator(operator_name)
                 assert op is not None, f"Operator '{operator_name}' not found in graph1"

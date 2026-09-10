@@ -76,8 +76,6 @@ class PyFlow5Window(QMainWindow):
             self._watcher = rt.watch(G, node, _on_results_changed)
         G.output_node_changed.connect(lambda: watch_graph_node(G.output))
         
-        
-
         self._model = PyFlowRtModel(G)
         self._selection = GraphSelectionModel(self._model)
 
