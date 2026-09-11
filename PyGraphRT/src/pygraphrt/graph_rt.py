@@ -44,6 +44,13 @@ class GraphRT(QObject):
         self._output_node: NodeRT | None = None
 
     def op(self) -> Callable:
+        """Decorator to create and add an operator to the graph.
+
+        Usage:
+            @graph.op()
+            def my_operator(...):
+                ...
+        """
         def decorator(func: Callable) -> OperatorRT:
             operator = OperatorRT(self, func.__name__, func)
             self._operators.add(operator)

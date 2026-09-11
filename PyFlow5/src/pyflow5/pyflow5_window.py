@@ -1,10 +1,17 @@
-
+from typing import Iterable
 import traceback
+from pyflow5.operator_selection_dialog import OperatorSelectionDialog
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import QAction
 
+from pygraphrt.operator_rt import OperatorRT
 from qtpy.QtWidgets import (
+    QComboBox,
+    QDialog,
     QHBoxLayout, 
     QSplitter, 
-    QSplitter, 
+    QSplitter,
+    QVBoxLayout, 
     QWidget, 
     QMainWindow
 )
@@ -39,47 +46,54 @@ class PyFlow5Window(QMainWindow):
         action.triggered.connect(reset_graph)
 
         from textwrap import dedent
-        
-        script = dedent("""\
-        from pygraphrt import GraphRT
-        G = GraphRT()
 
-        @G.node(43)
+        module_script = dedent("""\
         def const1(val):
             return val
 
-        @G.node(34)
         def const2(val):
             return val
 
-        @G.node(a=const1, b=const2)
         def mult(a, b):
             return a * b
-
-        G.output = mult
-
-        #with G:
-        #    forty = G.node(40)(identity)
-        #    thirty = G.node(30)(identity)
-        #    G.output = G.node(forty, thirty)(mult)
         """)
-        G = rt.utils.graph_from_script(script, 'G')
+        
+        self._G = rt.GraphRT()
+
+        def functions_from_script(script)->Iterable[callable]:
+            local_vars = {}
+            exec(script, {}, local_vars)
+            for k, v in local_vars.items():
+                if callable(v):
+                    yield v
+
+            return k, v
+
+        # add the operators from the script
+        for func in functions_from_script(module_script):
+            self._G.op()(func)
 
         def _on_results_changed():
             try:
-                result = G.execute()
+                result = self._G.execute()
                 self._display_widget.display(result)
             except Exception as e:
                 self._display_widget.display(e)
                 traceback.print_exc()
 
-        self._watcher = rt.watch(G, G.output, _on_results_changed)
-        def watch_graph_node(node:rt.NodeRT):
-            self._watcher.stop()
-            self._watcher = rt.watch(G, node, _on_results_changed)
-        G.output_node_changed.connect(lambda: watch_graph_node(G.output))
+        open_operator_dialog_action = QAction("Open Operator Dialog", self)
+        self.addAction(open_operator_dialog_action)
+        open_operator_dialog_action.setShortcut("Ctrl+P")
+        open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
+
+        # self._watcher = rt.watch(G, G.output, _on_results_changed)
+        # def watch_graph_node(node:rt.NodeRT):
+        #     self._watcher.stop()
+        #     self._watcher = rt.watch(G, node, _on_results_changed)
+
+        # G.output_node_changed.connect(lambda: watch_graph_node(G.output))
         
-        self._model = PyFlowRtModel(G)
+        self._model = PyFlowRtModel(self._G)
         self._selection = GraphSelectionModel(self._model)
 
         layout = QHBoxLayout(self)
@@ -87,7 +101,7 @@ class PyFlow5Window(QMainWindow):
         layout.addWidget(splitter)
         
         self._code_editor = ScriptEdit2(self)
-        self._code_editor.setPlainText(script)
+        self._code_editor.setPlainText(module_script)
         self._code_editor.textChanged.connect(self._on_text_changed)
         self._graph_view = DirectionalGraphView5(self)
         self._graph_view.setModel(self._model)
@@ -108,18 +122,19 @@ class PyFlow5Window(QMainWindow):
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
 
-        self._graph_view.requestNode.connect(self._on_request_node)
+        self._graph_view.setFocus()
 
         _on_results_changed()
 
     def _on_text_changed(self):
         script = self._code_editor.toPlainText()
         try:
-            G = rt.utils.graph_from_script(script, 'G')
-            rt.patch(self._model.rt, G)
-            # self._graph_view.layout_nodes()
-            result = G.execute()
-            self._display_widget.display(result)
+            pass
+            # G = rt.utils.graph_from_script(script, 'G')
+            # rt.patch(self._model.rt, G)
+            # # self._graph_view.layout_nodes()
+            # result = G.execute()
+            # self._display_widget.display(result)
             
         except Exception as err:
             # print(f"Error updating graph: {e}")
@@ -127,8 +142,19 @@ class PyFlow5Window(QMainWindow):
             import traceback
             traceback.print_exc()
 
+    def openOperatorDialog(self):
+        operators_map:dict[str, OperatorRT] = self._G.operators()
+        dialog = OperatorSelectionDialog(operators_map.keys(), self)
+        if dialog.exec_() == QDialog.Accepted:
+            if selected_op_name := dialog.selected_operator():
+                selected_op = operators_map[selected_op_name]
+                new_node = self._G.node()(selected_op)
+                print("New node created:", new_node)
+
     def _on_request_node(self):
         print("Request node signal received")
+        # show a dialog with a multiselection of operator in GraphRT
+        self.openOperatorDialog()
 
     def _on_request_link(self, source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
         target_rt = self._model.rt.get_node(target)

@@ -109,6 +109,7 @@ class DirectionalGraphView5(QFrame):
         super().__init__(parent)
         scroll_area_frame_style = QFrame.StyledPanel | QFrame.Sunken # default scrollarea frame style
         self.setFrameStyle(scroll_area_frame_style)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._model: AbstractDAGModel | None = None
         self._model_connections = []
         self._selection_model: GraphSelectionModel | None = None
