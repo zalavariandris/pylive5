@@ -118,6 +118,10 @@ class DirectionalGraphView5(QFrame):
 
         self._tool: DraggingNodeToolData | LinkingToolData | RectSelectionToolData | PanAndZoomToolData | None = None
 
+        self._press_pos: QPointF | None = None
+        self._pressed:bool = False
+
+
 
         self.setMouseTracking(True)
         self.setWindowTitle(DirectionalGraphView5.__name__)
@@ -427,6 +431,7 @@ class DirectionalGraphView5(QFrame):
         # self.update()
 
     def itemAt(self, pos: QPoint) -> _GraphItemId | None:
+        """Return the graph item at the given view position, or None if no item is found."""
         # rects returned by _nodeRect/_inletRect/_outletRect are already in view coordinates
         scene_pos = self.mapToScene(QPointF(pos))
         for node in self._model.nodes():
@@ -595,6 +600,11 @@ class DirectionalGraphView5(QFrame):
         painter.restore()
 
     def mousePressEvent(self, event: QMouseEvent):
+        # handle mouseClick events
+        if event.button() == Qt.LeftButton:
+            self._press_pos = event.pos()
+            self._pressed = True
+
         if self._model is None:
             return
         self.setFocus(Qt.FocusReason.MouseFocusReason)
@@ -780,8 +790,31 @@ class DirectionalGraphView5(QFrame):
 
                 if new_rect is not None:
                     self.updateScene(new_rect)
+
+    def _mouse_click_event(self, event: QMouseEvent):
+        # Handle mouse click event here
+        item_under_mouse:_GraphItemId | None = self.itemAt(event.pos())
+        print(item_under_mouse)
+        if self._selection_model:
+            
+            match item_under_mouse:
+                case ('node', _):
+                    kind, node_name = item_under_mouse
+                    self._selection_model.selectNode(node_name)
+
                 
     def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton and self._pressed:
+            # Check that release is still inside the widget
+            # and that the mouse didn't move too far
+            threshold = 5  # pixels
+            if (self.rect().contains(event.pos()) and
+                    (event.pos() - self._press_pos).manhattanLength() < threshold):
+                print("Click detected at", event.pos())
+                self._mouse_click_event(event)
+
+            self._pressed = False
+
         match self._tool:
             case RectSelectionToolData():
                 selection_rect = QRectF(self._tool._start_pos, self._tool._end_pos).normalized()

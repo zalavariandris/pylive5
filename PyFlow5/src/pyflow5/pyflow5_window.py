@@ -100,7 +100,7 @@ class PyFlow5Window(QMainWindow):
         
         self._model = PyFlowRtModel(self._G)
         self._selection = GraphSelectionModel(self._model)
-        self._selection.nodesSelectionChanged.connect(self._on_nodes_selection_changed)
+        self._selection.nodesSelectionChanged.connect(lambda selected, deselected: self._on_nodes_selection_changed(selected, deselected))
 
         layout = QHBoxLayout(self)
         splitter = QSplitter(self)
@@ -132,13 +132,18 @@ class PyFlow5Window(QMainWindow):
 
         _on_results_changed()
 
-    def _on_nodes_selection_changed(self, selected_nodes:set[NodeName]):
-        print("Selected nodes changed:", selected_nodes)
-        first_selected_node = next(iter(selected_nodes), None)
-        if first_selected_node is not None:
-            node_rt = self._G.get_node(first_selected_node)
+    def _on_nodes_selection_changed(self, selected:set[NodeName], deselected:set[NodeName]):
+        print("Selected nodes changed:", selected, "Deselected nodes:", deselected)
+
+        first_selected_node = self._selection.selectedNodes()[0] if self._selection.selectedNodes() else None
+        last_selected_node = self._selection.selectedNodes()[-1] if self._selection.selectedNodes() else None
+        if last_selected_node is not None:
+            node_rt = self._G.get_node(last_selected_node)
             self._G.output = node_rt
-            print(f"Output node changed to: {first_selected_node}")
+            print(f"Output node changed to: {last_selected_node}")
+        else:
+            self._G.output = None
+            print("Output node cleared")
 
     def _on_text_changed(self):
         script = self._code_editor.toPlainText()

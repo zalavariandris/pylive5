@@ -286,9 +286,15 @@ class GraphRT(QObject):
         return self._output_node
       
     @output.setter
-    def output(self, node: NodeRT) -> None:
+    def output(self, node: NodeRT|None) -> None:
         """Sets the output node of the graph."""
+        if node is None:
+            self._output_node = None
+            self.output_node_changed.emit()
+            return
+        
         if node not in self._nodes:
-            raise ValueError("The node must be part of the graph.")
+            raise ValueError(f"The node must be part of the graph, got: {node}")
+        
         self._output_node = node
         self.output_node_changed.emit()

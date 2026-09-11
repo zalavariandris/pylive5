@@ -14,8 +14,8 @@ class Watcher:
         self._ancestor_names = [n.get_name() for n in graph.ancestors(node)]
 
         self._connections = [
-            (graph.node_inputs_changed, lambda node: self._on_change('node', 'inputs', node)),
-            (graph.node_operator_changed, lambda node: self._on_change('node', 'operator', node)),
+            (graph.node_inputs_changed,       lambda node: self._on_change('node', 'inputs', node)),
+            (graph.node_operator_changed,     lambda node: self._on_change('node', 'operator', node)),
             (graph.operator_function_changed, lambda op: self._on_change('operator', 'function', op))
         ]
 
