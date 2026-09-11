@@ -26,7 +26,7 @@ def __model_to_grandalf_graph(model: "StandardDAGModel") -> "Graph":
             if u in vertex_map and node_id in vertex_map:
                 edges.append(Edge(vertex_map[u], vertex_map[node_id]))
 
-    return Graph(list(vertex_map.values()), edges)
+    return Graph(list(vertex_map.values()), reversed(edges))
 
 def layout_graph_model_with_grandalf(model: "StandardDAGModel") -> dict[Hashable, tuple[float, float]]:
     # == Convert the model to a grandalf graph ==
