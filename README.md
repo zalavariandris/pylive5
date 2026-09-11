@@ -9,3 +9,10 @@ install submodules: `uv pip install -e ./PyFlow5`
 
 ## dev docs
 docs/
+
+## Build Exe
+
+```powershell
+uv sync --extra exe
+.venv\Scripts\python.exe -m PyInstaller --clean --noconfirm pyflow5.spec
+```

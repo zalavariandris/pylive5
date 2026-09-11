@@ -11,7 +11,6 @@ from enum import Enum
 from dataclasses import dataclass
 
 from qdageditor5.utils.graph_layouts.graph_layout_with_grandalf import layout_graph_model_with_grandalf
-from qdageditor5.utils.graph_layouts.graph_layout_with_dot import layout_graph_model_with_dot
 from qdageditor5.models.abstract_dag_model import AbstractDAGModel, InletName, NodeName, OutletName, DirectionalLinkId
 
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
@@ -961,11 +960,7 @@ class DirectionalGraphView5(QFrame):
 
     def layout_nodes(self):
         # dot honors inlet ordering (ordering="in"); grandalf only nudges it, so prefer dot when available
-        try:
-            positions = layout_graph_model_with_dot(self._model)
-        except Exception as e:
-            warnings.warn(f"Graphviz dot layout unavailable ({e}); falling back to grandalf layout.")
-            positions = layout_graph_model_with_grandalf(self._model)
+        positions = layout_graph_model_with_grandalf(self._model)
         for node_name, (x, y) in positions.items():
             self._model.setNodePosition(node_name, QPointF(x, y))
         self.update()

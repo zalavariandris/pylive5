@@ -1,6 +1,6 @@
 from pyflow5.pyflow5_window import PyFlow5Window
 
-if __name__ == "__main__":
+def launch_pyflow5():
     from qtpy.QtWidgets import QApplication
     import sys
     app = QApplication(sys.argv)
@@ -9,3 +9,6 @@ if __name__ == "__main__":
     window.show()
     sys.exit(app.exec_())
     
+
+if __name__ == "__main__":
+    launch_pyflow5()
