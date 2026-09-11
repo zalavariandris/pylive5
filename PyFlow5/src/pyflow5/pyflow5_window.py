@@ -3,7 +3,7 @@ from typing import Iterable
 import traceback
 import warnings
 from pyflow5.operator_selection_dialog import OperatorSelectionDialog
-from qtpy.QtCore import Qt
+from qtpy.QtCore import QPoint, QPointF, Qt
 from qtpy.QtWidgets import QAction
 
 from pygraphrt.operator_rt import OperatorRT
@@ -113,7 +113,7 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.setModel(self._model)
         self._graph_view.setSelectionModel(self._selection)
         self._graph_view.requestLink.connect(self._on_request_link)
-        self._graph_view.requestNode.connect(self._on_request_node)
+        self._graph_view.requestNode.connect(lambda pos, source: self._on_request_node(pos, source))
         self._graph_view.layout_nodes()
         self._graph_view.fitNodes()
         self._display_widget = DisplayWidget(self)
@@ -156,7 +156,7 @@ class PyFlow5Window(QMainWindow):
             import traceback
             traceback.print_exc()
 
-    def openOperatorDialog(self):
+    def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
         operators_map:dict[str, OperatorRT] = self._G.operators()
         dialog = OperatorSelectionDialog(operators_map.keys(), self)
         if dialog.exec_() == QDialog.Accepted:
@@ -164,11 +164,12 @@ class PyFlow5Window(QMainWindow):
                 selected_op = operators_map[selected_op_name]
                 new_node = self._G.node()(selected_op)
                 print("New node created:", new_node)
+                self._model.setNodePosition(new_node.get_name(), scene_pos or QPointF(0, 0))
 
-    def _on_request_node(self):
-        print("Request node signal received")
+    def _on_request_node(self, scene_pos:QPointF, source:NodeName):
+        print(f"Request node signal received {scene_pos} {source}")
         # show a dialog with a multiselection of operator in GraphRT
-        self.openOperatorDialog()
+        self.openOperatorDialog(scene_pos=scene_pos, source=source)
 
     def _on_request_link(self, source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
         target_rt = self._model.rt.get_node(target)

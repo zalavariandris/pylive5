@@ -14,5 +14,5 @@ docs/
 
 ```powershell
 uv sync --extra exe
-.venv\Scripts\python.exe -m PyInstaller --clean --noconfirm pyflow5.spec
+.venv\Scripts\python.exe -m PyInstaller --clean --noconfirm pyflow5-bundle.spec
 ```
