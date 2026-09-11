@@ -174,10 +174,14 @@ class GraphRT(QObject):
 
         for node in nodes:
             args, kwargs = node.get_inputs()
-            for v in args + tuple(kwargs.values()):
-                if isinstance(v, NodeRT) and v in nodes:
-                    in_degree[node] += 1
-                    successors[v].add(node)
+            # Use a set so each unique predecessor is counted only once
+            preds = {
+                v for v in args + tuple(kwargs.values())
+                if isinstance(v, NodeRT) and v in nodes
+            }
+            for v in preds:
+                in_degree[node] += 1
+                successors[v].add(node)
 
         queue: deque = deque(node for node, deg in in_degree.items() if deg == 0)
         sorted_nodes: list[NodeRT] = []
@@ -201,6 +205,9 @@ class GraphRT(QObject):
     def execute(self, root:NodeRT | None = None, profile: bool = True) -> Any:
         if root is None:
             root = self._output_node
+
+        if root is None:
+            raise ValueError("No output node specified.")
 
         if root not in self._nodes:
             raise ValueError(f"Node {root} does not exist in the engine.")

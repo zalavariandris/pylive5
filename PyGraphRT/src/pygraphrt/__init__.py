@@ -4,11 +4,12 @@ from .imports_rt import ImportRT
 from .graph_rt import GraphRT
 from . import utils
 from .patch import patch
-from .watch import watch
+from .watch import watch, Watcher
 
 all = [
     "GraphRT", "NodeRT", "OperatorRT", "ModuleRT",
     "utils",
     "patch",
-    "watch"
+    "watch",
+    "Watcher"
 ]

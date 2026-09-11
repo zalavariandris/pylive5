@@ -120,3 +120,23 @@ class PyFlowRtModel(AbstractDAGModel):
     def linkTarget(self, link:DirectionalLinkId):
         source, outlet, target, inlet = link
         return target, inlet
+
+    def removeLinks(self, links:Iterable[DirectionalLinkId]):
+        self._beginRemoveLinks(links)
+        for link in list(links):
+            source, outlet, target, inlet = link
+            target_rt = self.rt.get_node(target)
+            args, kwargs = target_rt.get_inputs()
+            op = target_rt.get_operator()
+            inlets = op.get_parameters().keys()
+            if inlet not in inlets:
+                continue
+
+            inlet_idx = list(inlets).index(inlet)
+            if inlet_idx < len(args):
+                new_args = [arg for arg in args if not arg.get_name() == source]
+                target_rt.set_inputs(*new_args, **kwargs)
+            elif inlet in kwargs:
+                new_kwargs = {k: v for k, v in kwargs.items() if not (k == inlet and isinstance(v, rt.NodeRT) and v.get_name() == source)}
+                target_rt.set_inputs(*args, **new_kwargs)
+        self._endRemoveLinks()

@@ -1,5 +1,7 @@
+from textwrap import dedent
 from typing import Iterable
 import traceback
+import warnings
 from pyflow5.operator_selection_dialog import OperatorSelectionDialog
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QAction
@@ -48,11 +50,11 @@ class PyFlow5Window(QMainWindow):
         from textwrap import dedent
 
         module_script = dedent("""\
-        def const1(val):
-            return val
+        def one():
+            return 1
 
-        def const2(val):
-            return val
+        def two():
+            return 2
 
         def mult(a, b):
             return a * b
@@ -86,15 +88,19 @@ class PyFlow5Window(QMainWindow):
         open_operator_dialog_action.setShortcut("Ctrl+P")
         open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
 
-        # self._watcher = rt.watch(G, G.output, _on_results_changed)
-        # def watch_graph_node(node:rt.NodeRT):
-        #     self._watcher.stop()
-        #     self._watcher = rt.watch(G, node, _on_results_changed)
+        self._watcher:rt.Watcher|None = None
+        def _on_output_node_changed(node:rt.NodeRT):
+            if self._watcher:
+                self._watcher.stop()
+            if node is not None:
+                self._watcher = rt.watch(self._G, node, _on_results_changed)
+            _on_results_changed()
 
-        # G.output_node_changed.connect(lambda: watch_graph_node(G.output))
+        self._G.output_node_changed.connect(lambda: _on_output_node_changed(self._G.output))
         
         self._model = PyFlowRtModel(self._G)
         self._selection = GraphSelectionModel(self._model)
+        self._selection.nodesSelectionChanged.connect(self._on_nodes_selection_changed)
 
         layout = QHBoxLayout(self)
         splitter = QSplitter(self)
@@ -125,6 +131,14 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.setFocus()
 
         _on_results_changed()
+
+    def _on_nodes_selection_changed(self, selected_nodes:set[NodeName]):
+        print("Selected nodes changed:", selected_nodes)
+        first_selected_node = next(iter(selected_nodes), None)
+        if first_selected_node is not None:
+            node_rt = self._G.get_node(first_selected_node)
+            self._G.output = node_rt
+            print(f"Output node changed to: {first_selected_node}")
 
     def _on_text_changed(self):
         script = self._code_editor.toPlainText()
@@ -158,8 +172,26 @@ class PyFlow5Window(QMainWindow):
 
     def _on_request_link(self, source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
         target_rt = self._model.rt.get_node(target)
+        source_rt = self._model.rt.get_node(source)
+        assert target_rt is not None, f"Target node '{target}' not found"
+        assert source_rt is not None, f"Source node '{source}' not found"
         args, kwargs = target_rt.get_inputs()
-        print(f"inputs:\n  {args}\n  {kwargs}")
+        op_rt = target_rt.get_operator()
+
+        # if there are already positional arguments for this inlet, replace that otherwise add it to keyword arguments
+        inlets = [name for name in op_rt.get_parameters().keys()]
+        if inlet not in inlets:
+            print(f"Inlet '{inlet}' not found in operator parameters")
+            return
+        inlet_idx = inlets.index(inlet)
+        if inlet_idx < len(args):
+            
+            args[inlet_idx] = source_rt
+        else:
+            kwargs[inlet] = source_rt
+
+        target_rt.set_inputs(*args, **kwargs)
+        print(f"Updated inputs for target node '{target}': args={args}, kwargs={kwargs}")
 
     def _on_graph_output_changed(self):
         print("Graph output changed signal received")

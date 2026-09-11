@@ -38,7 +38,7 @@ class Watcher:
             signal.disconnect(slot)
 
 
-def watch(graph:GraphRT, node:NodeRT, callback: Callable):
+def watch(graph:GraphRT, node:NodeRT|None, callback: Callable):
     """Watches the given graph for changes and calls the callback with the change details."""
     assert isinstance(graph, GraphRT)
     assert isinstance(node, NodeRT), f"node must be an instance of NodeRT got {node}"
