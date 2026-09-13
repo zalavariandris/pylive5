@@ -18,9 +18,15 @@ class Watcher:
             (graph.node_operator_changed,     lambda node: self._on_change('node', 'operator', node)),
             (graph.operator_function_changed, lambda op: self._on_change('operator', 'function', op))
         ]
+        self._running = False
+        self.start()
 
+    def start(self):
+        if self._running:
+            return
         for signal, slot in self._connections:
             signal.connect(slot)
+        self._running = True
 
     def _on_change(self, kind:Literal['node', 'operator'], attr: str, obj: str):
         match kind:
@@ -34,8 +40,14 @@ class Watcher:
                     self._callback()
 
     def stop(self):
+        if not self._running:
+            return
         for signal, slot in self._connections:
             signal.disconnect(slot)
+        self._running = False
+
+    def __del__(self):
+        self.stop()
 
 
 def watch(graph:GraphRT, node:NodeRT|None, callback: Callable):
