@@ -140,3 +140,11 @@ class PyFlowRtModel(AbstractDAGModel):
                 new_kwargs = {k: v for k, v in kwargs.items() if not (k == inlet and isinstance(v, rt.NodeRT) and v.get_name() == source)}
                 target_rt.set_inputs(*args, **new_kwargs)
         self._endRemoveLinks()
+
+    def removeNodes(self, nodes:Iterable[NodeName]):
+        self._beginRemoveNodes(nodes)
+        for node in list(nodes):
+            node_rt = self.rt.get_node(node)
+            if node_rt is not None:
+                self.rt.remove_node(node_rt)
+        self._endRemoveNodes()

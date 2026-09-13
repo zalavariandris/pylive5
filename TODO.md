@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] allow adding and updating operator in GraphRT.
+- [ ] allow adding and updating operators in GraphRT.
   GraphRT should be allowed to load and reaload(!) 
   operators from a python script!
   carefully figure out an interface for graphrt, to load operators from a script, and add it to the runtime.
@@ -8,8 +8,6 @@
   pretty much like python does with imports, except this must update while the app is running.
   a GraphRT runtime that is changed live should behave exactly as one that was first started(except cache)
   GraphRT executuin must be deterministic. ALmost like a pure function, where subfunctino are change on the fly
-
-    
 
 
 ## ExampleApps

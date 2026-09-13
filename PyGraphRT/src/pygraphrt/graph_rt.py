@@ -145,12 +145,16 @@ class GraphRT(QObject):
         self._successors.pop(node, None)
         self._nodes.remove(node)
         self._profiler.pop(node, None)
+        
         self.nodes_removed.emit([node.get_name()])
 
         # disconnect signals
         for signal, slot in self._connected_node_signals[node.get_name()]:
             signal.disconnect(slot)
         self._connected_node_signals.pop(node.get_name(), None)
+
+        if self._output_node == node:
+            self.output = None
 
     def ancestors(self, root: NodeRT) -> set[NodeRT]:
         visited: set[NodeRT] = {root}
@@ -282,7 +286,7 @@ class GraphRT(QObject):
         }
 
     @property
-    def output(self) -> NodeRT:
+    def output(self) -> NodeRT|None:
         return self._output_node
       
     @output.setter

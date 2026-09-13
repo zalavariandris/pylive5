@@ -121,8 +121,6 @@ class DirectionalGraphView5(QFrame):
         self._press_pos: QPointF | None = None
         self._pressed:bool = False
 
-
-
         self.setMouseTracking(True)
         self.setWindowTitle(DirectionalGraphView5.__name__)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus) # required for the WidgetWithChildrenShortcut action to trigger
@@ -802,7 +800,6 @@ class DirectionalGraphView5(QFrame):
                     kind, node_name = item_under_mouse
                     self._selection_model.selectNode(node_name)
 
-                
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton and self._pressed:
             # Check that release is still inside the widget

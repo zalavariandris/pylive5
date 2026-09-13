@@ -83,11 +83,6 @@ class PyFlow5Window(QMainWindow):
                 self._display_widget.display(e)
                 traceback.print_exc()
 
-        open_operator_dialog_action = QAction("Open Operator Dialog", self)
-        self.addAction(open_operator_dialog_action)
-        open_operator_dialog_action.setShortcut("Ctrl+P")
-        open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
-
         self._watcher:rt.Watcher|None = None
         def _on_output_node_changed(node:rt.NodeRT):
             if self._watcher:
@@ -108,7 +103,7 @@ class PyFlow5Window(QMainWindow):
         
         self._code_editor = ScriptEdit2(self)
         self._code_editor.setPlainText(module_script)
-        self._code_editor.textChanged.connect(self._on_text_changed)
+        self._code_editor.textChanged.connect(self._on_code_text_changed)
         self._graph_view = DirectionalGraphView5(self)
         self._graph_view.setModel(self._model)
         self._graph_view.setSelectionModel(self._selection)
@@ -132,6 +127,21 @@ class PyFlow5Window(QMainWindow):
 
         _on_results_changed()
 
+        # setup actions
+        open_operator_dialog_action = QAction("Open Operator Dialog", self)
+        self.addAction(open_operator_dialog_action)
+        open_operator_dialog_action.setShortcut("Ctrl+P")
+        open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
+
+        delete_selected_nodes_action = QAction("Delete Selected Nodes", self)
+        self.addAction(delete_selected_nodes_action)
+        delete_selected_nodes_action.setShortcut("Del")
+        delete_selected_nodes_action.triggered.connect(self.deleteSelectedNodes)
+
+    def deleteSelectedNodes(self):
+        selected_nodes = self._selection.selectedNodes()
+        self._model.removeNodes(selected_nodes)
+    
     def _on_nodes_selection_changed(self, selected:set[NodeName], deselected:set[NodeName]):
         print("Selected nodes changed:", selected, "Deselected nodes:", deselected)
 
@@ -145,10 +155,11 @@ class PyFlow5Window(QMainWindow):
             self._G.output = None
             print("Output node cleared")
 
-    def _on_text_changed(self):
+    def _on_code_text_changed(self):
         script = self._code_editor.toPlainText()
         try:
-            pass
+            # find functions diff
+            # 
             # G = rt.utils.graph_from_script(script, 'G')
             # rt.patch(self._model.rt, G)
             # # self._graph_view.layout_nodes()
