@@ -9,6 +9,12 @@
   a GraphRT runtime that is changed live should behave exactly as one that was first started(except cache)
   GraphRT executuin must be deterministic. ALmost like a pure function, where subfunctino are change on the fly
 
+## test GraphRT duplicated operators
+- [ ] consider what to do when a new operator has the same name as the previous. (Python basically overrides it)
+
+## implement ScriptRT tests
+- [ ] emit signals, when functions actually added, removed changed. dont emit add, remove, change signlas, when only the script has changed.
+- [ ] test change signal, when the function itself did not, but due to its scope the behaviour has changed.
 
 ## ExampleApps
 - [ ] Image Grade

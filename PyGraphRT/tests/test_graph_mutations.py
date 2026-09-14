@@ -2,7 +2,6 @@ import pytest
 import pygraphrt as rt
 
 
-
 def test_set_node_inputs_to_raw_values():
     G = rt.GraphRT()
 
@@ -121,6 +120,24 @@ def test_setting_output():
     result = G.execute(add)
     assert result == 5, "Node should compute 2 + 3 = 5"
 
+def test_set_operator_function_with_different_signature():
+    G = rt.GraphRT()
+
+    @G.op()
+    def the_op(a:int, b:int) -> int:
+        return a + b
+
+    add_node = G.node(1, 2)(the_op)
+    result = G.execute(add_node)
+    assert result == 3, "Node should compute 1 + 2 = 3"
+
+    # now change the function of the add operator to a function with a different signature
+    def add_three(a:int, b:int, c:int) -> int:
+        return a + b + c
+
+    the_op.set_function(add_three)
+    with pytest.raises(TypeError):
+        result = G.execute(add_node)
 
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"]) 

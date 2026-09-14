@@ -15,13 +15,13 @@ from qtpy.QtWidgets import (
 from QScriptEdit2.pygments_highlighter import PygmentsHighlighter
 from pygments.styles import get_all_styles
 
-class ScriptEdit2(QTextEdit):
+class ScriptEdit2(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFontFamily("Courier New")
-        self.setFontPointSize(10)
+        # self.setFontFamily("Courier New")
+        # self.setFontPointSize(10)
         self.highlighter = PygmentsHighlighter(self.document())
-        self.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         # self.setWordWrapMode(QTextEdit.WordWrapMode.NoWrap)
 
         self.setPlaceholderText("Write your script here...")

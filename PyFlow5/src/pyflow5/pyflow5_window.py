@@ -1,12 +1,14 @@
+import copy
 from textwrap import dedent
-from typing import Iterable
+from typing import Iterable, Mapping
 import traceback
 import warnings
 from pyflow5.operator_selection_dialog import OperatorSelectionDialog
-from qtpy.QtCore import QPoint, QPointF, Qt
+from qtpy.QtCore import QObject, QPoint, QPointF, Qt, Signal
 from qtpy.QtWidgets import QAction
 
 from pygraphrt.operator_rt import OperatorRT
+from pygraphrt.script_rt import ScriptRT
 from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
@@ -15,7 +17,7 @@ from qtpy.QtWidgets import (
     QSplitter,
     QVBoxLayout, 
     QWidget, 
-    QMainWindow
+    QMainWindow, 
 )
 
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
@@ -34,6 +36,7 @@ import pygraphrt as rt
 from pyflow5.pygraphrt_model import PyFlowRtModel
 
 
+
 class PyFlow5Window(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,7 +52,9 @@ class PyFlow5Window(QMainWindow):
 
         from textwrap import dedent
 
-        module_script = dedent("""\
+        self._G = rt.GraphRT()
+
+        self._script_rt = ScriptRT(dedent("""\
         def one():
             return 1
 
@@ -58,21 +63,10 @@ class PyFlow5Window(QMainWindow):
 
         def mult(a, b):
             return a * b
-        """)
-        
-        self._G = rt.GraphRT()
-
-        def functions_from_script(script)->Iterable[callable]:
-            local_vars = {}
-            exec(script, {}, local_vars)
-            for k, v in local_vars.items():
-                if callable(v):
-                    yield v
-
-            return k, v
+        """)) 
 
         # add the operators from the script
-        for func in functions_from_script(module_script):
+        for name, func in self._script_rt.get_functions().items():
             self._G.op()(func)
 
         def _on_results_changed():
@@ -102,8 +96,61 @@ class PyFlow5Window(QMainWindow):
         layout.addWidget(splitter)
         
         self._code_editor = ScriptEdit2(self)
-        self._code_editor.setPlainText(module_script)
-        self._code_editor.textChanged.connect(self._on_code_text_changed)
+        self._code_editor.setPlainText(self._script_rt.get_script())
+        self._code_editor.textChanged.connect(lambda: self._script_rt.set_script(self._code_editor.toPlainText()))
+        def _on_script_changed():
+            new_text = self._script_rt.get_script()
+            if self._code_editor.toPlainText() == new_text:
+                return  # nothing changed → do nothing
+
+            # preserve cursor & scroll
+            cursor = self._code_editor.textCursor()
+            pos = cursor.position()
+            scroll = self._code_editor.verticalScrollBar().value()
+
+            self._code_editor.blockSignals(True)          # prevent re-entrancy
+            self._code_editor.setPlainText(new_text)
+            self._code_editor.blockSignals(False)
+
+            # restore cursor
+            cursor.setPosition(min(pos, len(new_text)))
+            self._code_editor.setTextCursor(cursor)
+            self._code_editor.verticalScrollBar().setValue(scroll)
+
+        self._script_rt.script_changed.connect(_on_script_changed)
+        
+            
+        def on_functions_removed_from_script(removed: list[str]):
+            print(f"Functions removed from script: {removed}")
+            for name in removed:
+                if op := self._G.get_operator(name):
+                    self._G.remove_operator(op)
+
+        def on_functions_added_to_script(added: list[str]):
+            functions_map = self._script_rt.get_functions()
+            print(f"Functions added to script:")
+            for name in added:
+                func = functions_map[name]
+                print(f"    {name}, func: {func}")
+
+            for name in added:
+                assert name not in self._G.operators().keys(), f"Operator {name} already exists"
+                func = functions_map[name]
+                self._G.op()(func)
+
+        def on_functions_changed_in_script(changed: list[str]):
+            print(f"Functions changed in script")
+            for name in changed:
+                func = self._script_rt.get_functions()[name]
+                print(f"    {name}, func: {func}")
+            for name in changed:
+                if op := self._G.get_operator(name):
+                    op.set_function(func)
+
+        self._script_rt.functions_added.connect(on_functions_added_to_script)
+        self._script_rt.functions_removed.connect(on_functions_removed_from_script)
+        self._script_rt.functions_changed.connect(on_functions_changed_in_script)
+
         self._graph_view = DirectionalGraphView5(self)
         self._graph_view.setModel(self._model)
         self._graph_view.setSelectionModel(self._selection)
@@ -155,23 +202,6 @@ class PyFlow5Window(QMainWindow):
             self._G.output = None
             print("Output node cleared")
 
-    def _on_code_text_changed(self):
-        script = self._code_editor.toPlainText()
-        try:
-            # find functions diff
-            # 
-            # G = rt.utils.graph_from_script(script, 'G')
-            # rt.patch(self._model.rt, G)
-            # # self._graph_view.layout_nodes()
-            # result = G.execute()
-            # self._display_widget.display(result)
-            
-        except Exception as err:
-            # print(f"Error updating graph: {e}")
-            self._display_widget.display(err)
-            import traceback
-            traceback.print_exc()
-
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
         operators_map:dict[str, OperatorRT] = self._G.operators()
         dialog = OperatorSelectionDialog(operators_map.keys(), self)
@@ -179,7 +209,7 @@ class PyFlow5Window(QMainWindow):
             if selected_op_name := dialog.selected_operator():
                 selected_op = operators_map[selected_op_name]
                 new_node = self._G.node()(selected_op)
-                print("New node created:", new_node)
+                print(f"New node created: {new_node} with operator: {selected_op} func: {selected_op.get_function()}")
                 self._model.setNodePosition(new_node.get_name(), scene_pos or QPointF(0, 0))
 
     def _on_request_node(self, scene_pos:QPointF, source:NodeName):

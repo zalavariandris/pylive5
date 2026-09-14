@@ -77,9 +77,10 @@ class PyFlowRtModel(AbstractDAGModel):
 
     def inlets(self, node:NodeName)->Iterable[InletName]:
         node_rt = self.rt.get_node(node)
-        op = self.rt.get_operator(node_rt.get_operator().get_name())
-        for key in op.get_parameters().keys():
-            yield key
+        if op := node_rt.get_operator():
+            if resolved_op := self.rt.get_operator(op.get_name()):
+                for key in resolved_op.get_parameters().keys():
+                    yield key
         # args, kwargs = self.rt.get_node(node).get_inputs()
         # for i, arg in enumerate(args):
         #     yield f'{i+1}'

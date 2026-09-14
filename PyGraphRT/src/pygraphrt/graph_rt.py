@@ -52,6 +52,8 @@ class GraphRT(QObject):
                 ...
         """
         def decorator(func: Callable) -> OperatorRT:
+            current_operator_names = [op.get_name() for op in self._operators]
+            assert func.__name__ not in current_operator_names, f"Cannot add operator with duplicate name: {func.__name__}"
             operator = OperatorRT(self, func.__name__, func)
             self._operators.add(operator)
             self._operators_to_nodes[operator] = set()

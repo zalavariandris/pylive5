@@ -47,11 +47,19 @@ def ast_diff(source1: str, source2: str) -> FunctionsDiff:
 
     before = functions(source1)
     after = functions(source2)
+    added = after.keys() - before.keys()
+    removed = before.keys() - after.keys()
     common = before.keys() & after.keys()
     changed = {name for name in common if before[name] != after[name]}
+    print(f"""AST Diff:
+    Added: {added}
+    Removed: {removed}
+    Changed: {changed}
+    Unchanged: {common - changed}
+    """)
     return FunctionsDiff(
         changed=changed,
         unchanged=common - changed,
-        added=after.keys() - before.keys(),
-        removed=before.keys() - after.keys(),
+        added=added,
+        removed=removed,
     )
