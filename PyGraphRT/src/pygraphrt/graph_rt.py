@@ -23,19 +23,56 @@ class LocalModuleRT:
 
     def __init__(self, graph: "GraphRT"):
         self._graph = graph
-        self._script_module = ScriptModuleRT()
+        self._operators: set[OperatorRT] = set()
 
     def op(self) -> Callable:
-        ...
+        """Decorator to create and add an operator to the graph.
 
-    def remove_operator(self, operator: OperatorRT):
-        ...
+        Usage:
+            @graph.op()
+            def my_operator(...):
+                ...
+        """
+        def decorator(func: Callable) -> OperatorRT:
+            current_operator_names = [op.get_name() for op in self._operators]
+            assert func.__name__ not in current_operator_names, f"Cannot add operator with duplicate name: {func.__name__}"
+            operator = OperatorRT(self, func.__name__, func)
+            self._operators.add(operator)
+            self._operators_to_nodes[operator] = set()
+            self.operators_added.emit([operator.get_name()])
 
-    def operators(self):
-        ...
+            # forward operator signals
+            self._connected_operator_signals[operator.get_name()] = [
+                (operator.function_changed, lambda: self.operator_function_changed.emit(operator.get_name()))
+            ]
+            for signal, slot in self._connected_operator_signals[operator.get_name()]:
+                signal.connect(slot)
+                
+            return operator
+        return decorator
+
+    def operators(self) -> dict[str, OperatorRT]:
+        return {op.get_name(): op for op in self._operators}
 
     def get_operator(self, name: str) -> OperatorRT | None:
-        ...
+        for op in self._operators:
+            if op.get_name() == name:
+                return op
+        return None
+
+    def remove_operator(self, operator: OperatorRT):
+        assert operator in self._operators, f"Operator {operator} does not exist in the engine."
+        assert operator in self._operators_to_nodes, f"Operator {operator} is not associated with any nodes."
+
+        nodes = list(self._operators_to_nodes[operator])
+        for node in nodes:
+            node.set_operator(None)
+
+        del self._operators_to_nodes[operator]
+        self._operators.remove(operator)
+        self.operators_removed.emit([operator.get_name()])
+        for signal, slot in self._connected_operator_signals[operator.get_name()]:
+            signal.disconnect(slot)
 
     def set_operator_function(self, operator: OperatorRT, func: Callable):
         ...
