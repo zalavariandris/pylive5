@@ -3,7 +3,7 @@ from qtpy.QtCore import QObject, Signal
 import copy
 from typing import Mapping
 
-class ScriptRT(QObject):
+class ScriptModuleRT(QObject):
     script_changed = Signal()
     functions_removed = Signal(list) # list[str]
     functions_added = Signal(list) # list[str]
@@ -37,7 +37,7 @@ class ScriptRT(QObject):
         except Exception as e:
             print(f"Failed to set script due to error: {e}")
 
-    def get_functions(self) -> Mapping[str, callable]:
+    def functions(self) -> Mapping[str, callable]:
         assert isinstance(self._script, str)
         if not self._script:
             return {}
@@ -45,3 +45,5 @@ class ScriptRT(QObject):
         exec(self._script, {}, local_vars)
         return {k: v for k, v in local_vars.items() if callable(v)}
 
+    def get_function(self, name: str) -> callable | None:
+        return self.functions().get(name)

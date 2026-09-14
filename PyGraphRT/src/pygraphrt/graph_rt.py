@@ -1,4 +1,5 @@
 from collections import deque, defaultdict
+from pygraphrt.script_module_rt import ScriptModuleRT
 from pytools import UniqueNameGenerator
 from typing import Callable, Any
 from types import MappingProxyType
@@ -15,13 +16,39 @@ from .operator_rt import OperatorRT
 from .node_rt import NodeRT
 
 
-class GraphRT(QObject):
+class LocalModuleRT:
     operators_added = Signal(list)
     operators_removed = Signal(list)
+    operator_function_changed = Signal(list)
+
+    def __init__(self, graph: "GraphRT"):
+        self._graph = graph
+        self._script_module = ScriptModuleRT()
+
+    def op(self) -> Callable:
+        ...
+
+    def remove_operator(self, operator: OperatorRT):
+        ...
+
+    def operators(self):
+        ...
+
+    def get_operator(self, name: str) -> OperatorRT | None:
+        ...
+
+    def set_operator_function(self, operator: OperatorRT, func: Callable):
+        ...
+        
+
+class GraphRT(QObject):    
+    operators_added = Signal(list)
+    operators_removed = Signal(list)
+    operator_function_changed = Signal(str)
+    
     nodes_added = Signal(list)
     nodes_removed = Signal(list)
     
-    operator_function_changed = Signal(str)
     node_operator_changed = Signal(str)
     node_inputs_changed = Signal(str)
     
@@ -32,10 +59,12 @@ class GraphRT(QObject):
     def __init__(self):
         super().__init__()
         self._operators: set[OperatorRT] = set()
+        self._operators_to_nodes: dict[OperatorRT, set[NodeRT]] = dict()
+
         self._nodes: set[NodeRT] = set()
         self._successors: dict[NodeRT, set[NodeRT]] = defaultdict(set)
         self._profiler:  dict[NodeRT, float] = {}
-        self._operators_to_nodes: dict[OperatorRT, set[NodeRT]] = dict()
+    
         self._cache: dict[tuple, Any] = {}
 
         self._connected_operator_signals: dict[str, list[tuple]] = {}

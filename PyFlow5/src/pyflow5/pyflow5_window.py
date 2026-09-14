@@ -8,7 +8,7 @@ from qtpy.QtCore import QObject, QPoint, QPointF, Qt, Signal
 from qtpy.QtWidgets import QAction
 
 from pygraphrt.operator_rt import OperatorRT
-from pygraphrt.script_rt import ScriptRT
+from pygraphrt.script_module_rt import ScriptModuleRT
 from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
@@ -36,7 +36,6 @@ import pygraphrt as rt
 from pyflow5.pygraphrt_model import PyFlowRtModel
 
 
-
 class PyFlow5Window(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -54,7 +53,7 @@ class PyFlow5Window(QMainWindow):
 
         self._G = rt.GraphRT()
 
-        self._script_rt = ScriptRT(dedent("""\
+        self._script_rt = ScriptModuleRT(dedent("""\
         def one():
             return 1
 
@@ -66,7 +65,7 @@ class PyFlow5Window(QMainWindow):
         """)) 
 
         # add the operators from the script
-        for name, func in self._script_rt.get_functions().items():
+        for name, func in self._script_rt.functions().items():
             self._G.op()(func)
 
         def _on_results_changed():
@@ -119,7 +118,6 @@ class PyFlow5Window(QMainWindow):
 
         self._script_rt.script_changed.connect(_on_script_changed)
         
-            
         def on_functions_removed_from_script(removed: list[str]):
             print(f"Functions removed from script: {removed}")
             for name in removed:
@@ -127,7 +125,7 @@ class PyFlow5Window(QMainWindow):
                     self._G.remove_operator(op)
 
         def on_functions_added_to_script(added: list[str]):
-            functions_map = self._script_rt.get_functions()
+            functions_map = self._script_rt.functions()
             print(f"Functions added to script:")
             for name in added:
                 func = functions_map[name]
@@ -141,7 +139,7 @@ class PyFlow5Window(QMainWindow):
         def on_functions_changed_in_script(changed: list[str]):
             print(f"Functions changed in script")
             for name in changed:
-                func = self._script_rt.get_functions()[name]
+                func = self._script_rt.functions()[name]
                 print(f"    {name}, func: {func}")
             for name in changed:
                 if op := self._G.get_operator(name):
