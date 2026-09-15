@@ -14,43 +14,18 @@ from qtpy.QtCore import (
 
 from .operator_rt import OperatorRT
 from .node_rt import NodeRT
+from .local_module_rt import LocalModuleRT
 
 
-class LocalModuleRT:
-    operators_added = Signal(list)
-    operators_removed = Signal(list)
-    operator_function_changed = Signal(list)
 
-    def __init__(self, graph: "GraphRT"):
-        self._graph = graph
-        self._script_module = ScriptModuleRT()
-
-    def op(self) -> Callable:
-        ...
-
-    def remove_operator(self, operator: OperatorRT):
-        ...
-
-    def operators(self):
-        ...
-
-    def get_operator(self, name: str) -> OperatorRT | None:
-        ...
-
-    def set_operator_function(self, operator: OperatorRT, func: Callable):
-        ...
-        
-
-class GraphRT(QObject):    
-    operators_added = Signal(list)
-    operators_removed = Signal(list)
-    operator_function_changed = Signal(str)
-    
+class GraphRT(QObject):        
     nodes_added = Signal(list)
     nodes_removed = Signal(list)
     
     node_operator_changed = Signal(str)
     node_inputs_changed = Signal(str)
+
+    operator_function_changed = Signal(list)
     
     output_node_changed = Signal()
 
@@ -58,19 +33,17 @@ class GraphRT(QObject):
 
     def __init__(self):
         super().__init__()
-        self._operators: set[OperatorRT] = set()
-        self._operators_to_nodes: dict[OperatorRT, set[NodeRT]] = dict()
-
+        self._local_module = LocalModuleRT(self)
+        self._local_module.operator_function_changed.connect(self.operator_function_changed)
         self._nodes: set[NodeRT] = set()
         self._successors: dict[NodeRT, set[NodeRT]] = defaultdict(set)
         self._profiler:  dict[NodeRT, float] = {}
-    
         self._cache: dict[tuple, Any] = {}
-
-        self._connected_operator_signals: dict[str, list[tuple]] = {}
         self._connected_node_signals: dict[str, list[tuple]] = {}
-
         self._output_node: NodeRT | None = None
+
+    def module(self) -> LocalModuleRT:
+        return self._local_module
 
     def op(self) -> Callable:
         """Decorator to create and add an operator to the graph.
@@ -80,46 +53,16 @@ class GraphRT(QObject):
             def my_operator(...):
                 ...
         """
-        def decorator(func: Callable) -> OperatorRT:
-            current_operator_names = [op.get_name() for op in self._operators]
-            assert func.__name__ not in current_operator_names, f"Cannot add operator with duplicate name: {func.__name__}"
-            operator = OperatorRT(self, func.__name__, func)
-            self._operators.add(operator)
-            self._operators_to_nodes[operator] = set()
-            self.operators_added.emit([operator.get_name()])
-
-            # forward operator signals
-            self._connected_operator_signals[operator.get_name()] = [
-                (operator.function_changed, lambda: self.operator_function_changed.emit(operator.get_name()))
-            ]
-            for signal, slot in self._connected_operator_signals[operator.get_name()]:
-                signal.connect(slot)
-                
-            return operator
-        return decorator
+        return self._local_module.op()
 
     def operators(self) -> dict[str, OperatorRT]:
-        return {op.get_name(): op for op in self._operators}
+        return {name: op for name, op in self._local_module.operators().items()}
 
     def get_operator(self, name: str) -> OperatorRT | None:
-        for op in self._operators:
-            if op.get_name() == name:
-                return op
-        return None
+        return self._local_module.get_operator(name)
 
     def remove_operator(self, operator: OperatorRT):
-        assert operator in self._operators, f"Operator {operator} does not exist in the engine."
-        assert operator in self._operators_to_nodes, f"Operator {operator} is not associated with any nodes."
-
-        nodes = list(self._operators_to_nodes[operator])
-        for node in nodes:
-            node.set_operator(None)
-
-        del self._operators_to_nodes[operator]
-        self._operators.remove(operator)
-        self.operators_removed.emit([operator.get_name()])
-        for signal, slot in self._connected_operator_signals[operator.get_name()]:
-            signal.disconnect(slot)
+        self._local_module.remove_operator(operator)
 
     def node(self, *args: NodeRT | Any, **kwargs: NodeRT | Any) -> "NodeRT | Callable":
         def decorator(func: Callable | OperatorRT, name: str|None=None) -> NodeRT:
@@ -127,7 +70,7 @@ class GraphRT(QObject):
 
             # create operator
             if isinstance(func, OperatorRT):
-                if func not in self._operators:
+                if func not in self._local_module._operators:
                     raise ValueError(f"Operator {func} must be added to the graph before creating a node.")
                 operator = func
             else:
@@ -138,7 +81,6 @@ class GraphRT(QObject):
             node = NodeRT(self, operator, name)
             node.set_inputs(*args, **kwargs)
             self._nodes.add(node)
-            self._operators_to_nodes[operator].add(node)
             self.nodes_added.emit([node.get_name()])
 
             # forward operator signals
@@ -163,9 +105,6 @@ class GraphRT(QObject):
 
     def remove_node(self, node: NodeRT):
         assert node in self._nodes, f"Node {node} does not exist in the engine."
-
-        if node.get_operator():
-            self._operators_to_nodes[node.get_operator()].remove(node)
 
         for successor_node in list(self._successors[node]):
             args = tuple(arg for arg in successor_node._args if arg != node)
@@ -294,7 +233,7 @@ class GraphRT(QObject):
     def to_dict(self, explicit:bool=False) -> dict:
         """Returns a dictionary representation of the graph."""
         operators:dict[str, OperatorRT] = {}
-        for op in self._operators:
+        for op in self._local_module.operators():
             operators[op.get_name()] = op.get_source()
 
         nodes = {}

@@ -22,6 +22,7 @@ def _assert_hashable_inputs(*args, **kwargs) -> None:
             except TypeError:
                 raise TypeError(f"Literal input {k!r} is not hashable ({type(v).__name__!r}). Unhashable inputs are not yet supported.") from None
 
+import weakref
 
 class NodeRT(QObject):
     inputs_changed = Signal()
@@ -31,7 +32,7 @@ class NodeRT(QObject):
         super().__init__()
         assert isinstance(operator, OperatorRT), "operator must be an instance of OperatorRT"
         self._name = name
-        self._operator: OperatorRT = operator
+        self._operator: weakref.ReferenceType[OperatorRT] | None = weakref.ref(operator) if operator is not None else None
         self._args: tuple = ()
         self._kwargs: dict[str, Any] = {}
         self._graph: GraphRT = graph
@@ -58,7 +59,10 @@ class NodeRT(QObject):
         self.operator_changed.emit()
 
     def get_operator(self) -> OperatorRT|None:
-        return self._operator
+        if self._operator:
+            return self._operator()
+        else:
+            return None
 
     def get_inputs(self) -> tuple[tuple, dict[str, Any]]:
         return tuple(self._args), {k: v for k, v in self._kwargs.items()}
@@ -88,6 +92,10 @@ class NodeRT(QObject):
         self.inputs_changed.emit()
 
     def __call__(self, *args, **kwargs):
-        if self._operator is None:
+        operator_ref = self._operator
+        if operator_ref is None:
             raise ValueError(f"Node {self._name} has no operator.")
-        return self._operator(*args, **kwargs)
+        elif operator_ref() is None:
+            raise ValueError(f"Node {self._name} has an invalid operator.")
+        else:
+            return operator_ref()(*args, **kwargs)
