@@ -3,6 +3,7 @@ from qtpy.QtCore import QObject, Signal
 import copy
 from typing import Mapping
 
+
 class ScriptModuleRT(QObject):
     script_changed = Signal()
     functions_removed = Signal(list) # list[str]
