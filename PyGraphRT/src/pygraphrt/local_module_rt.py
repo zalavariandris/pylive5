@@ -5,10 +5,11 @@ from qtpy.QtCore import (
 )
 from typing import Callable
 
+
 class LocalModuleRT(QObject):
-    operators_added = Signal(list)
-    operators_removed = Signal(list)
-    operator_function_changed = Signal(list)
+    operators_added = Signal(list) # list[str]
+    operators_removed = Signal(list) # list[str]
+    operator_function_changed = Signal(list) # list[str]
 
     def __init__(self, graph: "GraphRT"):
         super().__init__()
