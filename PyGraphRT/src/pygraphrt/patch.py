@@ -37,17 +37,17 @@ def patch(graph1: GraphRT, graph2: GraphRT):
                 for key, value in values:
                     func = func_from_source(value)
                     assert func.__name__ == key, f"Function name '{func.__name__}' does not match expected operator name '{key}'"
-                    graph1.op()(func) # add operator to graph
+                    graph1.module().op()(func) # add operator to graph
 
             case 'remove', ():
                 for key, value in values:
-                    op = graph1.get_operator(key)
+                    op = graph1.module().get_operator(key)
                     assert op is not None, f"Operator '{key}' not found in graph1"
-                    graph1.remove_operator(op) # remove operator from graph
+                    graph1.module().remove_operator(op) # remove operator from graph
 
             case 'change', (_, ):
                 operator_name = path[0]
-                op = graph1.get_operator(operator_name)
+                op = graph1.module().get_operator(operator_name)
                 assert op is not None, f"Operator '{operator_name}' not found in graph1"
                 prev_value, next_value = values
                 func = func_from_source(next_value)
@@ -64,7 +64,7 @@ def patch(graph1: GraphRT, graph2: GraphRT):
                 # raise NotImplementedError(f"Adding new nodes is not implemented yet. {action}, {path}, {value}")
                 for node_name, node_data in values:
                     op_name = node_data['operator']
-                    op = graph1.get_operator(op_name) # ensure operator exists
+                    op = graph1.module().get_operator(op_name) # ensure operator exists
                     new_args = _resolve_args(graph1, node_data.get('args', ()))
                     new_kwargs = _resolve_kwargs(graph1, node_data.get('kwargs', {}))
                     n = graph1.node(*new_args, **new_kwargs)(op, node_name) # add node to graph

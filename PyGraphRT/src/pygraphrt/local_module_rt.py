@@ -35,7 +35,7 @@ class LocalModuleRT(QObject):
 
             # forward operator signals
             self._connected_operator_signals[operator.get_name()] = [
-                (operator.function_changed, lambda: self.operator_function_changed.emit(operator.get_name()))
+                (operator.function_changed, lambda: self.operator_function_changed.emit([operator.get_name()]))
             ]
             for signal, slot in self._connected_operator_signals[operator.get_name()]:
                 signal.connect(slot)

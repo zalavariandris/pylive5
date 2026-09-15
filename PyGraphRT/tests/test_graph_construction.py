@@ -6,7 +6,7 @@ from textwrap import dedent
 def test_nodes_sharing_operator_have_unique_names():
     graph = rt.GraphRT()
 
-    @graph.op()
+    @graph.module().op()
     def identity(value):
         return value
 
@@ -28,7 +28,7 @@ def test_nodes_sharing_operator_have_unique_names():
 def test_generated_node_names_avoid_explicit_names():
     graph = rt.GraphRT()
 
-    @graph.op()
+    @graph.module().op()
     def identity(value):
         return value
 
@@ -44,11 +44,11 @@ def test_generated_node_names_avoid_explicit_names():
 def test_operator_decorator():
     graph = rt.GraphRT()
     
-    @graph.op()
+    @graph.module().op()
     def add(a:int, b:int) -> int:
         return a + b
 
-    @graph.op()
+    @graph.module().op()
     def mult(a:int, b:int) -> int:
         return a * b
 

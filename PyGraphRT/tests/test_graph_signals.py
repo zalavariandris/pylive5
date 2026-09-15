@@ -10,7 +10,7 @@ def test_operator_added_signal():
     G = rt.GraphRT()
     spy = QSignalSpy(G.operators_added)
 
-    @G.op()
+    @G.module().op()
     def my_operator(x):
         return x * 2
 
@@ -21,11 +21,11 @@ def test_operator_removed_signal():
     G = rt.GraphRT()
     spy = QSignalSpy(G.operators_removed)
 
-    @G.op()
+    @G.module().op()
     def my_operator(x):
         return x * 2
 
-    G.remove_operator(my_operator)
+    G.module().remove_operator(my_operator)
     assert len(spy) == 1, "operators_removed signal should have been emitted once"
     assert my_operator.get_name() in spy[0][0], "operators_removed signal should contain the name of the removed operator"
 
@@ -33,7 +33,7 @@ def test_operator_function_changed_signal():
     G = rt.GraphRT()
     spy = QSignalSpy(G.operator_function_changed)
 
-    @G.op()
+    @G.module().op()
     def my_operator(x):
         return x * 2
 
@@ -83,11 +83,11 @@ def test_node_operator_changed_signal():
     G = rt.GraphRT()
     spy = QSignalSpy(G.node_operator_changed)
 
-    @G.op()
+    @G.module().op()
     def first_operator(x):
         return x * 2
 
-    @G.op()
+    @G.module().op()
     def second_operator(x):
         return x + 1
 

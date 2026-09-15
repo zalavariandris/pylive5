@@ -66,7 +66,7 @@ class PyFlow5Window(QMainWindow):
 
         # add the operators from the script
         for name, func in self._script_rt.functions().items():
-            self._G.op()(func)
+            self._G.moop()(func)
 
         def _on_results_changed():
             try:
@@ -121,8 +121,8 @@ class PyFlow5Window(QMainWindow):
         def on_functions_removed_from_script(removed: list[str]):
             print(f"Functions removed from script: {removed}")
             for name in removed:
-                if op := self._G.get_operator(name):
-                    self._G.remove_operator(op)
+                if op := self._G.module().get_operator(name):
+                    self._G.module().remove_operator(op)
 
         def on_functions_added_to_script(added: list[str]):
             functions_map = self._script_rt.functions()
@@ -132,9 +132,9 @@ class PyFlow5Window(QMainWindow):
                 print(f"    {name}, func: {func}")
 
             for name in added:
-                assert name not in self._G.operators().keys(), f"Operator {name} already exists"
+                assert name not in self._G.module().operators().keys(), f"Operator {name} already exists"
                 func = functions_map[name]
-                self._G.op()(func)
+                self._G.module().op()(func)
 
         def on_functions_changed_in_script(changed: list[str]):
             print(f"Functions changed in script")
@@ -142,7 +142,7 @@ class PyFlow5Window(QMainWindow):
                 func = self._script_rt.functions()[name]
                 print(f"    {name}, func: {func}")
             for name in changed:
-                if op := self._G.get_operator(name):
+                if op := self._G.module().get_operator(name):
                     op.set_function(func)
 
         self._script_rt.functions_added.connect(on_functions_added_to_script)
@@ -201,7 +201,7 @@ class PyFlow5Window(QMainWindow):
             print("Output node cleared")
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
-        operators_map:dict[str, OperatorRT] = self._G.operators()
+        operators_map:dict[str, OperatorRT] = self._G.module().operators()
         dialog = OperatorSelectionDialog(operators_map.keys(), self)
         if dialog.exec_() == QDialog.Accepted:
             if selected_op_name := dialog.selected_operator():

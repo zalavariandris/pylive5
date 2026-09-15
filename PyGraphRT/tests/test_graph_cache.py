@@ -5,7 +5,7 @@ def test_if_cache_is_used():
     G = rt.GraphRT()
     call_count = 0
 
-    @G.op()
+    @G.module().op()
     def add_op(a: int, b: int) -> int:
         nonlocal call_count
         call_count += 1
@@ -22,11 +22,11 @@ def test_if_cache_is_used():
 def test_upstream_input_change_invalidates_doWwnstream_cache():
     G = rt.GraphRT()
 
-    @G.op()
+    @G.module().op()
     def add_op(a: int, b: int) -> int:
         return a + b
 
-    @G.op()
+    @G.module().op()
     def mult_op(a: int, b: int) -> int:
         return a * b
 
@@ -43,7 +43,7 @@ def test_upstream_input_change_invalidates_doWwnstream_cache():
 def test_operator_function_change_invalidates_cache():
     G = rt.GraphRT()
 
-    @G.op()
+    @G.module().op()
     def add_op(a: int, b: int) -> int:
         return a + b
 
@@ -62,11 +62,11 @@ def test_operator_function_change_invalidates_cache():
 def test_upstream_operator_function_change_invalidates_downstream_cache():
     G = rt.GraphRT()
 
-    @G.op()
+    @G.module().op()
     def add_op(a: int, b: int) -> int:
         return a + b
 
-    @G.op()
+    @G.module().op()
     def mult_op(a: int, b: int) -> int:
         return a * b
 

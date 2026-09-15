@@ -5,7 +5,7 @@ from textwrap import dedent
 def test_operator_getsource():
     G = rt.GraphRT()
 
-    @G.op()
+    @G.module().op()
     def add(a:int, b:int) -> int:
         return a + b
     print(add.get_source())

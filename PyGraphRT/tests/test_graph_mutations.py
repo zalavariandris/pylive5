@@ -58,11 +58,11 @@ def test_remove_node_from_graph():
 def test_set_operator_function_with_same_signature():
     G = rt.GraphRT()
 
-    @G.op()
+    @G.module().op()
     def add_op(a:int, b:int) -> int:
         return a + b
 
-    @G.op()
+    @G.module().op()
     def mult_op(a:int, b:int) -> int:
         return a * b
 
@@ -87,7 +87,7 @@ def test_remove_operator_from_graph():
     def two() -> int:
         return 2
 
-    @G.op()
+    @G.module().op()
     def add_op(a:int, b:int) -> int:
         return a + b
 
@@ -101,7 +101,7 @@ def test_remove_operator_from_graph():
     assert result == 9, "Node should compute (1 + 2) * 3 = 9"
 
     # now remove the node
-    G.remove_operator(add_op)
+    G.module().remove_operator(add_op)
     with pytest.raises(ValueError):
         result = G.execute(mult)
 
@@ -123,7 +123,7 @@ def test_setting_output():
 def test_set_operator_function_with_different_signature():
     G = rt.GraphRT()
 
-    @G.op()
+    @G.module().op()
     def the_op(a:int, b:int) -> int:
         return a + b
 

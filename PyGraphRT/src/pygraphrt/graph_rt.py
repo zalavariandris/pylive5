@@ -45,25 +45,6 @@ class GraphRT(QObject):
     def module(self) -> LocalModuleRT:
         return self._local_module
 
-    def op(self) -> Callable:
-        """Decorator to create and add an operator to the graph.
-
-        Usage:
-            @graph.op()
-            def my_operator(...):
-                ...
-        """
-        return self._local_module.op()
-
-    def operators(self) -> dict[str, OperatorRT]:
-        return {name: op for name, op in self._local_module.operators().items()}
-
-    def get_operator(self, name: str) -> OperatorRT | None:
-        return self._local_module.get_operator(name)
-
-    def remove_operator(self, operator: OperatorRT):
-        self._local_module.remove_operator(operator)
-
     def node(self, *args: NodeRT | Any, **kwargs: NodeRT | Any) -> "NodeRT | Callable":
         def decorator(func: Callable | OperatorRT, name: str|None=None) -> NodeRT:
             assert callable(func) or isinstance(func, OperatorRT), "func must be a callable function or an instance of OperatorRT"
@@ -74,7 +55,7 @@ class GraphRT(QObject):
                     raise ValueError(f"Operator {func} must be added to the graph before creating a node.")
                 operator = func
             else:
-                operator = self.op()(func)
+                operator = self.module().op()(func)
 
             if name is None:
                 name = UniqueNameGenerator(existing_names=self.nodes())(operator.get_name())

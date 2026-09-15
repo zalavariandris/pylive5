@@ -8,7 +8,7 @@ def test_add_op():
     G2 = rt.utils.graph_from_script(dedent("""\n
     import pygraphrt as rt 
     G = rt.GraphRT()
-    @G.op()
+    @G.module().op()
     def const1():
         return 1
     """), 'G')
@@ -19,7 +19,7 @@ def test_add_op():
 
 def test_remove_op():
     G1 = rt.GraphRT()
-    @G1.op()
+    @G1.module().op()
     def const1():
         return 1
 
@@ -293,7 +293,7 @@ def test_replace_node_name_with_links():
     """), 'G')
 
     rt.patch(G, G2)
-    assert G.operators().keys() == {'const1', 'const2', 'hello'}
+    assert G.module().operators().keys() == {'const1', 'const2', 'hello'}
     assert G.nodes().keys() == {'const1', 'const2', 'hello'}
     inputs = G.get_node('hello').get_inputs()[0]
     assert {arg.get_name() for arg in inputs} == {'const1', 'const2'}
