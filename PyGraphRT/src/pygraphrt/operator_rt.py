@@ -87,7 +87,7 @@ class OperatorRT(QObject):
         return self.get_name() == other.get_name()
 
     def __hash__(self):
-        return hash(("Node", self.get_name()))
+        return hash(("Operator", self.get_name()))
 
     def __call__(self, *args, **kwargs):
         """Calls the function, with the given arguments."""

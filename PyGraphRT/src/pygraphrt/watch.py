@@ -35,7 +35,7 @@ class Watcher:
                     self._ancestor_names = [n.get_name() for n in self._graph().ancestors(self._node())]
                     self._callback()
             case 'operator':
-                ancestor_operator_names = [n.get_operator().get_name() for n in self._graph().ancestors(self._node())]
+                ancestor_operator_names = [n.get_operator().key() for n in self._graph().ancestors(self._node())]
                 if obj in ancestor_operator_names:
                     self._callback()
 

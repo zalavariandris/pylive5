@@ -54,7 +54,7 @@ def test_operator_decorator():
 
     add_node2 = graph.node(1,1)(add)
     add_node3 = graph.node(3,5)(add)
-    mult_node = graph.node(add_node2,add_node3)(mult)
+    mult_node = graph.node(add_node2, add_node3)(mult)
 
     result = graph.execute(mult_node)
     assert result == 16, "Decorator should create an operator that computes (1 + 1) * (3 + 5) = 48"

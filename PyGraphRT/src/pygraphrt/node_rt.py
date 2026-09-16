@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
+from .local_module_rt import OperatorRTRef
 from qtpy.QtCore import QObject, Signal
 
 if TYPE_CHECKING:
@@ -28,11 +29,11 @@ class NodeRT(QObject):
     inputs_changed = Signal()
     operator_changed = Signal()
 
-    def __init__(self, graph:'GraphRT', operator: OperatorRT, name: str):
+    def __init__(self, graph:'GraphRT', operator: OperatorRTRef, name: str):
         super().__init__()
-        assert isinstance(operator, OperatorRT), "operator must be an instance of OperatorRT"
+        assert isinstance(operator, OperatorRTRef), "operator must be an instance of OperatorRef"
         self._name = name
-        self._operator: weakref.ReferenceType[OperatorRT] | None = weakref.ref(operator) if operator is not None else None
+        self._operator: OperatorRTRef | None = operator
         self._args: tuple = ()
         self._kwargs: dict[str, Any] = {}
         self._graph: GraphRT = graph
@@ -40,10 +41,10 @@ class NodeRT(QObject):
     def get_name(self) -> str:
         return self._name
 
-    def set_operator(self, operator: OperatorRT | None):
+    def set_operator(self, operator: OperatorRTRef | None):
         """Sets the operator of the node."""
-        if not isinstance(operator, (OperatorRT, type(None))):
-            raise TypeError("operator must be an instance of OperatorRT")
+        if not isinstance(operator, (OperatorRTRef, type(None))):
+            raise TypeError("operator must be an instance of OperatorRef")
         
         if operator is not None and operator not in self._graph._operators:
             raise ValueError("operator must be part of the graph")
@@ -58,9 +59,9 @@ class NodeRT(QObject):
 
         self.operator_changed.emit()
 
-    def get_operator(self) -> OperatorRT|None:
+    def get_operator(self) -> OperatorRTRef|None:
         if self._operator:
-            return self._operator()
+            return self._operator
         else:
             return None
 
@@ -92,10 +93,7 @@ class NodeRT(QObject):
         self.inputs_changed.emit()
 
     def __call__(self, *args, **kwargs):
-        operator_ref = self._operator
-        if operator_ref is None:
+        if self._operator is None:
             raise ValueError(f"Node {self._name} has no operator.")
-        elif operator_ref() is None:
-            raise ValueError(f"Node {self._name} has an invalid operator.")
         else:
-            return operator_ref()(*args, **kwargs)
+            return self._operator(*args, **kwargs)

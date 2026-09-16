@@ -55,30 +55,6 @@ def test_remove_node_from_graph():
     with pytest.raises(TypeError):
         result = G.execute(mult)
 
-def test_set_operator_function_with_same_signature():
-    G = rt.GraphRT()
-
-    @G.module().op()
-    def add_op(a:int, b:int) -> int:
-        return a + b
-
-    @G.module().op()
-    def mult_op(a:int, b:int) -> int:
-        return a * b
-
-    add_node = G.node(1, 2)(add_op)
-    mult_node = G.node(add_node, 3)(mult_op)
-
-    result = G.execute(mult_node)
-    assert result == 9, "Node should compute (1 + 2) * 3 = 9"
-
-    # now change the function of the add operator to multiply
-    def divide(a:int, b:int) -> int:
-        return a / b
-    
-    mult_op.set_function(divide)
-    result = G.execute(mult_node)
-    assert result == 1, "Node should compute (1 + 2) / 3 = 1 after changing add to divide"
 
 def test_remove_operator_from_graph():
     G = rt.GraphRT()
@@ -120,24 +96,73 @@ def test_setting_output():
     result = G.execute(add)
     assert result == 5, "Node should compute 2 + 3 = 5"
 
-def test_set_operator_function_with_different_signature():
-    G = rt.GraphRT()
+class TestUpdatingOperatorFunction:
+    def test_update_operator_body(self):
+        G = rt.GraphRT()
 
-    @G.module().op()
-    def the_op(a:int, b:int) -> int:
-        return a + b
+        @G.module().op()
+        def add_op(a:int, b:int) -> int:
+            return a + b
 
-    add_node = G.node(1, 2)(the_op)
-    result = G.execute(add_node)
-    assert result == 3, "Node should compute 1 + 2 = 3"
+        add_op = add
 
-    # now change the function of the add operator to a function with a different signature
-    def add_three(a:int, b:int, c:int) -> int:
-        return a + b + c
-
-    the_op.set_function(add_three)
-    with pytest.raises(TypeError):
+        add_node = G.node(1, 2)(add_op)
         result = G.execute(add_node)
+        assert result == 3, "Node should compute 1 + 2 = 3"
+
+        # now update the body of the add operator
+        def add(a:int, b:int) -> int:
+            return a + b + 1
+
+        G.module().update_operator(add_op, func=add)
+
+        result = G.execute(add_node)
+        assert result == 4, "Node should compute 1 + 2 + 1 = 4 after updating operator body"
+
+    def test_set_operator_function_with_different_signature(self):
+        G = rt.GraphRT()
+
+        @G.module().op()
+        def the_op(a:int, b:int) -> int:
+            return a + b
+
+        add_node = G.node(1, 2)(the_op)
+        result = G.execute(add_node)
+        assert result == 3, "Node should compute 1 + 2 = 3"
+
+        # now change the function of the add operator to a function with a different signature
+        def add_three(a:int, b:int, c:int) -> int:
+            return a + b + c
+
+        with pytest.raises(ValueError):
+            G.module().update_operator(the_op, func=add_three)
+
+    def test_set_operator_function_with_same_signature(self):
+        G = rt.GraphRT()
+
+        @G.module().op()
+        def add_op(a:int, b:int) -> int:
+            return a + b
+
+        @G.module().op()
+        def mult_op(a:int, b:int) -> int:
+            return a * b
+
+        add_node = G.node(1, 2)(add_op)
+        mult_node = G.node(add_node, 3)(mult_op)
+
+        result = G.execute(mult_node)
+        assert result == 9, "Node should compute (1 + 2) * 3 = 9"
+
+        # now change the function of the add operator to multiply
+        def divide(a:int, b:int) -> int:
+            return a / b
+
+        G.module().update_operator(mult_op, func=divide)
+
+        result = G.execute(mult_node)
+        assert result == 1, "Node should compute (1 + 2) / 3 = 1 after changing add to divide"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"]) 
