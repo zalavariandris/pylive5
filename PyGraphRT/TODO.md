@@ -11,6 +11,10 @@
 
 
 ## Architecture
+- [ ] Investigate operator fingerprints in ScriptModuleRT. Re-executing a script
+      recreates unchanged functions and changes their fingerprints despite selective
+      change signals. Review stable fingerprints for unaffected operators, module
+      ownership, and changes through globals, helpers, and imported callables.
 - GraphRT execution should be deterministic. Same inputs result the same outputs.
   make sure, GraphRT after mutated behaves the same as GraphRT jsut initialized.
 

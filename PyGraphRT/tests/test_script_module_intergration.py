@@ -100,5 +100,36 @@ def test_updating_script_signals():
     assert removed == ["one"]
     assert changed == ["pow"]
 
+
+def test_explicit_filename_changes_execution_context_and_is_retained_for_edits():
+    source = "def location():\n    return __name__, __file__\n"
+    module = ScriptModuleRT("tools", source, filename="first.py")
+    location = module.get_operator("location")
+    assert location() == ("tools", "first.py")
+
+    module.set_script(source, filename="second.py")
+    assert module.get_operator("location") is location
+    assert location() == ("tools", "second.py")
+
+    module.set_script(source + "# edit\n")
+    assert location() == ("tools", "second.py")
+    assert module._get_function(location).__code__.co_filename == "second.py"
+
+
+def test_failed_update_preserves_the_last_accepted_filename():
+    source = "def location():\n    return __file__\n"
+    module = ScriptModuleRT("tools", source, filename="accepted.py")
+    failures = []
+    module.script_failed.connect(failures.append)
+
+    module.set_script("def broken(:\n", filename="broken.py")
+
+    assert len(failures) == 1
+    assert isinstance(failures[0], SyntaxError)
+    assert module.get_script() == source
+    module.set_script(source + "# edit\n")
+    assert module.get_operator("location")() == "accepted.py"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

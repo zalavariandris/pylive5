@@ -1,117 +1,138 @@
 import inspect
 from types import MappingProxyType
+from typing import Any, Callable, Hashable, Mapping
 
-from pygraphrt.operator_rt import ParameterRT
-from pygraphrt.operator_rt_ref import OperatorRTRef
-from pygraphrt.source_diff import ast_functions_diff, FunctionsDiff
-from qtpy.QtCore import QObject, Signal
-import copy
-from typing import TYPE_CHECKING, Any, Callable, Hashable, Mapping
-
+from qtpy.QtCore import Signal
 
 from .abstract_module_rt import AbstractModuleRT
+from .operator_rt import ParameterRT
+from .operator_rt_ref import OperatorRTRef
+from .source_diff import ast_functions_diff
 
-if TYPE_CHECKING:
-    from .graph_rt import GraphRT
 
-
-def _get_all_functions_from_script(script: str) -> Mapping[str, Callable]:
-    assert isinstance(script, str)
-    if not script:
-        return {}
-    local_vars:dict[str, Any] = {}
-    exec(script, {}, local_vars)
-    return {k: v for k, v in local_vars.items() if callable(v)}
+def _get_all_functions_from_script(
+    script: str, *, name: str, filename: str
+) -> dict[str, Callable]:
+    namespace: dict[str, Any] = {"__name__": name, "__package__": ""}
+    if filename != "<string>":
+        namespace["__file__"] = filename
+    exec(compile(script, filename, "exec"), namespace)
+    return {key: value for key, value in namespace.items() if callable(value)}
 
 
 class ScriptModuleRT(AbstractModuleRT):
+    """An editable script runtime exporting callable module-level bindings.
+
+    Updates execute in a fresh shared namespace and commit before emitting signals.
+    Operator change notifications use structural function differences; changes to
+    globals and dependencies are not tracked by this analysis.
+    """
+
     script_changed = Signal()
+    script_failed = Signal(object)
 
-    def __init__(self, name:str, script=""):
+    def __init__(self, name: str, script: str = "", *, filename: str = "<string>"):
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
+        if not isinstance(script, str):
+            raise TypeError("script must be a string")
+        if not isinstance(filename, str):
+            raise TypeError("filename must be a string")
         super().__init__(name)
-        assert isinstance(name, str)
-        assert isinstance(script, str)
-
         self._script = script
-        self._functions: dict[str, Callable] = _get_all_functions_from_script(script)
-        self._operators_cache: dict[str, OperatorRTRef] = {key: OperatorRTRef(self, key) for key in self._functions}
+        self._filename = filename
+        self._functions = _get_all_functions_from_script(
+            script, name=name, filename=self._filename
+        )
+        self._operators_cache = {
+            key: OperatorRTRef(self, key) for key in self._functions
+        }
 
     def get_script(self) -> str:
-        return copy.copy(self._script)
+        return self._script
 
-    def set_script(self, script: str):
-        if script == self._script:
-            return
+    def set_script(self, script: str, *, filename: str | None = None) -> None:
+        """Apply source and optional filename, retaining accepted state on failure."""
         try:
-            self._functions = _get_all_functions_from_script(script)
-            functions_diff:FunctionsDiff = ast_functions_diff(self._script, script)
-            self._script = script
-            self.script_changed.emit()
-            if functions_diff.removed:
-                removed_keys:list[str] = list(functions_diff.removed)
-                for key in removed_keys:
-                    assert key in self._operators_cache
-                    del self._operators_cache[key]
-                self.operators_removed.emit(removed_keys)
+            self._apply_script(script, filename=filename)
+        except Exception as error:
+            self.script_failed.emit(error)
+            print(f"Failed to set script due to error: {error}")
 
-            if functions_diff.added:
-                added_keys:list[str] = list(functions_diff.added)
-                for key in added_keys:
-                    assert key not in self._operators_cache
-                    self._operators_cache[key] = OperatorRTRef(self, key)
+    def _apply_script(self, script: str, *, filename: str | None = None) -> None:
+        if not isinstance(script, str):
+            raise TypeError("script must be a string")
+        if filename is None:
+            filename = self._filename
+        if not isinstance(filename, str):
+            raise TypeError("filename must be a string")
+        if script == self._script and filename == self._filename:
+            return
 
-                self.operators_added.emit(added_keys)
+        # Prepare the complete next state before notifying observers.
+        functions = _get_all_functions_from_script(
+            script, name=self.name(), filename=filename
+        )
+        functions_diff = ast_functions_diff(self._script, script)
+        previous_names = self._functions.keys()
+        next_names = functions.keys()
+        removed = sorted(previous_names - next_names)
+        added = sorted(next_names - previous_names)
+        # AST names can include nested functions; exports are actual bindings.
+        changed = sorted(previous_names & next_names & functions_diff.changed)
+        operators = {
+            key: self._operators_cache[key]
+            if key in self._operators_cache else OperatorRTRef(self, key)
+            for key in functions
+        }
 
-            if functions_diff.changed:
-                changed_keys:list[str] = list(functions_diff.changed)
-                for key in changed_keys:
-                    assert key in self._operators_cache
-                    self._operators_cache[key] = OperatorRTRef(self, key)
-                self.operators_changed.emit(changed_keys)
+        self._script = script
+        self._filename = filename
+        self._functions = functions
+        self._operators_cache = operators
 
-        except SyntaxError as e:
-            print(f"Failed to set script due to syntax error: {e}")
-
-        except Exception as e:
-            print(f"Failed to set script due to error: {e}")
+        self.script_changed.emit()
+        if removed:
+            self.operators_removed.emit(removed)
+        if added:
+            self.operators_added.emit(added)
+        if changed:
+            self.operators_changed.emit(changed)
 
     def operators(self) -> Mapping[str, OperatorRTRef]:
-        return {
-            k: v 
-            for k, v in self._operators_cache.items()
-        }
+        return dict(self._operators_cache)
 
     def get_operator(self, name: str) -> OperatorRTRef | None:
         return self._operators_cache.get(name)
 
     def isValid(self, operator: OperatorRTRef) -> bool:
-        return operator._key in self._operators_cache
+        return (
+            isinstance(operator, OperatorRTRef)
+            and operator.module is self
+            and operator.key() in self._functions
+        )
+
+    def _get_function(self, operator: OperatorRTRef) -> Callable:
+        if not self.isValid(operator):
+            raise ValueError(f"Operator {operator!r} is not available in module {self.name()!r}.")
+        return self._functions[operator.key()]
 
     def get_parameters(self, operator: OperatorRTRef) -> MappingProxyType[str, ParameterRT]:
-        if operator._key not in self._operators_cache:
+        if not self.isValid(operator):
             return MappingProxyType({})
-        func = self._functions.get(operator._key)
-        if func is None:
-            return MappingProxyType({})
-        
-        sig = inspect.signature(func)
 
+        signature = inspect.signature(self._get_function(operator))
         return MappingProxyType({
-            param.name: ParameterRT(
-                name=param.name, 
-                annotation=param.annotation,
-                default=param.default,
+            parameter.name: ParameterRT(
+                name=parameter.name,
+                annotation=parameter.annotation,
+                default=parameter.default,
             )
-            for param in sig.parameters.values()
+            for parameter in signature.parameters.values()
         })
 
     def fingerprint(self, operator: OperatorRTRef) -> Hashable:
-        key = operator._key
-        return hash((key, self._functions[key]))
+        return hash((operator.key(), self._get_function(operator)))
 
     def call(self, op: OperatorRTRef, *args, **kwargs):
-        assert isinstance(op, OperatorRTRef)
-        func = self._functions.get(op._key)
-        if func is None:
-            raise ValueError(f"Operator {op._key} not found in script.")
-        return func(*args, **kwargs)
+        return self._get_function(op)(*args, **kwargs)

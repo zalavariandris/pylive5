@@ -2,9 +2,11 @@ from textwrap import dedent
 
 import pytest
 
+from pygraphrt.abstract_module_rt import AbstractModuleRT
 from pygraphrt.graph_rt import GraphRT
 from pygraphrt.import_module_rt import ImportModuleRT
 from pygraphrt.operator_rt import ParameterRT
+from pygraphrt.script_module_rt import ScriptModuleRT
 from pygraphrt.watch import watch
 
 
@@ -31,7 +33,10 @@ def test_loads_imports_globals_helpers_aliases_and_parameters(tmp_path, path_typ
     """)
     module = ImportModuleRT("tools", path_type(path), watch=False)
 
-    assert module.path() == path
+    assert isinstance(module, AbstractModuleRT)
+    assert not isinstance(module, ScriptModuleRT)
+    assert type(module.script_module) is ScriptModuleRT
+    assert module.file_binding.path() == path
     assert module.get_script() == path.read_text(encoding="utf-8")
     assert set(module.operators()) == {"sqrt", "helper", "result", "alias"}
     result = module.get_operator("result")
@@ -63,11 +68,11 @@ def test_edits_save_and_reload_preserve_operator_handles(tmp_path):
     module.set_script(edited)
     assert value() == "árvíz"
     assert path.read_text(encoding="utf-8") == initial
-    module.save()
+    module.file_binding.save()
     assert path.read_text(encoding="utf-8") == edited
 
     path.write_text(external, encoding="utf-8")
-    module.reload()
+    module.file_binding.reload()
     assert module.get_operator("value") is value
     assert module.get_script() == external
     assert value() == "external"
@@ -81,42 +86,50 @@ def test_opening_identical_source_at_another_path_updates_file_context(tmp_path)
     location = module.get_operator("location")
     fingerprint = location.fingerprint()
 
-    module.open(str(second))
+    module.file_binding.open(str(second))
 
-    assert module.path() == second
+    assert module.file_binding.path() == second
     assert module.get_operator("location") is location
     assert location() == ("tools", str(second))
     assert location.fingerprint() != fingerprint
-    assert module._get_function(location).__code__.co_filename == str(second)
+    wrapped_location = module.script_module.get_operator("location")
+    assert module.script_module._get_function(wrapped_location).__code__.co_filename == str(second)
 
 
-@pytest.mark.parametrize("action", ["set_script", "reload", "open"])
+@pytest.mark.parametrize("action", ["set_script", "set_text", "reload", "open"])
 @pytest.mark.parametrize("bad_source, error", [
     ("def broken(:\n", SyntaxError),
     ("def replacement():\n    return 99\nraise RuntimeError('failed')\n", RuntimeError),
 ])
-def test_failed_updates_keep_the_last_accepted_state(tmp_path, action, bad_source, error):
+def test_failed_updates_keep_the_last_accepted_runtime(tmp_path, action, bad_source, error):
     source = "def value():\n    return 1\n"
     path = write_source(tmp_path / "operators.py", source)
     module = ImportModuleRT("tools", path, watch=False)
     value = module.get_operator("value")
     fingerprint = value.fingerprint()
     events = []
+    failures = []
+    module.script_failed.connect(failures.append)
     module.script_changed.connect(lambda: events.append("script"))
     module.operators_added.connect(lambda names: events.append(("added", names)))
     module.operators_removed.connect(lambda names: events.append(("removed", names)))
     module.operators_changed.connect(lambda names: events.append(("changed", names)))
 
-    with pytest.raises(error):
-        if action == "set_script":
-            module.set_script(bad_source)
-        elif action == "reload":
-            write_source(path, bad_source)
-            module.reload()
-        else:
-            module.open(write_source(tmp_path / "broken.py", bad_source))
+    if action == "set_script":
+        module.set_script(bad_source)
+    elif action == "set_text":
+        module.file_binding.set_text(bad_source)
+    elif action == "reload":
+        write_source(path, bad_source)
+        module.file_binding.reload()
+    else:
+        path = write_source(tmp_path / "broken.py", bad_source)
+        module.file_binding.open(path)
 
-    assert module.path() == path
+    assert len(failures) == 1
+    assert isinstance(failures[0], error)
+    assert module.file_binding.path() == path
+    assert module.file_binding.get_text() == (source if action == "set_script" else bad_source)
     assert module.get_script() == source
     assert module.operators() == {"value": value}
     assert value() == 1
@@ -128,11 +141,11 @@ def test_missing_file_errors_leave_the_module_usable(tmp_path):
     path = write_source(tmp_path / "operators.py", "def value():\n    return 1\n")
     module = ImportModuleRT("tools", path, watch=False)
     with pytest.raises(FileNotFoundError):
-        module.open(tmp_path / "missing.py")
-    assert module.path() == path
+        module.file_binding.open(tmp_path / "missing.py")
+    assert module.file_binding.path() == path
     path.unlink()
     with pytest.raises(FileNotFoundError):
-        module.reload()
+        module.file_binding.reload()
     assert module.get_operator("value")() == 1
 
 
@@ -195,7 +208,7 @@ instance = Callable()
     path = write_source(tmp_path / "operators.py", "")
     module = ImportModuleRT("tools", path, watch=False)
     write_source(path, source)
-    module.reload()
+    module.file_binding.reload()
     fresh = ImportModuleRT("fresh", path, watch=False)
     assert set(module.operators()) == set(fresh.operators()) == {
         "sqrt", "outer", "alias", "Callable", "instance",
@@ -216,16 +229,25 @@ def test_unchanged_source_does_not_emit_signals_or_invalidate_cache(tmp_path):
     events = []
     module.script_changed.connect(lambda: events.append("script"))
     module.operators_changed.connect(events.append)
-    module.reload()
-    module._reload()
+    module.file_binding.reload()
     module.set_script(source)
     assert events == []
     assert module.get_operator("value") is value
     assert value.fingerprint() == fingerprint
 
 
-def test_global_changes_refresh_graph_cache_and_notify_watchers(tmp_path):
-    source = "FACTOR = 2\ndef value():\n    return FACTOR\n"
+@pytest.mark.parametrize(
+    "before, after, expected_names, expected_results",
+    [
+        ("return 2", "return 3", ["value"], [30]),
+        ("return 99", "return 100", ["unused"], []),
+        ("# comment", "# edited comment", [], []),
+    ],
+)
+def test_reload_only_notifies_changed_functions(
+    tmp_path, before, after, expected_names, expected_results
+):
+    source = "def value():\n    return 2\ndef unused():\n    return 99\n# comment\n"
     path = write_source(tmp_path / "operators.py", source)
     module = ImportModuleRT("tools", path, watch=False)
     graph = GraphRT()
@@ -238,12 +260,15 @@ def test_global_changes_refresh_graph_cache_and_notify_watchers(tmp_path):
 
     assert graph.execute(result) == 20
     results = []
+    changes = []
+    module.operators_changed.connect(changes.extend)
     watcher = watch(graph, result, lambda: results.append(graph.execute(result)))
     try:
-        write_source(path, source.replace("FACTOR = 2", "FACTOR = 3"))
-        module.reload()
-        assert results == [30]
-        assert graph.execute(result) == 30
+        write_source(path, source.replace(before, after))
+        module.file_binding.reload()
+        assert changes == expected_names
+        assert results == expected_results
+        assert module.get_operator("value")() == (3 if expected_results else 2)
     finally:
         watcher.stop()
 
@@ -258,13 +283,11 @@ def test_removed_globals_do_not_survive_reload(tmp_path):
     assert value() == 0
 
 
-def test_operator_ownership_and_fingerprints_are_module_specific(tmp_path):
+def test_operator_ownership_is_module_specific(tmp_path):
     path = write_source(tmp_path / "operators.py", "from math import sqrt\n")
     first = ImportModuleRT("first", path, watch=False)
     second = ImportModuleRT("second", path, watch=False)
     sqrt = first.get_operator("sqrt")
-    fingerprint = sqrt.fingerprint()
-    assert fingerprint != second.get_operator("sqrt").fingerprint()
     assert not second.isValid(sqrt)
     assert dict(second.get_parameters(sqrt)) == {}
     with pytest.raises(ValueError):
@@ -272,6 +295,95 @@ def test_operator_ownership_and_fingerprints_are_module_specific(tmp_path):
     with pytest.raises(ValueError):
         second.fingerprint(sqrt)
 
-    first.set_script("from math import sqrt\nFACTOR = 2\n")
-    assert first.get_operator("sqrt") is sqrt
-    assert sqrt.fingerprint() != fingerprint
+
+def test_buffer_edits_and_script_edits_stay_connected(tmp_path):
+    path = write_source(tmp_path / "operators.py", "def value():\n    return 1\n")
+    module = ImportModuleRT("tools", path, watch=False)
+    events = []
+    module.script_changed.connect(lambda: events.append(module.get_operator("value")()))
+
+    module.file_binding.set_text("def value():\n    return 2\n")
+    assert module.get_operator("value")() == 2
+    assert module.get_script() == module.file_binding.get_text()
+    module.set_script("def value():\n    return 3\n")
+    assert module.get_script() == module.file_binding.get_text()
+    assert events == [2, 3]
+    assert path.read_text(encoding="utf-8") == "def value():\n    return 1\n"
+
+
+def test_open_context_is_visible_to_observers_and_survives_runtime_edits(tmp_path):
+    source = "def location():\n    return __file__\n"
+    first = write_source(tmp_path / "first.py", source)
+    second = write_source(tmp_path / "second.py", source)
+    module = ImportModuleRT("tools", first, watch=False)
+    states = []
+    module.script_changed.connect(lambda: states.append((
+        module.file_binding.path(), module.file_binding.get_text(),
+        module.get_operator("location")(),
+    )))
+
+    module.file_binding.open(second)
+    module.set_script(source + "# edited\n")
+
+    assert states == [
+        (second, source, str(second)),
+        (second, source + "# edited\n", str(second)),
+    ]
+
+
+def test_initial_invalid_source_raises(tmp_path):
+    path = write_source(tmp_path / "broken.py", "def broken(:\n")
+    with pytest.raises(SyntaxError):
+        ImportModuleRT("tools", path, watch=False)
+
+
+def test_wrapped_runtime_updates_preserve_wrapper_ownership_and_sync_the_buffer(tmp_path):
+    initial = "def value(number: int = 1):\n    return number + 1\n"
+    path = write_source(tmp_path / "operators.py", initial)
+    module = ImportModuleRT("tools", path, watch=False)
+    operator = module.get_operator("value")
+    wrapped_operator = module.script_module.get_operator("value")
+    assert operator.module is module
+    assert wrapped_operator.module is module.script_module
+    assert operator is not wrapped_operator
+    assert module.fingerprint(operator) == module.script_module.fingerprint(wrapped_operator)
+    assert module.get_parameters(operator) == wrapped_operator.get_parameters()
+    assert module.call(operator, number=5) == 6
+
+    assert not module.isValid(wrapped_operator)
+    assert dict(module.get_parameters(wrapped_operator)) == {}
+    with pytest.raises(ValueError):
+        module.call(wrapped_operator)
+    with pytest.raises(ValueError):
+        module.fingerprint(wrapped_operator)
+
+    scripts = []
+    changes = []
+    module.script_changed.connect(lambda: scripts.append(module.get_script()))
+    module.operators_changed.connect(changes.append)
+    edited = "def value(number: int = 1):\n    return number + 2\n"
+    module.script_module.set_script(edited)
+
+    assert module.get_operator("value") is operator
+    assert operator.module is module
+    assert operator(5) == 7
+    assert module.file_binding.get_text() == edited
+    assert scripts == [edited]
+    assert changes == [["value"]]
+    assert path.read_text(encoding="utf-8") == initial
+
+
+def test_fixing_a_failed_open_uses_the_new_file_context(tmp_path):
+    source = "def location():\n    return __file__\n"
+    first = write_source(tmp_path / "first.py", source)
+    second = write_source(tmp_path / "second.py", "def broken(:\n")
+    module = ImportModuleRT("tools", first, watch=False)
+    location = module.get_operator("location")
+
+    module.file_binding.open(second)
+    assert location() == str(first)
+    module.set_script(source)
+
+    assert module.get_operator("location") is location
+    assert location() == str(second)
+    assert module.file_binding.get_text() == source

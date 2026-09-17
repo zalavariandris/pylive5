@@ -4,9 +4,10 @@ import pytest
 from textwrap import dedent
 import pygraphrt as rt
 
-from pygraphrt.graph_spec import serialize, deserialize
+from pygraphrt.graph_serialize import serialize
 
-def test_graph_ops_serialization():
+
+def test_graph_local_ops_serialization():
     G = rt.GraphRT()
 
     @G.node()
