@@ -33,7 +33,6 @@ def test_graph_ops_serialization():
         return a + b
     """)
 
-
     assert G.to_dict()['operators'] == {
         'two': two_source,
         'three': three_source,
@@ -71,7 +70,7 @@ def test_graph_nodes_implicit_serialization():
         }
     }, "Graph serialization should match expected structure"
 
-def test_graph_nodes_explicitt_serialization():
+def test_graph_nodes_explicit_serialization():
     G = rt.GraphRT()
 
     @G.node()

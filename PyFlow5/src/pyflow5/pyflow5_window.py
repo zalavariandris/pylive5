@@ -65,8 +65,8 @@ class PyFlow5Window(QMainWindow):
         """)) 
 
         # add the operators from the script
-        for name, func in self._script_rt.functions().items():
-            self._G.moop()(func)
+        for name, func in self._script_rt._get_all_functions_from_script().items():
+            self._G.module().op()(func)
 
         def _on_results_changed():
             try:
@@ -125,7 +125,7 @@ class PyFlow5Window(QMainWindow):
                     self._G.module().remove_operator(op)
 
         def on_functions_added_to_script(added: list[str]):
-            functions_map = self._script_rt.functions()
+            functions_map = self._script_rt._get_all_functions_from_script()
             print(f"Functions added to script:")
             for name in added:
                 func = functions_map[name]
@@ -139,11 +139,11 @@ class PyFlow5Window(QMainWindow):
         def on_functions_changed_in_script(changed: list[str]):
             print(f"Functions changed in script")
             for name in changed:
-                func = self._script_rt.functions()[name]
+                func = self._script_rt._get_all_functions_from_script()[name]
                 print(f"    {name}, func: {func}")
             for name in changed:
                 if op := self._G.module().get_operator(name):
-                    op.set_function(func)
+                    self._G.module().update_operator(op, func)
 
         self._script_rt.functions_added.connect(on_functions_added_to_script)
         self._script_rt.functions_removed.connect(on_functions_removed_from_script)
@@ -207,7 +207,7 @@ class PyFlow5Window(QMainWindow):
             if selected_op_name := dialog.selected_operator():
                 selected_op = operators_map[selected_op_name]
                 new_node = self._G.node()(selected_op)
-                print(f"New node created: {new_node} with operator: {selected_op} func: {selected_op.get_function()}")
+                print(f"New node created: {new_node} with operator: {selected_op}")
                 self._model.setNodePosition(new_node.get_name(), scene_pos or QPointF(0, 0))
 
     def _on_request_node(self, scene_pos:QPointF, source:NodeName):

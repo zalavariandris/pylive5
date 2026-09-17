@@ -8,7 +8,7 @@ from qtpy.QtTest import QSignalSpy
 
 def test_operator_added_signal():
     G = rt.GraphRT()
-    spy = QSignalSpy(G.operators_added)
+    spy = QSignalSpy(G.module().operators_added)
 
     @G.module().op()
     def my_operator(x):
@@ -19,7 +19,7 @@ def test_operator_added_signal():
 
 def test_operator_removed_signal():
     G = rt.GraphRT()
-    spy = QSignalSpy(G.operators_removed)
+    spy = QSignalSpy(G.module().operators_removed)
 
     @G.module().op()
     def my_operator(x):
@@ -31,17 +31,19 @@ def test_operator_removed_signal():
 
 def test_operator_function_changed_signal():
     G = rt.GraphRT()
-    spy = QSignalSpy(G.operator_function_changed)
+    spy = QSignalSpy(G.module().operators_changed)
 
-    @G.module().op()
-    def my_operator(x):
+    @G.node()
+    def my_node(x):
         return x * 2
 
     def new_function(x):
         return x + 1
-    my_operator.set_function(new_function)
+    
+    G.module().update_operator(my_node.get_operator(), new_function)
+
     assert len(spy) == 1, "operator_function_changed signal should have been emitted once"
-    assert my_operator.key() in spy[0][0], "operator_function_changed signal should contain the name of the changed operator"
+    assert my_node.get_operator().key() in spy[0][0], "operator_function_changed signal should contain the name of the changed operator"
 
 def test_node_added_signal():
     G = rt.GraphRT()
@@ -79,25 +81,6 @@ def test_node_inputs_changed_signal():
     assert len(spy) == 1, "node_inputs_changed signal should have been emitted once"
     assert my_node.get_name() == spy[0][0], "node_inputs_changed signal should contain the name of the changed node"
 
-def test_node_operator_changed_signal():
-    G = rt.GraphRT()
-    spy = QSignalSpy(G.node_operator_changed)
-
-    @G.module().op()
-    def first_operator(x):
-        return x * 2
-
-    @G.module().op()
-    def second_operator(x):
-        return x + 1
-
-    @G.node()
-    def my_node(x):
-        return x * 2
-
-    my_node.set_operator(second_operator)
-    assert len(spy) == 1, "node_operator_changed signal should have been emitted once"
-    assert my_node.get_name() == spy[0][0], "node_operator_changed signal should contain the name of the changed node"
 
 def test_executed_signal():
     G = rt.GraphRT()

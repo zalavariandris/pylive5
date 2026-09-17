@@ -1,7 +1,7 @@
 import ast
 import pytest
 from textwrap import dedent
-from pygraphrt.source_diff import ast_diff, FunctionsDiff
+from pygraphrt.source_diff import ast_functions_diff, FunctionsDiff
 
 
 def test_ast_diff_expectations():
@@ -27,7 +27,7 @@ def test_ast_diff_expectations():
         pass
     """)
 
-    assert ast_diff(source1, source2) == FunctionsDiff(
+    assert ast_functions_diff(source1, source2) == FunctionsDiff(
         changed={"changed"},
         unchanged={"same"},
         added={"added"},
@@ -47,7 +47,7 @@ def test_ast_diff_qualified_names():
             return 2
     """)
 
-    result = ast_diff(source, source.replace("return 1", "return 3"))
+    result = ast_functions_diff(source, source.replace("return 1", "return 3"))
     assert result == FunctionsDiff(
         changed={"First.method", "First.method.inner"},
         unchanged={"Second.method"},
@@ -66,14 +66,14 @@ def test_ast_diff_qualified_names():
 )
 
 def test_ast_diff_function_contract(replacement):
-    assert ast_diff("def f(value=1): return value", replacement).changed == {"f"}
+    assert ast_functions_diff("def f(value=1): return value", replacement).changed == {"f"}
 
 def test_ast_diff_repeated_definitions():
     source = "def f(): return 1\ndef f(): return 2"
-    assert ast_diff(source, source.replace("return 1", "return 3")).changed == {"f"}
+    assert ast_functions_diff(source, source.replace("return 1", "return 3")).changed == {"f"}
 
 def test_ast_diff_ignores_module_statements():
-    assert ast_diff("a = 1", "a = 2") == FunctionsDiff(
+    assert ast_functions_diff("a = 1", "a = 2") == FunctionsDiff(
         changed=set(), unchanged=set(), added=set(), removed=set()
     )
 
@@ -93,7 +93,7 @@ def test_ast_diff_global_change_affects_behavior_but_reports_unchanged():
 
     assert before["read_value"]() == 1
     assert after["read_value"]() == 2
-    assert ast_diff(source1, source2) == FunctionsDiff(
+    assert ast_functions_diff(source1, source2) == FunctionsDiff(
         changed=set(),
         unchanged={"read_value"},
         added=set(),
@@ -103,7 +103,7 @@ def test_ast_diff_global_change_affects_behavior_but_reports_unchanged():
 
 def test_ast_diff_invalid_source():
     with pytest.raises(SyntaxError):
-        ast_diff("def broken(", "")
+        ast_functions_diff("def broken(", "")
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

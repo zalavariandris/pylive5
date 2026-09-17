@@ -19,10 +19,16 @@ def _getsource(func: "Callable") -> str:
     return src
 
 
+
+import inspect
+
+Empty = inspect._empty
+
 @dataclass(frozen=True, slots=True)
 class ParameterRT:
     name: str
-    annotation: type
+    annotation: type|Empty = Empty
+    default: Any = Empty
 
 
 class OperatorRT(QObject):

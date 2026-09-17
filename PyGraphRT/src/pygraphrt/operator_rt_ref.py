@@ -1,10 +1,14 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Callable, Mapping
 
 if TYPE_CHECKING:
     from .local_module_rt import LocalModuleRT
+    from pygraphrt.operator_rt import ParameterRT
 
 import weakref
+
+
 
 class OperatorRTRef:
     def __init__(self, module: LocalModuleRT, key: str):
@@ -15,14 +19,10 @@ class OperatorRTRef:
         return self._key
 
     def isValid(self) -> bool:
-        return self._key in self._module()._functions
+        return self._module().isValid(self)
 
-    def fingerprint(self):
-        if self.isValid():
-            func = self._module()._functions[self._key]
-            return hash(func)
-        else:
-            return hash(("-INVALID-", self._key))
+    def fingerprint(self) -> Callable:
+        return self._module().fingerprint(self)
 
     def __call__(self, *args, **kwargs):
         if not self.isValid():
@@ -30,3 +30,6 @@ class OperatorRTRef:
 
         func = self._module()._functions[self._key]
         return func(*args, **kwargs)
+
+    def get_parameters(self) -> MappingProxyType[str, ParameterRT]:
+        return self._module().get_parameters(self)

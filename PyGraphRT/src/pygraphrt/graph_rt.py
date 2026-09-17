@@ -1,7 +1,7 @@
 from collections import deque, defaultdict
 from pygraphrt.script_module_rt import ScriptModuleRT
 from pytools import UniqueNameGenerator
-from typing import Callable, Any
+from typing import Callable, Any, Iterable
 from types import MappingProxyType
 from dataclasses import dataclass
 import inspect
@@ -13,47 +13,107 @@ from qtpy.QtCore import (
 )
 
 from .operator_rt import OperatorRT
+from .abstract_module_rt import AbstractModuleRT
 from .node_rt import NodeRT
 from .local_module_rt import LocalModuleRT, OperatorRTRef
 
+@dataclass(frozen=True)
+class CacheEntry:
+    fingerprint: tuple
+    value: Any
+    revision: int
+
+
 class MemoryCache:
+    """Stores the latest result for each node."""
+
     def __init__(self):
-        self._cache: dict[tuple, Any] = {}
+        self._entries: dict[NodeRT, CacheEntry] = {}
+        self._revision = 0
 
-    def get(self, key: tuple) -> Any | None:
-        return self._cache.get(key)
+    def lookup(self, node: NodeRT, fingerprint: tuple) -> CacheEntry | None:
+        entry = self._entries.get(node)
+        if entry is not None and entry.fingerprint == fingerprint:
+            return entry
+        return None
 
-    def set(self, key: tuple, value: Any):
-        self._cache[key] = value
+    def save(self, node: NodeRT, fingerprint: tuple, value: Any) -> CacheEntry:
+        self._revision += 1
+        entry = CacheEntry(fingerprint, value, self._revision)
+        self._entries[node] = entry
+        return entry
 
-    def pop(self, key: tuple, default: Any = None) -> Any:
-        return self._cache.pop(key, default)
-    
+    def remove(self, node: NodeRT) -> None:
+        self._entries.pop(node, None)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+from .graph_profiler import GraphProfiler
+
+
 
 class GraphRT(QObject):        
     nodes_added = Signal(list)
     nodes_removed = Signal(list)
+    modules_added = Signal(list)
+    modules_removed = Signal(list)
     node_operator_changed = Signal(str)
     node_inputs_changed = Signal(str)
     operator_function_changed = Signal(list)
     output_node_changed = Signal()
     executed = Signal(dict)
 
-    def __init__(self):
+    def __init__(self)->None:
         super().__init__()
         self._local_module = LocalModuleRT(self)
-        self._local_module.operator_changed.connect(self.operator_function_changed)
+        self._local_module.operators_changed.connect(self.operator_function_changed)
+        self._modules: list[AbstractModuleRT] = []
+        
         self._nodes: set[NodeRT] = set()
         self._successors: dict[NodeRT, set[NodeRT]] = defaultdict(set)
-        self._profiler:  dict[NodeRT, float] = {}
-        self._cache: dict[tuple, Any] = {}
+        self._profiler:  GraphProfiler = GraphProfiler()
         self._connected_node_signals: dict[str, list[tuple]] = {}
         self._output_node: NodeRT | None = None
+
+        # inverse mapping from operators to nodes
+        self._operators_to_nodes: dict[OperatorRTRef, set[NodeRT]] = defaultdict(set)
+
+        self._memory_cache = MemoryCache()
+
+    def modules(self) -> list[AbstractModuleRT]:
+        return [m for m in self._modules]
+
+    def add_modules(self, modules: Iterable[AbstractModuleRT]) -> None:
+        for module in modules:
+            self._modules.append(module)
+        self.modules_added.emit(list(modules))
+
+    def remove_modules(self, modules: Iterable[AbstractModuleRT]) -> None:
+        for module in modules:
+            if module in self._modules:
+                self._modules.remove(module)
+        self.modules_removed.emit(list(modules))
+
+    def remove_module(self, module: AbstractModuleRT) -> None:
+        if module in self._modules:
+            self._modules.remove(module)
+            self.modules_removed.emit([module])
+
+    def registerNodeOperator(self, node: NodeRT, operator: OperatorRTRef)->None:
+        self._operators_to_nodes[operator].discard(node) #register
+
+    def unregisterNodeOperator(self, node: NodeRT, operator: OperatorRTRef)->None:
+        self._operators_to_nodes.setdefault(operator, set()).add(node) #unregister
 
     def module(self) -> LocalModuleRT:
         return self._local_module
 
-    def node(self, *args: NodeRT | Any, **kwargs: NodeRT | Any) -> "NodeRT | Callable":
+    def cache(self) -> MemoryCache:
+        """Returns the cache used during graph execution."""
+        return self._memory_cache
+
+    def node(self, *args: NodeRT | Any, **kwargs: NodeRT | Any) -> Callable[[Callable, str], NodeRT]:
         def decorator(func: Callable | OperatorRTRef, name: str|None=None) -> NodeRT:
             assert callable(func) or isinstance(func, OperatorRTRef), "func must be a callable function or an instance of OperatorRef"
 
@@ -102,7 +162,8 @@ class GraphRT(QObject):
         node.set_inputs()
         self._successors.pop(node, None)
         self._nodes.remove(node)
-        self._profiler.pop(node, None)
+        self._profiler.clear(node)
+        self._memory_cache.remove(node)
         
         self.nodes_removed.emit([node.get_name()])
 
@@ -161,9 +222,6 @@ class GraphRT(QObject):
 
         return sorted_nodes
 
-    def clear_cache(self):
-        self._cache.clear()
-
     def execute(self, root:NodeRT | None = None, profile: bool = True) -> Any:
         if root is None:
             root = self._output_node
@@ -177,58 +235,45 @@ class GraphRT(QObject):
         if profile:
             self._profiler.clear()
 
-                        
-        fingerprints: dict[NodeRT, tuple] = {}
-        new_cache: dict[tuple, Any] = dict()
+        entries: dict[NodeRT, CacheEntry] = {}
 
-        results: dict[NodeRT, Any] = dict()
+        def input_fingerprint(value: Any) -> tuple:
+            if isinstance(value, NodeRT):
+                return ("node", value, entries[value].revision)
+            return ("literal", type(value), value)
+
+        def resolve(value: Any) -> Any:
+            return entries[value].value if isinstance(value, NodeRT) else value
+
         ancestors = self.ancestors(root)
         for node in self.topological_sort(ancestors):
-            if node in results:
-                continue
-
             args, kwargs = node.get_inputs()
-
-            resolved_args = [
-                results[v] if isinstance(v, NodeRT) else v 
-                for v in args
-            ]
-
-            resolved_kwargs = {
-                k: results[v] if isinstance(v, NodeRT) else v 
-                for k, v in kwargs.items()
-            }
-
-            inputs_fingerprint = []
-            for idx, value in enumerate(args):
-                inputs_fingerprint.append((idx, fingerprints[value] if isinstance(value, NodeRT) else value))
-            for key, value in kwargs.items():
-                inputs_fingerprint.append((key, fingerprints[value] if isinstance(value, NodeRT) else value))
-            inputs_fingerprint = tuple(inputs_fingerprint)
-
-            op = node.get_operator()
-            fingerprints[node] = (
-                node, 
-                op.fingerprint() if op else None, 
-                inputs_fingerprint
+            operator = node.get_operator()
+            fingerprint = (
+                operator.fingerprint() if operator is not None else None,
+                tuple(input_fingerprint(value) for value in args),
+                tuple(
+                    (key, input_fingerprint(value))
+                    for key, value in kwargs.items()
+                ),
             )
 
-            if fingerprints[node] in self._cache:
-                results[node] = self._cache[fingerprints[node]]
-            else:
-                if profile:
-                    start_time = time.perf_counter()
-                results[node] = node(*resolved_args, **resolved_kwargs)
-                
-                if profile:
-                    end_time = time.perf_counter()
-                    self._profiler[node] = end_time - start_time
+            entry = self._memory_cache.lookup(node, fingerprint)
+            if entry is None:
+                resolved_args = [resolve(value) for value in args]
+                resolved_kwargs = {
+                    key: resolve(value) for key, value in kwargs.items()
+                }
 
-            new_cache[fingerprints[node]] = results[node]
+                with self._profiler.profile(node):
+                    value = node(*resolved_args, **resolved_kwargs)
 
-        self._cache.update(new_cache)
-        self.executed.emit({node.get_name(): results[node] for node in ancestors})
-        return results[root]
+                entry = self._memory_cache.save(node, fingerprint, value)
+
+            entries[node] = entry
+
+        self.executed.emit({node.get_name(): entries[node].value for node in ancestors})
+        return entries[root].value
 
     def to_dict(self, explicit:bool=False) -> dict:
         """Returns a dictionary representation of the graph."""

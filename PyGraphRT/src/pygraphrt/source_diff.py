@@ -9,7 +9,7 @@ class FunctionsDiff:
     added: set[str]
     removed: set[str]
 
-def ast_diff(source1: str, source2: str) -> FunctionsDiff:
+def ast_functions_diff(source1: str, source2: str) -> FunctionsDiff:
     """Classify qualified function names by structural AST changes.
 
     Formatting, comments, and source positions are ignored. Signatures,

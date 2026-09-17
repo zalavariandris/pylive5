@@ -100,42 +100,40 @@ class TestUpdatingOperatorFunction:
     def test_update_operator_body(self):
         G = rt.GraphRT()
 
-        @G.module().op()
-        def add_op(a:int, b:int) -> int:
+        @G.node(1, 2)
+        def the_node(a:int, b:int) -> int:
             return a + b
 
-        add_op = add
-
-        add_node = G.node(1, 2)(add_op)
-        result = G.execute(add_node)
+        result = G.execute(the_node)
         assert result == 3, "Node should compute 1 + 2 = 3"
 
         # now update the body of the add operator
         def add(a:int, b:int) -> int:
             return a + b + 1
 
-        G.module().update_operator(add_op, func=add)
+        G.module().update_operator(the_node.get_operator(), func=add)
 
-        result = G.execute(add_node)
+        result = G.execute(the_node)
         assert result == 4, "Node should compute 1 + 2 + 1 = 4 after updating operator body"
 
-    def test_set_operator_function_with_different_signature(self):
+    def test_execute_raises_type_error_after_operator_update_adds_required_parameter(self):
         G = rt.GraphRT()
 
-        @G.module().op()
-        def the_op(a:int, b:int) -> int:
+        @G.node(1, 2)
+        def the_node(a:int, b:int) -> int:
             return a + b
 
-        add_node = G.node(1, 2)(the_op)
-        result = G.execute(add_node)
+        result = G.execute(the_node)
         assert result == 3, "Node should compute 1 + 2 = 3"
 
         # now change the function of the add operator to a function with a different signature
         def add_three(a:int, b:int, c:int) -> int:
             return a + b + c
 
-        with pytest.raises(ValueError):
-            G.module().update_operator(the_op, func=add_three)
+        G.module().update_operator(the_node.get_operator(), func=add_three)
+
+        with pytest.raises(TypeError):
+            result = G.execute(the_node)
 
     def test_set_operator_function_with_same_signature(self):
         G = rt.GraphRT()

@@ -46,15 +46,15 @@ class NodeRT(QObject):
         if not isinstance(operator, (OperatorRTRef, type(None))):
             raise TypeError("operator must be an instance of OperatorRef")
         
-        if operator is not None and operator not in self._graph._operators:
+        if operator is not None and not self._graph.hasOperator(operator):
             raise ValueError("operator must be part of the graph")
         
         if self._operator is not None:
-            self._graph._operators_to_nodes[self._operator].discard(self)
+            self._graph.unregisterNodeOperator(self, self._operator)
 
         if operator is not None:
-            self._graph._operators_to_nodes.setdefault(operator, set()).add(self)
-
+            self._graph.registerNodeOperator(self, operator)
+           
         self._operator = operator
 
         self.operator_changed.emit()
