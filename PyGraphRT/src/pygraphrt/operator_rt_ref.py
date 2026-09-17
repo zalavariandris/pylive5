@@ -28,8 +28,7 @@ class OperatorRTRef:
         if not self.isValid():
             raise ValueError(f"Operator {self._key} is not valid.")
 
-        func = self._module()._functions[self._key]
-        return func(*args, **kwargs)
+        return self._module().call(self, *args, **kwargs)
 
     def get_parameters(self) -> MappingProxyType[str, ParameterRT]:
         return self._module().get_parameters(self)

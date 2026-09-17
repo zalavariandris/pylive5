@@ -23,6 +23,7 @@ def _get_all_functions_from_script(script: str) -> Mapping[str, Callable]:
     exec(script, {}, local_vars)
     return {k: v for k, v in local_vars.items() if callable(v)}
 
+
 class ScriptModuleRT(AbstractModuleRT):
     script_changed = Signal()
 
@@ -109,6 +110,7 @@ class ScriptModuleRT(AbstractModuleRT):
         return hash((key, self._functions[key]))
 
     def call(self, op: OperatorRTRef, *args, **kwargs):
+        assert isinstance(op, OperatorRTRef)
         func = self._functions.get(op._key)
         if func is None:
             raise ValueError(f"Operator {op._key} not found in script.")
