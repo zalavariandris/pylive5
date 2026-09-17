@@ -1,7 +1,10 @@
 import dictdiffer
+import json
 import pytest
 from textwrap import dedent
 import pygraphrt as rt
+
+from pygraphrt.graph_spec import serialize, deserialize
 
 def test_graph_ops_serialization():
     G = rt.GraphRT()
@@ -54,15 +57,15 @@ def test_graph_nodes_implicit_serialization():
     def add(a:int, b:int) -> int:
         return a + b
 
-    assert G.to_dict(explicit=False)['nodes'] == {
+    assert json.loads(serialize(G, explicit=False))['nodes'] == {
         'two': {
-            'operator': 'two'
+            'operator': 'local.two'
         },
         'three': {
-            'operator': 'three'
+            'operator': 'local.three'
         },
         'add': {
-            'operator': 'add',
+            'operator': 'local.add',
             'kwargs': {
                 'a': 'two',
                 'b': 'three'
@@ -87,17 +90,17 @@ def test_graph_nodes_explicit_serialization():
 
     expected_nodes = {
         'two': {
-            'operator': 'two',
+            'operator': 'local.two',
             'args': [],
             'kwargs': {},
         },
         'three': {
-            'operator': 'three',
+            'operator': 'local.three',
             'args': [],
             'kwargs': {},
         },
         'add': {
-            'operator': 'add',
+            'operator': 'local.add',
             'args': [],
             'kwargs': {
                 'a': 'two',
@@ -106,7 +109,7 @@ def test_graph_nodes_explicit_serialization():
         }
     }
 
-    actual_nodes = G.to_dict(explicit=True)['nodes']
+    actual_nodes = json.loads(serialize(G, explicit=True))['nodes']
     assert actual_nodes == expected_nodes, f"Graph serialization should match expected structure: {dictdiffer.diff(expected_nodes, actual_nodes)}"
 
 if __name__ == "__main__":

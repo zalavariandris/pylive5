@@ -16,7 +16,7 @@ class Watcher:
         self._connections = [
             (graph.node_inputs_changed, self._on_node_changed),
             (graph.node_operator_changed, self._on_node_changed),
-            (graph.operators_function_changed, self._on_operators_changed),
+            (graph.operators_changed, self._on_operators_changed),
         ]
         self._running = False
         self.start()

@@ -22,13 +22,16 @@ from .memory_cache import MemoryCache
 
 
 class GraphRT(QObject):        
-    nodes_added = Signal(list)
-    nodes_removed = Signal(list)
     modules_added = Signal(list)
     modules_removed = Signal(list)
+
+    nodes_added = Signal(list)
+    nodes_removed = Signal(list)
     node_operator_changed = Signal(str)
     node_inputs_changed = Signal(str)
-    operators_function_changed = Signal(list)
+
+    operators_changed = Signal(list)
+
     output_node_changed = Signal()
     executed = Signal(dict)
 
@@ -57,7 +60,7 @@ class GraphRT(QObject):
     def add_modules(self, modules: Iterable[AbstractModuleRT]) -> None:
         for module in modules:
             self._modules[module.name()] = module
-            module.operators_changed.connect(self.operators_function_changed)
+            module.operators_changed.connect(self.operators_changed)
         self.modules_added.emit(list(modules))
 
     def remove_modules(self, modules: Iterable[AbstractModuleRT]) -> None:
