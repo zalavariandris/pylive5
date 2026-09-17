@@ -3,6 +3,7 @@ from textwrap import dedent
 from typing import Iterable, Mapping
 import traceback
 import warnings
+import myqtx
 from pyflow5.operator_selection_dialog import OperatorSelectionDialog
 from qtpy.QtCore import QObject, QPoint, QPointF, Qt, Signal
 from qtpy.QtWidgets import QAction
@@ -53,7 +54,7 @@ class PyFlow5Window(QMainWindow):
 
         self._G = rt.GraphRT()
 
-        self._script_rt = ScriptModuleRT(dedent("""\
+        self._script_rt = ScriptModuleRT("mathy", dedent("""\
         def one():
             return 1
 
@@ -64,9 +65,7 @@ class PyFlow5Window(QMainWindow):
             return a * b
         """)) 
 
-        # add the operators from the script
-        for name, func in self._script_rt._get_all_functions_from_script().items():
-            self._G.module().op()(func)
+        self._G.add_modules([self._script_rt])
 
         def _on_results_changed():
             try:
@@ -97,58 +96,29 @@ class PyFlow5Window(QMainWindow):
         self._code_editor = ScriptEdit2(self)
         self._code_editor.setPlainText(self._script_rt.get_script())
         self._code_editor.textChanged.connect(lambda: self._script_rt.set_script(self._code_editor.toPlainText()))
+
         def _on_script_changed():
+            # Same Value Guard
             new_text = self._script_rt.get_script()
             if self._code_editor.toPlainText() == new_text:
                 return  # nothing changed → do nothing
 
-            # preserve cursor & scroll
-            cursor = self._code_editor.textCursor()
-            pos = cursor.position()
-            scroll = self._code_editor.verticalScrollBar().value()
+            with myqtx.blockingSignals(self._code_editor):
+                # preserve cursor & scroll
+                cursor = self._code_editor.textCursor()
+                pos = cursor.position()
+                scroll = self._code_editor.verticalScrollBar().value()
 
-            self._code_editor.blockSignals(True)          # prevent re-entrancy
-            self._code_editor.setPlainText(new_text)
-            self._code_editor.blockSignals(False)
-
-            # restore cursor
-            cursor.setPosition(min(pos, len(new_text)))
-            self._code_editor.setTextCursor(cursor)
-            self._code_editor.verticalScrollBar().setValue(scroll)
+                self._code_editor.setPlainText(new_text)
+                
+                # restore cursor
+                cursor.setPosition(min(pos, len(new_text)))
+                self._code_editor.setTextCursor(cursor)
+                self._code_editor.verticalScrollBar().setValue(scroll)
 
         self._script_rt.script_changed.connect(_on_script_changed)
         
-        def on_functions_removed_from_script(removed: list[str]):
-            print(f"Functions removed from script: {removed}")
-            for name in removed:
-                if op := self._G.module().get_operator(name):
-                    self._G.module().remove_operator(op)
-
-        def on_functions_added_to_script(added: list[str]):
-            functions_map = self._script_rt._get_all_functions_from_script()
-            print(f"Functions added to script:")
-            for name in added:
-                func = functions_map[name]
-                print(f"    {name}, func: {func}")
-
-            for name in added:
-                assert name not in self._G.module().operators().keys(), f"Operator {name} already exists"
-                func = functions_map[name]
-                self._G.module().op()(func)
-
-        def on_functions_changed_in_script(changed: list[str]):
-            print(f"Functions changed in script")
-            for name in changed:
-                func = self._script_rt._get_all_functions_from_script()[name]
-                print(f"    {name}, func: {func}")
-            for name in changed:
-                if op := self._G.module().get_operator(name):
-                    self._G.module().update_operator(op, func)
-
-        self._script_rt.functions_added.connect(on_functions_added_to_script)
-        self._script_rt.functions_removed.connect(on_functions_removed_from_script)
-        self._script_rt.functions_changed.connect(on_functions_changed_in_script)
-
+        # - Setup graphview -
         self._graph_view = DirectionalGraphView5(self)
         self._graph_view.setModel(self._model)
         self._graph_view.setSelectionModel(self._selection)
@@ -156,8 +126,11 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.requestNode.connect(lambda pos, source: self._on_request_node(pos, source))
         self._graph_view.layout_nodes()
         self._graph_view.fitNodes()
+
+        # - Setup display widget -
         self._display_widget = DisplayWidget(self)
 
+        # - Add widgets to splitter -
         splitter.addWidget(self._code_editor)
         splitter.addWidget(self._graph_view)
         splitter.addWidget(self._display_widget)
@@ -170,6 +143,7 @@ class PyFlow5Window(QMainWindow):
 
         self._graph_view.setFocus()
 
+        # - Initial results update -
         _on_results_changed()
 
         # setup actions
@@ -201,7 +175,12 @@ class PyFlow5Window(QMainWindow):
             print("Output node cleared")
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
-        operators_map:dict[str, OperatorRT] = self._G.module().operators()
+        operators_map:dict[str, OperatorRT] = dict()
+        for module in self._G.modules():
+            for op_name, op in module.operators().items():
+                path = f"{module.name()}.{op_name}" 
+                operators_map[path] = op
+
         dialog = OperatorSelectionDialog(operators_map.keys(), self)
         if dialog.exec_() == QDialog.Accepted:
             if selected_op_name := dialog.selected_operator():

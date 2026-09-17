@@ -28,9 +28,15 @@ class AbstractModuleRT(QObject, metaclass=_AbstractQObjectMeta):
     operators_removed = Signal(list) # list[str]
     operators_changed = Signal(list) # list[str]
 
-    def __init__(self, graph: GraphRT):
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(name={self._name!r})"
+
+    def __init__(self, name: str):
         super().__init__()
-        self._graph = graph
+        self._name = name
+
+    def name(self) -> str:
+        return self._name
 
     @abstractmethod
     def operators(self) -> Mapping[str, OperatorRTRef]:

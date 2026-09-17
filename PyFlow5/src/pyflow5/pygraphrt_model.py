@@ -44,7 +44,9 @@ class PyFlowRtModel(AbstractDAGModel):
 
     def inLinks(self, node_name:NodeName, inlet_name:InletName)->Iterable[DirectionalLinkId]:
         node_rt:rt.NodeRT = self.rt.get_node(node_name)
-        op = self.rt.module().get_operator(node_rt.get_operator().key())
+        op = node_rt.get_operator()
+        if op is None:
+            return
 
         args, kwargs = node_rt.get_inputs()
         for i, key in enumerate(op.get_parameters().keys()):
@@ -78,9 +80,7 @@ class PyFlowRtModel(AbstractDAGModel):
     def inlets(self, node:NodeName)->Iterable[InletName]:
         node_rt = self.rt.get_node(node)
         if op := node_rt.get_operator():
-            if resolved_op := self.rt.module().get_operator(op.key()):
-                for key in resolved_op.get_parameters().keys():
-                    yield key
+            yield from op.get_parameters().keys()
         # args, kwargs = self.rt.get_node(node).get_inputs()
         # for i, arg in enumerate(args):
         #     yield f'{i+1}'

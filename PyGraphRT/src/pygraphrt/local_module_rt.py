@@ -25,8 +25,8 @@ from .abstract_module_rt import AbstractModuleRT
 import inspect
 
 class LocalModuleRT(AbstractModuleRT):
-    def __init__(self, graph: GraphRT):
-        super().__init__(graph)
+    def __init__(self, name: str):
+        super().__init__(name)
         self._functions: dict[str, Callable] = {}
         self._operators: dict[str, OperatorRTRef] = {}
 

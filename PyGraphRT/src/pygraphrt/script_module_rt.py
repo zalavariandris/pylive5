@@ -26,9 +26,11 @@ def _get_all_functions_from_script(script: str) -> Mapping[str, Callable]:
 class ScriptModuleRT(AbstractModuleRT):
     script_changed = Signal()
 
-    def __init__(self, graph: GraphRT, script=""):
-        super().__init__(graph)
+    def __init__(self, name:str, script=""):
+        super().__init__(name)
+        assert isinstance(name, str)
         assert isinstance(script, str)
+
         self._script = script
         self._functions: dict[str, Callable] = _get_all_functions_from_script(script)
         self._operators_cache: dict[str, OperatorRTRef] = {key: OperatorRTRef(self, key) for key in self._functions}
@@ -47,19 +49,23 @@ class ScriptModuleRT(AbstractModuleRT):
             if functions_diff.removed:
                 removed_keys:list[str] = list(functions_diff.removed)
                 for key in removed_keys:
-                    if key in self._operators_cache:
-                        del self._operators_cache[key]
+                    assert key in self._operators_cache
+                    del self._operators_cache[key]
                 self.operators_removed.emit(removed_keys)
 
             if functions_diff.added:
                 added_keys:list[str] = list(functions_diff.added)
                 for key in added_keys:
-                    if key in self._operators_cache:
-                        self._operators_cache[key] = OperatorRTRef(self, key)
+                    assert key not in self._operators_cache
+                    self._operators_cache[key] = OperatorRTRef(self, key)
+
                 self.operators_added.emit(added_keys)
 
             if functions_diff.changed:
                 changed_keys:list[str] = list(functions_diff.changed)
+                for key in changed_keys:
+                    assert key in self._operators_cache
+                    self._operators_cache[key] = OperatorRTRef(self, key)
                 self.operators_changed.emit(changed_keys)
 
         except SyntaxError as e:

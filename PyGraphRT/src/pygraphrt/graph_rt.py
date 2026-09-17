@@ -60,15 +60,17 @@ class GraphRT(QObject):
     modules_removed = Signal(list)
     node_operator_changed = Signal(str)
     node_inputs_changed = Signal(str)
-    operator_function_changed = Signal(list)
+    operators_function_changed = Signal(list)
     output_node_changed = Signal()
     executed = Signal(dict)
 
     def __init__(self)->None:
         super().__init__()
-        self._local_module = LocalModuleRT(self)
-        self._local_module.operators_changed.connect(self.operator_function_changed)
-        self._modules: list[AbstractModuleRT] = []
+        
+        self._modules: dict[str, AbstractModuleRT] = dict()
+
+        local_module = LocalModuleRT("local")
+        self.add_modules([local_module])
         
         self._nodes: set[NodeRT] = set()
         self._successors: dict[NodeRT, set[NodeRT]] = defaultdict(set)
@@ -82,23 +84,19 @@ class GraphRT(QObject):
         self._memory_cache = MemoryCache()
 
     def modules(self) -> list[AbstractModuleRT]:
-        return [m for m in self._modules]
+        return [m for m in self._modules.values()]
 
     def add_modules(self, modules: Iterable[AbstractModuleRT]) -> None:
         for module in modules:
-            self._modules.append(module)
+            self._modules[module.name()] = module
+            module.operators_changed.connect(self.operators_function_changed)
         self.modules_added.emit(list(modules))
 
     def remove_modules(self, modules: Iterable[AbstractModuleRT]) -> None:
         for module in modules:
-            if module in self._modules:
-                self._modules.remove(module)
+            if module.name() in self._modules:
+                self._modules.pop(module.name())
         self.modules_removed.emit(list(modules))
-
-    def remove_module(self, module: AbstractModuleRT) -> None:
-        if module in self._modules:
-            self._modules.remove(module)
-            self.modules_removed.emit([module])
 
     def registerNodeOperator(self, node: NodeRT, operator: OperatorRTRef)->None:
         self._operators_to_nodes[operator].discard(node) #register
@@ -107,7 +105,7 @@ class GraphRT(QObject):
         self._operators_to_nodes.setdefault(operator, set()).add(node) #unregister
 
     def module(self) -> LocalModuleRT:
-        return self._local_module
+        return self._modules["local"]
 
     def cache(self) -> MemoryCache:
         """Returns the cache used during graph execution."""
