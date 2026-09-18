@@ -1,6 +1,6 @@
 import dictdiffer
 from .graph_rt import GraphRT, NodeRT
-from .utils import func_from_source
+from .graph_utils import func_from_source
 
 
 def _resolve_args(graph: GraphRT, args:tuple):

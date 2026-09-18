@@ -3,7 +3,7 @@ from textwrap import dedent
 from typing import Iterable, Mapping
 import traceback
 import warnings
-import myqtx
+
 from pyflow5.operator_selection_dialog import OperatorSelectionDialog
 from qtpy.QtCore import QObject, QPoint, QPointF, Qt, Signal
 from qtpy.QtWidgets import QAction
@@ -31,7 +31,7 @@ from qdageditor5.models.abstract_dag_model import (
 )
 
 from QScriptEdit2.script_edit import ScriptEdit2
-from myqtx.displaywidget import DisplayWidget
+import myqtx
 
 import pygraphrt as rt
 from pyflow5.pygraphrt_model import PyFlowRtModel
@@ -46,7 +46,7 @@ class PyFlow5Window(QMainWindow):
         action  =toolbar.addAction("Restart Kernel")
 
         def reset_graph():
-            G = rt.utils.graph_from_script(self._code_editor.toPlainText(), 'G')
+            G = rt.graph_utils.graph_from_script(self._code_editor.toPlainText(), 'G')
             self._model.setRT(G)
         action.triggered.connect(reset_graph)
 
@@ -128,7 +128,7 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.fitNodes()
 
         # - Setup display widget -
-        self._display_widget = DisplayWidget(self)
+        self._display_widget = myqtx.DisplayWidget(self)
 
         # - Add widgets to splitter -
         splitter.addWidget(self._code_editor)

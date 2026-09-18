@@ -22,6 +22,7 @@ pyflow5 = { workspace = true }
 [tool.uv.workspace]
 members = [
     "myqtx", 
+    "myutils",
     "PyFlow5", 
     "PyGraphRT", 
     "ScriptGraph",

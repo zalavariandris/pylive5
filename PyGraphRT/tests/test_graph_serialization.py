@@ -29,7 +29,7 @@ class TestNodesSerialization:
 
         serialized= _to_dict(G, explicit=False)
 
-        assert serialized == {
+        assert serialized['nodes'] == {
             'two': {
                 'operator': 'local.two'
             },

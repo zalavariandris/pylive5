@@ -5,7 +5,7 @@ from textwrap import dedent
 def test_add_op():
     G1 = rt.GraphRT()
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt 
     G = rt.GraphRT()
     @G.module().op()
@@ -23,7 +23,7 @@ def test_remove_op():
     def const1():
         return 1
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     """), 'G')
@@ -33,12 +33,12 @@ def test_remove_op():
     assert 'const1' not in G1.nodes().keys(), "Graph patch should remove node from the first graph to match the second graph"
 
 def test_add_node():
-    G1 = rt.utils.graph_from_script(dedent("""\n
+    G1 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt 
     G = rt.GraphRT()
     """), 'G')
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node()
@@ -58,7 +58,7 @@ def test_remove_node():
     def const1():
         return 1
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     """), 'G')
@@ -81,7 +81,7 @@ def test_set_kwargs():
     def mult(a, b):
         return a * b
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node()
@@ -115,7 +115,7 @@ def test_set_args():
     def mult(a, b):
         return a * b
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node()
@@ -141,7 +141,7 @@ def test_replace_args():
     def mult(a, b):
         return a*b
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(10, 15)
@@ -159,7 +159,7 @@ def test_remove_args():
     def mult(a, b):
         return a*b
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(10)
@@ -177,7 +177,7 @@ def test_add_kwargs():
     def mult(a, b):
         return a*b
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(a=10, b=5)
@@ -195,7 +195,7 @@ def test_add_args():
     def mult(a, b):
         return a*b
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(10, 5)
@@ -213,7 +213,7 @@ def test_replace_kwargs():
     def mult(a, b):
         return a*b
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(a=10, b=15)
@@ -231,7 +231,7 @@ def test_remove_kwargs():
     def mult(a, b):
         return a*b
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(a=10)
@@ -249,7 +249,7 @@ def test_setting_operator_function():
     def hello():
         return "Hello World!"
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node()
@@ -276,7 +276,7 @@ def test_replace_node_name_with_links():
     def mult(a, b):
         return a * b
     
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node()
@@ -304,7 +304,7 @@ def test_missing_arguments():
     def identity(val):
         return val
 
-    G1 = rt.utils.graph_from_script(dedent("""\n
+    G1 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node()
@@ -331,7 +331,7 @@ def test_move_kwarg_to_arg():
     def identity(val):
         return val
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(10)
@@ -349,7 +349,7 @@ def test_move_arg_to_kwarg():
     def identity(val):
         return val
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(val=10)
@@ -367,7 +367,7 @@ def test_invalid_kwarg():
     def identity(val):
         return val
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node(val=10)
@@ -391,7 +391,7 @@ def test_setting_output():
     G.output = G.get_node('identity')
     assert G.output == G.get_node('identity'), "Setting the output node should update the graph's output"
 
-    G2 = rt.utils.graph_from_script(dedent("""\n
+    G2 = rt.graph_utils.graph_from_script(dedent("""\n
     import pygraphrt as rt
     G = rt.GraphRT()
     @G.node()
@@ -421,7 +421,7 @@ def test_replace_output_node():
 
     G.output = mult
 
-    G2 = rt.utils.graph_from_script(dedent("""\
+    G2 = rt.graph_utils.graph_from_script(dedent("""\
     from pygraphrt import GraphRT
     G = GraphRT()
 

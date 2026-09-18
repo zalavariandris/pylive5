@@ -4,7 +4,7 @@ import pytest
 from qtpy.QtCore import QCoreApplication, QEvent, QThread
 from qtpy.QtTest import QTest
 
-from pygraphrt.file_binding import FileBinding
+from myqtx import FileBinding
 
 
 def replace_when_available(source_path, target_path, timeout_ms=3000):

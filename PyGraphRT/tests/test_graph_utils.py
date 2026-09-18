@@ -16,16 +16,16 @@ def test_get_links():
     def add(a:int, b:int) -> int:
         return a + b
 
-    assert rt.utils.get_in_links(G, add) == {
+    assert rt.graph_utils.get_in_links(G, add) == {
         (two, "a", add), 
         (three, "b", add)
     }, "get_in_links should return the correct input links"
 
-    assert rt.utils.get_out_links(G, two) == {
+    assert rt.graph_utils.get_out_links(G, two) == {
         (two, "a", add)
     }, "get_out_links should return the correct output links for node two"
 
-    assert rt.utils.get_out_links(G, three) == {
+    assert rt.graph_utils.get_out_links(G, three) == {
         (three, "b", add)
     }, "get_out_links should return the correct output links for node three"
 

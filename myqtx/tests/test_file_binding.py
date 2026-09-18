@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from pygraphrt.file_binding import FileBinding
+import myqtx
 
 
 def test_buffer_reads_edits_saves_and_reloads_arbitrary_utf8(tmp_path):
     path = tmp_path / "notes.txt"
     original = "Notes: \u00e1rv\u00edz\nThis is not Python.\n"
     path.write_text(original, encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     changes = []
     buffer.changed.connect(lambda: changes.append(buffer.get_text()))
 
@@ -33,7 +33,7 @@ def test_open_notifies_after_path_and_text_are_committed(tmp_path):
     second = tmp_path / "second.txt"
     first.write_text("same text", encoding="utf-8")
     second.write_text("same text", encoding="utf-8")
-    buffer = FileBinding(first, watch=False)
+    buffer = myqtx.FileBinding(first, watch=False)
     changes = []
     buffer.changed.connect(lambda: changes.append((buffer.path(), buffer.get_text())))
 
@@ -48,7 +48,7 @@ def test_open_notifies_after_path_and_text_are_committed(tmp_path):
 def test_failed_read_preserves_the_buffer_and_path(tmp_path, failure):
     path = tmp_path / "notes.txt"
     path.write_text("accepted", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text("unsaved")
     other = tmp_path / "other.txt"
     error = FileNotFoundError
@@ -69,7 +69,7 @@ def test_failed_read_preserves_the_buffer_and_path(tmp_path, failure):
 def test_failed_save_preserves_memory_and_last_disk_contents(tmp_path, monkeypatch):
     path = tmp_path / "notes.txt"
     path.write_text("original", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text("unsaved")
 
     def fail_write(*args, **kwargs):
@@ -102,7 +102,7 @@ def test_reload_compares_local_and_disk_against_the_baseline(
 ):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text(local)
     changes = []
     conflicts = []
@@ -122,7 +122,7 @@ def test_reload_compares_local_and_disk_against_the_baseline(
 def test_further_conflicts_keep_the_original_baseline(tmp_path):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text("local")
     conflicts = []
     buffer.conflict_detected.connect(lambda *versions: conflicts.append(versions))
@@ -150,7 +150,7 @@ def test_explicit_conflict_resolution_establishes_a_new_baseline(
 ):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text("local")
     path.write_text("external", encoding="utf-8")
     assert buffer.reload() is False
@@ -172,7 +172,7 @@ def test_explicit_conflict_resolution_establishes_a_new_baseline(
 def test_save_checks_for_unseen_disk_conflicts_before_writing(tmp_path):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text("local")
     conflicts = []
     buffer.conflict_detected.connect(lambda *versions: conflicts.append(versions))
@@ -189,7 +189,7 @@ def test_save_checks_for_unseen_disk_conflicts_before_writing(tmp_path):
 def test_saving_a_clean_buffer_accepts_newer_disk_contents(tmp_path):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     path.write_text("external", encoding="utf-8")
 
     assert buffer.save() is True
@@ -202,7 +202,7 @@ def test_saving_a_clean_buffer_accepts_newer_disk_contents(tmp_path):
 def test_editing_local_text_to_match_incoming_resolves_the_conflict(tmp_path):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text("local")
     path.write_text("external", encoding="utf-8")
     assert buffer.reload() is False
@@ -218,7 +218,7 @@ def test_editing_local_text_to_match_incoming_resolves_the_conflict(tmp_path):
 def test_reloading_with_force_discards_local_edits_when_disk_is_unchanged(tmp_path):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text("local")
 
     assert buffer.reload(force=True) is True
@@ -230,7 +230,7 @@ def test_reloading_with_force_discards_local_edits_when_disk_is_unchanged(tmp_pa
 def test_opening_the_current_path_cannot_silently_discard_a_conflict(tmp_path):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
-    buffer = FileBinding(path, watch=False)
+    buffer = myqtx.FileBinding(path, watch=False)
     buffer.set_text("local")
     path.write_text("external", encoding="utf-8")
 
@@ -245,7 +245,7 @@ def test_opening_another_document_resets_the_baseline(tmp_path):
     first.write_text("first", encoding="utf-8")
     second = tmp_path / "second.txt"
     second.write_text("second", encoding="utf-8")
-    buffer = FileBinding(first, watch=False)
+    buffer = myqtx.FileBinding(first, watch=False)
     buffer.set_text("local")
     first.write_text("external", encoding="utf-8")
     assert buffer.reload() is False

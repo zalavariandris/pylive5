@@ -7,7 +7,7 @@ from qtpy.QtCore import Signal, Slot
 from .abstract_module_rt import AbstractModuleRT
 from .operator_rt import ParameterRT
 from .operator_rt_ref import OperatorRTRef
-from .file_binding import FileBinding
+import myqtx 
 from .script_module_rt import ScriptModuleRT
 
 
@@ -33,7 +33,7 @@ class ImportModuleRT(AbstractModuleRT):
             raise TypeError("name must be a string")
         super().__init__(name)
 
-        self.file_binding = FileBinding(path, watch=False, parent=self)
+        self.file_binding = myqtx.FileBinding(path, watch=False, parent=self)
         # Construction raises immediately if the initial source cannot execute.
         self.script_module = ScriptModuleRT(
             name,

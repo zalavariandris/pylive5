@@ -17,7 +17,7 @@ from .abstract_module_rt import AbstractModuleRT
 from .node_rt import NodeRT
 from .local_module_rt import LocalModuleRT, OperatorRTRef
 
-from .graph_profiler import GraphProfiler
+from myutils.profiler import Profiler
 from .memory_cache import MemoryCache
 
 
@@ -45,7 +45,7 @@ class GraphRT(QObject):
         
         self._nodes: set[NodeRT] = set()
         self._successors: dict[NodeRT, set[NodeRT]] = defaultdict(set)
-        self._profiler:  GraphProfiler = GraphProfiler()
+        self._profiler:  Profiler = Profiler()
         self._connected_node_signals: dict[str, list[tuple]] = {}
         self._output_node: NodeRT | None = None
 

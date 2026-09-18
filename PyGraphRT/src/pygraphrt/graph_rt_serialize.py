@@ -66,6 +66,10 @@ def __to_dict(obj, explicit: bool = False) -> str|dict:
 
         case GraphRT():
             return {
+                'modules': {
+                    __to_str(key): __to_dict(value, explicit)
+                    for key, value in obj.modules().items()
+                },
                 'nodes': {
                     __to_str(key): __to_dict(value, explicit)
                     for key, value in obj.nodes().items()

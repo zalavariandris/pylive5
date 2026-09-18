@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myutils"
+version = "0.1.0"
+authors = [
+    { name = "András Zalavári", email = "zalavariandris@gmail.com" }
+]
+description = "Shared Qt widgets and utilities."
+requires-python = ">=3.10"
+dependencies = [
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["myutils", "myutils.*"]
+namespaces = false
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", ".venv_/*"]
