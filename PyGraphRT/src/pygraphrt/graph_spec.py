@@ -88,10 +88,10 @@ def snapshot(runtime: GraphRT) -> GraphSpec:
 
         def ref_from_operator(operator_rt: OperatorRTRef | None)->OperatorRef | None:
             if operator_rt:
-                module = operator_rt.module
+                module = operator_rt.module()
                 if module is None:
-                    raise ValueError(f"Operator {operator_rt.key()} has no module.")
-                return OperatorRef(module=module.name(), name=operator_rt.key())
+                    raise ValueError(f"Operator {operator_rt.name()} has no module.")
+                return OperatorRef(module=module.name(), name=operator_rt.name())
             else:
                 return None
 

@@ -15,7 +15,7 @@ def test_operator_added_signal():
         return x * 2
 
     assert len(spy) == 1, "operators_added signal should have been emitted once"
-    assert my_operator.key() in spy[0][0], "operators_added signal should contain the name of the added operator"
+    assert my_operator.name() in spy[0][0], "operators_added signal should contain the name of the added operator"
 
 def test_operator_removed_signal():
     G = rt.GraphRT()
@@ -27,7 +27,7 @@ def test_operator_removed_signal():
 
     G.module().remove_operator(my_operator)
     assert len(spy) == 1, "operators_removed signal should have been emitted once"
-    assert my_operator.key() in spy[0][0], "operators_removed signal should contain the name of the removed operator"
+    assert my_operator.name() in spy[0][0], "operators_removed signal should contain the name of the removed operator"
 
 def test_operator_function_changed_signal():
     G = rt.GraphRT()

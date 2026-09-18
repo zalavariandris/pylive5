@@ -76,8 +76,8 @@ class ImportModuleRT(AbstractModuleRT):
     def isValid(self, operator: OperatorRTRef) -> bool:
         return (
             isinstance(operator, OperatorRTRef)
-            and operator.module is self
-            and operator.key() in self._operators
+            and operator.module() is self
+            and operator.name() in self._operators
         )
 
     def get_parameters(self, operator: OperatorRTRef) -> MappingProxyType[str, ParameterRT]:
@@ -94,7 +94,7 @@ class ImportModuleRT(AbstractModuleRT):
     def _wrapped_operator(self, operator: OperatorRTRef) -> OperatorRTRef:
         if not self.isValid(operator):
             raise ValueError(f"Operator {operator!r} is not available in module {self.name()!r}.")
-        return self.script_module.get_operator(operator.key())
+        return self.script_module.get_operator(operator.name())
 
     def _sync_operators(self) -> None:
         self._operators = {

@@ -93,7 +93,7 @@ class GraphRT(QObject):
                 operator = self.module().op()(func)
 
             if name is None:
-                name = UniqueNameGenerator(existing_names=self.nodes())(operator.key())
+                name = UniqueNameGenerator(existing_names=self.nodes())(operator.name())
                 
             node = NodeRT(self, operator, name)
             node.set_inputs(*args, **kwargs)
@@ -254,7 +254,7 @@ class GraphRT(QObject):
         for node in self._nodes:
             node_name = node.get_name()
             nodes[node_name] = {
-                "operator": node.get_operator().key() if node.get_operator() else None,
+                "operator": node.get_operator().name() if node.get_operator() else None,
             }
             
             if explicit or len(node._args) > 0:

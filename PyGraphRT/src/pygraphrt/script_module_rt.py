@@ -108,14 +108,14 @@ class ScriptModuleRT(AbstractModuleRT):
     def isValid(self, operator: OperatorRTRef) -> bool:
         return (
             isinstance(operator, OperatorRTRef)
-            and operator.module is self
-            and operator.key() in self._functions
+            and operator.module() is self
+            and operator.name() in self._functions
         )
 
     def _get_function(self, operator: OperatorRTRef) -> Callable:
         if not self.isValid(operator):
             raise ValueError(f"Operator {operator!r} is not available in module {self.name()!r}.")
-        return self._functions[operator.key()]
+        return self._functions[operator.name()]
 
     def get_parameters(self, operator: OperatorRTRef) -> MappingProxyType[str, ParameterRT]:
         if not self.isValid(operator):
@@ -132,7 +132,7 @@ class ScriptModuleRT(AbstractModuleRT):
         })
 
     def fingerprint(self, operator: OperatorRTRef) -> Hashable:
-        return hash((operator.key(), self._get_function(operator)))
+        return hash((operator.name(), self._get_function(operator)))
 
     def call(self, op: OperatorRTRef, *args, **kwargs):
         return self._get_function(op)(*args, **kwargs)

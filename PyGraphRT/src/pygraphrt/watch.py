@@ -42,7 +42,7 @@ class Watcher:
         for node in self._graph().ancestors(self._node()):
             operator = node.get_operator()
             if operator is not None:
-                ancestor_operator_names.add(operator.key())
+                ancestor_operator_names.add(operator.name())
 
         if ancestor_operator_names.intersection(changed_names):
             self._callback()

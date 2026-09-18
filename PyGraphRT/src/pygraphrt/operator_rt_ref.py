@@ -10,16 +10,15 @@ import weakref
 
 
 class OperatorRTRef:
-    def __init__(self, module: AbstractModuleRT, key: str):
+    def __init__(self, module: AbstractModuleRT, name: str):
         self._module: weakref.ReferenceType[AbstractModuleRT] = weakref.ref(module)
-        self._key = key
+        self._name = name
 
-    @property
     def module(self) -> AbstractModuleRT | None:
         return self._module()
 
-    def key(self):
-        return self._key
+    def name(self):
+        return self._name
 
     def isValid(self) -> bool:
         return self._module().isValid(self)
@@ -29,7 +28,7 @@ class OperatorRTRef:
 
     def __call__(self, *args, **kwargs):
         if not self.isValid():
-            raise ValueError(f"Operator {self._key} is not valid.")
+            raise ValueError(f"Operator {self._name} is not valid.")
 
         return self._module().call(self, *args, **kwargs)
 

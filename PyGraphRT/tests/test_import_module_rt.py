@@ -343,8 +343,8 @@ def test_wrapped_runtime_updates_preserve_wrapper_ownership_and_sync_the_buffer(
     module = ImportModuleRT("tools", path, watch=False)
     operator = module.get_operator("value")
     wrapped_operator = module.script_module.get_operator("value")
-    assert operator.module is module
-    assert wrapped_operator.module is module.script_module
+    assert operator.module() is module
+    assert wrapped_operator.module() is module.script_module
     assert operator is not wrapped_operator
     assert module.fingerprint(operator) == module.script_module.fingerprint(wrapped_operator)
     assert module.get_parameters(operator) == wrapped_operator.get_parameters()
@@ -365,7 +365,7 @@ def test_wrapped_runtime_updates_preserve_wrapper_ownership_and_sync_the_buffer(
     module.script_module.set_script(edited)
 
     assert module.get_operator("value") is operator
-    assert operator.module is module
+    assert operator.module() is module
     assert operator(5) == 7
     assert module.file_binding.get_text() == edited
     assert scripts == [edited]

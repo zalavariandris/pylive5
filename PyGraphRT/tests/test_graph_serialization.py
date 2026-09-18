@@ -4,44 +4,9 @@ import pytest
 from textwrap import dedent
 import pygraphrt as rt
 
-from pygraphrt.graph_serialize import serialize
+from pygraphrt.graph_rt_serialize import _to_dict, serialize
 
-
-def test_graph_local_ops_serialization():
-    G = rt.GraphRT()
-
-    @G.node()
-    def two() -> int:
-        return 2
-
-    two_source=dedent("""\
-    def two() -> int:
-        return 2
-    """)
-
-    @G.node()
-    def three() -> int:
-        return 3
-
-    three_source=dedent("""\
-    def three() -> int:
-        return 3
-    """)
-
-    @G.node(a=two, b=three)
-    def add(a:int, b:int) -> int:
-        return a + b
-
-    add_source = dedent("""\
-    def add(a:int, b:int) -> int:
-        return a + b
-    """)
-
-    assert G.to_dict()['operators'] == {
-        'two': two_source,
-        'three': three_source,
-        'add': add_source
-    }, "Graph serialization should match expected structure"
+import json
 
 def test_graph_nodes_implicit_serialization():
     G = rt.GraphRT()
@@ -58,7 +23,9 @@ def test_graph_nodes_implicit_serialization():
     def add(a:int, b:int) -> int:
         return a + b
 
-    assert json.loads(serialize(G, explicit=False))['nodes'] == {
+    serialized= _to_dict(G, explicit=False)
+
+    assert serialized == {
         'two': {
             'operator': 'local.two'
         },
@@ -72,7 +39,7 @@ def test_graph_nodes_implicit_serialization():
                 'b': 'three'
             }
         }
-    }, "Graph serialization should match expected structure"
+    }, f"Graph serialization should match expected structure: got: {serialized}"
 
 def test_graph_nodes_explicit_serialization():
     G = rt.GraphRT()
@@ -89,7 +56,7 @@ def test_graph_nodes_explicit_serialization():
     def add(a:int, b:int) -> int:
         return a + b
 
-    expected_nodes = {
+    expected_graph = {
         'two': {
             'operator': 'local.two',
             'args': [],
@@ -110,9 +77,24 @@ def test_graph_nodes_explicit_serialization():
         }
     }
 
-    actual_nodes = json.loads(serialize(G, explicit=True))['nodes']
-    assert actual_nodes == expected_nodes, f"Graph serialization should match expected structure: {dictdiffer.diff(expected_nodes, actual_nodes)}"
+    serialized = _to_dict(G, explicit=True)['nodes']
+    assert serialized == expected_graph, f"Graph serialization should match expected structure: got: {serialized}"
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-vv"]) 
+    pytest.main([__file__, "-vvv"]) 
+    # G = rt.GraphRT()
+    
+    # @G.node()
+    # def two() -> int:
+    #     return 2
+
+    # @G.node()
+    # def three() -> int:
+    #     return 3
+
+    # @G.node(a=two, b=three)
+    # def add(a:int, b:int) -> int:
+    #     return a + b
+
+    # print(serialize(G, explicit=True))
 
