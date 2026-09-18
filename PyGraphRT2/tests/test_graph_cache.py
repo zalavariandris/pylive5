@@ -92,7 +92,7 @@ def test_upstream_operator_function_change_invalidates_downstream_cache():
 
 
 @pytest.mark.parametrize("keyword_dependency", [False, True])
-def test_reverting_inputs_recomputes_nodes_without_reusing_history(keyword_dependency):
+def test_reverting_inputs_reuses_cached_history(keyword_dependency):
     G = rt.GraphRT()
     G.cache = rt.MemoryCache()
     calls = []
@@ -115,9 +115,9 @@ def test_reverting_inputs_recomputes_nodes_without_reusing_history(keyword_depen
         source.set_inputs(value)
         assert G.execute(downstream) == value * 10
 
-    assert calls == ["source", "times_ten"] * 3
+    assert calls == ["source", "times_ten"] * 2
     assert G.execute(downstream) == 10
-    assert calls == ["source", "times_ten"] * 3
+    assert calls == ["source", "times_ten"] * 2
 
 
 def test_cached_dependency_invalidates_other_execution_roots():
@@ -151,7 +151,7 @@ def test_cached_dependency_invalidates_other_execution_roots():
 
 
 @pytest.mark.parametrize("cache_action", ["clear", "remove"])
-def test_cache_eviction_recomputes_node_and_dependents(cache_action):
+def test_eviction_does_not_change_computation_fingerprints(cache_action):
     G = rt.GraphRT()
     G.cache = rt.MemoryCache()
     calls = []
@@ -176,7 +176,8 @@ def test_cache_eviction_recomputes_node_and_dependents(cache_action):
         G.cache.remove(source)
 
     assert G.execute(doubled) == 6
-    assert calls == ["source", "doubled"] * 2
+    expected = ["source", "doubled"] * 2 if cache_action == "clear" else ["source", "doubled", "source"]
+    assert calls == expected
 
 
 def test_none_results_are_cached():
@@ -202,6 +203,7 @@ def test_none_results_are_cached():
 @pytest.mark.parametrize("keyword_input", [False, True])
 def test_equal_literal_values_with_different_types_invalidate_cache(keyword_input):
     G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
 
     @G.node(1)
     def input_type(value):
@@ -215,15 +217,15 @@ def test_equal_literal_values_with_different_types_invalidate_cache(keyword_inpu
         assert G.execute(input_type) is type(value)
 
 
-def test_cached_function_is_retained_until_its_entry_is_replaced():
+def test_cached_signature_retains_operator_until_cache_is_cleared():
     G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
 
     def original():
         return 1
 
     node = G.node()(original)
     original_ref = weakref.ref(original)
-    assert node.get_operator().fingerprint() is original
     assert G.execute(node) == 1
 
     def replacement():
@@ -232,16 +234,17 @@ def test_cached_function_is_retained_until_its_entry_is_replaced():
     G.update_operator(node.get_operator(), replacement)
     del original
     gc.collect()
-    assert original_ref() is not None, "The cached function's identity must not be recycled"
-    assert node.get_operator().fingerprint() is replacement
-
+    assert original_ref() is not None
     assert G.execute(node) == 2
+
+    G.cache.clear()
     gc.collect()
-    assert original_ref() is None, "Superseded cache entries must release old functions"
+    assert original_ref() is None
 
 
 def test_removing_node_releases_its_cached_result():
     G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
 
     class Result:
         pass
@@ -258,30 +261,29 @@ def test_removing_node_releases_its_cached_result():
     assert result_ref() is None
 
 
-def test_shared_dependencies_do_not_repeat_fingerprinting(monkeypatch):
+def test_shared_dependencies_do_not_repeat_fingerprinting():
     G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
     calls = []
+    hash_calls = 0
+    node_count = 20
 
-    @G.op()
     def add(left, right):
         calls.append((left, right))
         return left + right
 
-    root = G.node(1, 1)(add)
-    node_count = 20
+    class CountedOperator(rt.FunctionOperator):
+        def __hash__(self):
+            nonlocal hash_calls
+            hash_calls += 1
+            assert hash_calls <= 6 * node_count, "Hashing must not expand shared dependency paths"
+            return object.__hash__(self)
+
+    add_op = G.op()(add)
+    G.update_operator(add_op, CountedOperator(add))
+    root = G.node(1, 1)(add_op)
     for _ in range(node_count - 1):
-        root = G.node(root, root)(add)
-
-    fingerprint_calls = 0
-    original_fingerprint = add.fingerprint
-
-    def counted_fingerprint():
-        nonlocal fingerprint_calls
-        fingerprint_calls += 1
-        assert fingerprint_calls <= 4 * node_count, "Fingerprinting must not expand shared dependency paths"
-        return original_fingerprint()
-
-    monkeypatch.setattr(add, "fingerprint", counted_fingerprint)
+        root = G.node(root, root)(add_op)
 
     assert G.execute(root) == 2 ** node_count
     assert G.execute(root) == 2 ** node_count
@@ -290,6 +292,7 @@ def test_shared_dependencies_do_not_repeat_fingerprinting(monkeypatch):
 
 def test_failed_execution_is_retried_and_only_success_is_cached():
     G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
     call_count = 0
 
     @G.node()
@@ -305,6 +308,295 @@ def test_failed_execution_is_retried_and_only_success_is_cached():
     assert G.execute(flaky) == 42
     assert G.execute(flaky) == 42
     assert call_count == 2
+
+
+@pytest.mark.parametrize("keyword_dependency", [False, True])
+def test_rewiring_to_equivalent_node_recomputes_downstream(keyword_dependency):
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+    calls = []
+
+    @G.op()
+    def source(value):
+        calls.append("source")
+        return value
+
+    first = G.node(3)(source, name="first")
+    second = G.node(3)(source, name="second")
+
+    @G.node(value=first)
+    def doubled(value):
+        calls.append("doubled")
+        return value * 2
+
+    # Keep the calling convention the same when changing the connection.
+    if not keyword_dependency:
+        doubled.set_inputs(first)
+    assert G.execute(doubled) == 6
+    if keyword_dependency:
+        doubled.set_inputs(value=second)
+    else:
+        doubled.set_inputs(second)
+    assert G.execute(doubled) == 6
+    assert calls == ["source", "doubled", "source", "doubled"]
+    assert G.execute(doubled) == 6
+    assert calls == ["source", "doubled", "source", "doubled"]
+
+
+def test_changes_to_unrelated_branch_do_not_invalidate_cached_root():
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+    calls = []
+
+    @G.op()
+    def source(value):
+        calls.append(value)
+        return value
+
+    first = G.node(1)(source)
+    second = G.node(2)(source)
+    assert G.execute(first) == 1
+    assert G.execute(second) == 2
+    second.set_inputs(3)
+    assert G.execute(second) == 3
+    assert G.execute(first) == 1
+    assert calls == [1, 2, 3]
+
+
+def test_equivalent_nodes_have_separate_results_and_independent_eviction():
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+    calls = []
+
+    class Result:
+        pass
+
+    @G.op()
+    def source():
+        calls.append("source")
+        return Result()
+
+    first = G.node()(source)
+    second = G.node()(source)
+    first_result = weakref.ref(G.execute(first))
+    second_result = weakref.ref(G.execute(second))
+    assert first_result() is not second_result()
+    assert G.execute(first) is first_result()
+    assert G.execute(second) is second_result()
+    assert calls == ["source", "source"]
+
+    G.remove_node(first)
+    gc.collect()
+    assert first_result() is None
+    assert G.execute(second) is second_result()
+    assert calls == ["source", "source"]
+    G.remove_node(second)
+    gc.collect()
+    assert second_result() is None
+
+
+def test_same_operator_data_can_reuse_history_after_replacement():
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+    calls = []
+
+    def original(value):
+        calls.append("original")
+        return value + 1
+
+    def replacement(value):
+        calls.append("replacement")
+        return value + 2
+
+    node = G.node(1)(original)
+    original_data = rt.FunctionOperator(original)
+    G.update_operator(node.get_operator(), original_data)
+    assert G.execute(node) == 2
+    G.update_operator(node.get_operator(), rt.FunctionOperator(replacement))
+    assert G.execute(node) == 3
+    G.update_operator(node.get_operator(), original_data)
+    assert G.execute(node) == 2
+    assert calls == ["original", "replacement"]
+
+
+def test_argument_positions_names_and_keyword_order_are_significant():
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+
+    @G.node(1, 2)
+    def arguments(*args, **kwargs):
+        return args, tuple(kwargs.items())
+
+    assert G.execute(arguments) == ((1, 2), ())
+    arguments.set_inputs(2, 1)
+    assert G.execute(arguments) == ((2, 1), ())
+    arguments.set_inputs(a=1, b=2)
+    assert G.execute(arguments) == ((), (("a", 1), ("b", 2)))
+    arguments.set_inputs(b=2, a=1)
+    assert G.execute(arguments) == ((), (("b", 2), ("a", 1)))
+    arguments.set_inputs(c=2, a=1)
+    assert G.execute(arguments) == ((), (("c", 2), ("a", 1)))
+
+
+@pytest.mark.parametrize("first,second", [
+    ([1, {"value": (True, None)}], [1, {"value": (True, None)}]),
+    ({"value": [1, 2]}, {"value": [1, 2]}),
+])
+def test_equal_container_literals_reuse_same_node_result(first, second):
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+    calls = []
+
+    @G.node(first)
+    def identity(value):
+        calls.append("identity")
+        return value
+
+    G.execute(identity)
+    identity.set_inputs(second)
+    assert G.execute(identity) == second
+    assert calls == ["identity"]
+
+
+@pytest.mark.parametrize("first,second", [
+    ([1], [True]),
+    ([1], (1,)),
+    (b"value", "value"),
+    (0.0, -0.0),
+    ({"a": 1, "b": 2}, {"b": 2, "a": 1}),
+])
+def test_observable_literal_differences_get_distinct_keys(first, second):
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+    calls = []
+
+    @G.node(first)
+    def describe(value):
+        calls.append("describe")
+        return repr(value)
+
+    assert G.execute(describe) == repr(first)
+    describe.set_inputs(second)
+    assert G.execute(describe) == repr(second)
+    assert calls == ["describe", "describe"]
+
+
+def test_custom_literal_objects_use_identity_without_requiring_hashability():
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+
+    class Value:
+        __hash__ = None
+
+        def __eq__(self, other):
+            return True
+
+    first, second = Value(), Value()
+
+    @G.node(first)
+    def identity(value):
+        return value
+
+    assert G.execute(identity) is first
+    identity.set_inputs(second)
+    assert G.execute(identity) is second
+    identity.set_inputs(first)
+    assert G.execute(identity) is first
+
+
+def test_default_dummy_cache_still_executes_every_time():
+    G = rt.GraphRT()
+    calls = []
+
+    @G.node()
+    def source():
+        calls.append("source")
+        return 1
+
+    assert G.execute(source) == 1
+    assert G.execute(source) == 1
+    assert calls == ["source", "source"]
+
+
+@pytest.mark.parametrize("value", [1 << 16000, -(1 << 16000)], ids=["positive", "negative"])
+def test_large_integer_literals_do_not_require_decimal_conversion(value):
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+    calls = []
+
+    @G.node(value)
+    def identity(value):
+        calls.append("identity")
+        return value
+
+    assert G.execute(identity) == value
+    assert G.execute(identity) == value
+    assert calls == ["identity"]
+
+
+def test_custom_operator_behavior_contributes_to_identity():
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+
+    def original(value):
+        return value
+
+    class DoubledOperator(rt.FunctionOperator):
+        def __call__(self, value):
+            return super().__call__(value) * 2
+
+    node = G.node(3)(original)
+    assert G.execute(node) == 3
+    G.update_operator(node.get_operator(), DoubledOperator(original))
+    assert G.execute(node) == 6
+
+
+def test_equivalent_nodes_do_not_share_results_in_one_execution():
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+
+    @G.op()
+    def source():
+        return []
+
+    first = G.node()(source)
+    second = G.node()(source)
+
+    @G.node(first, second)
+    def pair(left, right):
+        return left, right
+
+    left, right = G.execute(pair)
+    assert left is not right
+    left.append("first only")
+    assert right == []
+    assert G.execute(first) is left
+    assert G.execute(second) is right
+
+
+def test_cached_signature_retains_opaque_literals_until_cache_is_cleared():
+    G = rt.GraphRT()
+    G.cache = rt.MemoryCache()
+
+    class Value:
+        __hash__ = None
+
+    value = Value()
+    value_ref = weakref.ref(value)
+
+    @G.node(value)
+    def source(value):
+        return 1
+
+    assert G.execute(source) == 1
+    source.set_inputs(None)
+    del value
+    gc.collect()
+    assert value_ref() is not None
+
+    G.cache.clear()
+    gc.collect()
+    assert value_ref() is None
 
 
 if __name__ == "__main__":

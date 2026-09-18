@@ -215,7 +215,9 @@ class GraphRT(QObject):
             return entries[value].value if isinstance(value, NodeRT) else value
 
         ancestors = self.ancestors(root)
-        for node in self.topological_sort(ancestors):
+        sorted_ancestors = self.topological_sort(ancestors)
+        
+        for node in sorted_ancestors:
             args, kwargs = node.get_inputs()
             operator = node.get_operator()
             fingerprint = (

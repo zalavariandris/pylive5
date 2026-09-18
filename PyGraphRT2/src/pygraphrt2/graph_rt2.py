@@ -2,11 +2,13 @@ from collections import deque, defaultdict
 from collections.abc import Mapping
 
 from pytools import UniqueNameGenerator
-from typing import Callable, Any, Iterable, Hashable
+from typing import Callable, Any, Iterable
 from types import MappingProxyType
 from dataclasses import dataclass
 import inspect
 import time
+
+
 
 from qtpy.QtCore import (
     QObject, 
@@ -25,27 +27,23 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CacheEntry:
-    fingerprint: Hashable
+    signature: tuple
     value: Any
-    revision: int
+    node_data: NodeData  # Retain immutable inputs used by identity in the signature.
+
 
 class MemoryCache:
-    """Stores the latest result for each node."""
+    """Keep cached input states separately for each node until removed or cleared."""
 
     def __init__(self):
-        self._entries: dict[NodeRef, CacheEntry] = {}
-        self._revision = 0
+        self._entries: dict[NodeRef, dict[tuple, CacheEntry]] = {}
 
-    def lookup(self, node: NodeRef, fingerprint: Hashable) -> CacheEntry | None:
-        entry = self._entries.get(node)
-        if entry is not None and entry.fingerprint == fingerprint:
-            return entry
-        return None
+    def lookup(self, node: NodeRef, signature: tuple) -> CacheEntry | None:
+        return self._entries.get(node, {}).get(signature)
 
-    def save(self, node: NodeRef, fingerprint: Hashable, value: Any) -> CacheEntry:
-        self._revision += 1
-        entry = CacheEntry(fingerprint, value, self._revision)
-        self._entries[node] = entry
+    def save(self, node: NodeRef, signature: tuple, value: Any, node_data: NodeData) -> CacheEntry:
+        entry = CacheEntry(signature, value, node_data)
+        self._entries.setdefault(node, {})[signature] = entry
         return entry
 
     def remove(self, node: NodeRef) -> None:
@@ -55,12 +53,12 @@ class MemoryCache:
         self._entries.clear()
 
 
-class DummyCache():
-    def lookup(self, node: NodeRef, fingerprint: Hashable) -> CacheEntry | None:
+class DummyCache:
+    def lookup(self, node: NodeRef, signature: tuple) -> CacheEntry | None:
         return None
 
-    def save(self, node: NodeRef, fingerprint: Hashable, value: Any) -> CacheEntry:
-        return CacheEntry(fingerprint, value, 0)
+    def save(self, node: NodeRef, signature: tuple, value: Any, node_data: NodeData) -> CacheEntry:
+        return CacheEntry(signature, value, node_data)
 
     def remove(self, node: NodeRef) -> None:
         pass
@@ -159,15 +157,20 @@ class NodeRef:
 
     def set_inputs(self, *args, **kwargs) -> None:
         prev_data = self._graph._nodes[self]
-        next_data = NodeData(prev_data.get_operator(), list(args), dict(kwargs))
-        self._graph._nodes[self] = next_data
+        next_data = NodeData(prev_data.get_operator(), args, dict(kwargs))
+        self._graph._update_node(self, next_data)
+        
 
+
+
+type LiteralValue = None | bool | int | float | str
+type Value = NodeRef | LiteralValue
 
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
 class NodeData(QObject):
     operator: OperatorRef
-    args: tuple
-    kwargs: dict
+    args: tuple[Value]
+    kwargs: dict[str, Value]
 
     def get_inputs(self):
         return tuple(self.args), {k: v for k, v in self.kwargs.items()} # todo: create a view
@@ -188,6 +191,42 @@ class ParameterData:
 
 
 from myutils.profiler import Profiler
+
+def freeze(value, active=None) -> tuple:
+    """Preserve built-in types and values; identify opaque objects by identity.
+
+    The cache retains NodeData so objects identified by id() stay alive.
+    """
+    kind = type(value)
+    if kind in (type(None), bool, int, str, bytes):
+        return kind, value
+    
+    if kind is float:
+        return kind, value.hex()  # Includes the sign of zero.
+    
+    if kind is complex:
+        return kind, value.real.hex(), value.imag.hex()
+    
+    if kind is bytearray:
+        return kind, bytes(value)
+
+    if active is None:
+        active = set()
+
+    if kind in (tuple, list, dict, set, frozenset) and id(value) not in active:
+        active.add(id(value))
+        try:
+            if kind is dict:
+                items = tuple((freeze(k, active), freeze(v, active)) for k, v in value.items())
+            else:
+                items = tuple(freeze(item, active) for item in value)
+            return kind, items
+        finally:
+            active.remove(id(value))
+            
+    return kind, id(value)
+
+
 class GraphRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
     nodes_changed = Signal(list) # list[NodeRef]
@@ -211,6 +250,7 @@ class GraphRT(QObject):
             ref = OperatorRef(self, func.__name__)
             data = FunctionOperator(func)
             self._operators[ref] = data
+            self.operators_added.emit([ref])
             return ref
         return decorator
 
@@ -230,7 +270,7 @@ class GraphRT(QObject):
         self._operators[op_ref] = op_data
         self.operators_changed.emit([op_ref])
 
-    def node(self, *args: NodeRef | Any, **kwargs: NodeRef | Any) -> Callable[[Callable, str], NodeRef]:
+    def node(self, *args: Value, **kwargs: Value) -> Callable[[Callable, str], NodeRef]:
         def decorator(func: Callable | OperatorRef, name: str|None=None) -> NodeRef:
             assert callable(func) or isinstance(func, OperatorRef), "func must be a callable function or an instance of OperatorRef"
 
@@ -256,10 +296,17 @@ class GraphRT(QObject):
             return node_ref
         return decorator
 
+    def _update_node(self, node_ref: NodeRef, node_data: NodeData) -> None:
+        if node_ref not in self._nodes:
+            raise MissingNodeError(f"Node {node_ref} does not exist in the graph.")
+        self._nodes[node_ref] = node_data
+        self.nodes_changed.emit([node_ref])
+
     def remove_node(self, node_ref: NodeRef) -> None:
         if node_ref not in self._nodes:
             raise MissingNodeError(f"Node {node_ref} does not exist in the graph.")
         del self._nodes[node_ref]
+        self.cache.remove(node_ref)
         self.nodes_removed.emit([node_ref])
 
     def nodes(self) -> list[NodeRef]:
@@ -314,6 +361,11 @@ class GraphRT(QObject):
         return sorted_nodes
 
     def execute(self, root:NodeRef, profile: bool = True, ):
+        """Evaluate pure operators with immutable inputs and operator data.
+
+        Upstream signatures are reduced to Python hashes, so dependency hash
+        collisions are possible. Cache lookups compare full local signatures.
+        """
         if root is None:
             raise ValueError("No output node specified.")
 
@@ -324,33 +376,46 @@ class GraphRT(QObject):
             self._profiler.clear()
 
         entries: dict[NodeRef, CacheEntry] = {}
-        fingerprints: dict[NodeRef, tuple] = {}
 
         def resolve_cache(value: Any) -> Any:
             return entries[value].value if isinstance(value, NodeRef) else value
 
         ancestors = self.ancestors(root)
-        print("Ancestors of the root node:", ancestors)
         sorted_ancestors = self.topological_sort(ancestors)
-        print("Topologically sorted ancestors:", sorted_ancestors)
+
+        fingerprints: dict[NodeRef, int] = {}
+
+        # def input_fingerprint(value: Any) -> tuple:
+        #     if isinstance(value, NodeRef):
+        #         return ("node", value, fingerprints[value])
+        #     return ("literal", freeze(value))
+
         for node_ref in sorted_ancestors:
             node_data = self._nodes[node_ref]
             args, kwargs = node_data.get_inputs()
-            fingerprint = (
-                node_data,
-                node_data.get_operator(), 
+            operator_ref = node_data.get_operator()
+            if operator_ref not in self._operators:
+                raise MissingOperatorError(f"Operator {operator_ref} is missing from the graph")
+            operator_data = self._operators[operator_ref]
+            signature = (
+                operator_data,
                 tuple(
-                    fingerprints[value] if isinstance(value, NodeRef) else value
+                    (
+                        "node", value, fingerprints[value]) if isinstance(value, NodeRef) else ("literal", freeze(value)
+                    )
                     for value in args
-                ), 
+                ),
                 tuple(
-                    (key, fingerprints[value] if isinstance(value, NodeRef) else value) 
+                    (
+                        key, 
+                        ("node", value, fingerprints[value]) if isinstance(value, NodeRef) else ("literal", freeze(value))
+                    ) 
                     for key, value in kwargs.items()
-                )
-            ) # review if node data is suitable. It should be. cause if nod data changes, than either the operator either its inputs have changed.
-            fingerprints[node_ref] = fingerprint
-
-            entry = self.cache.lookup(node_ref, fingerprint)
+                ),
+            )
+            # Dependencies already have hashes because this is topological order.
+            fingerprints[node_ref] = hash(signature)
+            entry = self.cache.lookup(node_ref, signature)
 
             if entry is None:
                 resolved_args = [
@@ -363,9 +428,9 @@ class GraphRT(QObject):
                 }
 
                 with self._profiler.profile(node_ref):
-                    value = node_ref(*resolved_args, **resolved_kwargs)
+                    value = operator_data(*resolved_args, **resolved_kwargs)
 
-                entry = self.cache.save(node_ref, fingerprint, value)
+                entry = self.cache.save(node_ref, signature, value, node_data)
 
             entries[node_ref] = entry
 

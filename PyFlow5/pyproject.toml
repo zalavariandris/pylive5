@@ -13,15 +13,19 @@ requires-python = ">=3.12"
 dependencies = [
     "qtpy",
     "pyqt6",
+    "myutils",
     "myqtx",
     "pygraphrt",
+    "pygraphrt2",
     "qdageditor5",
     "QScriptEdit2",
 ]
 
 [tool.uv.sources]
+myutils = { workspace = true }
 myqtx = { workspace = true }
 pygraphrt = { workspace = true }
+pygraphrt2 = { workspace = true }
 qdageditor5 = { workspace = true }
 QScriptEdit2 = { workspace = true }
 
