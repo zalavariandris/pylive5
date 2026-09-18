@@ -9,7 +9,7 @@ from pygraphrt.local_module_rt import LocalModuleRT
 from pygraphrt.script_module_rt import ScriptModuleRT
 from pygraphrt.import_module_rt import ImportModuleRT
 
-def _to_str(obj):
+def __to_str(obj):
     match obj:
         case OperatorRTRef():
             if module:=obj.module():
@@ -26,7 +26,7 @@ def _to_str(obj):
         case _:
             return str(obj)
 
-def _to_dict(obj, explicit: bool = False) -> str|dict:
+def __to_dict(obj, explicit: bool = False) -> str|dict:
     match obj:
         case OperatorRTRef():
             if module:=obj.module():
@@ -49,17 +49,17 @@ def _to_dict(obj, explicit: bool = False) -> str|dict:
             }
         case NodeRT():
             data = {
-                "operator": _to_str(obj.get_operator())
+                "operator": __to_str(obj.get_operator())
             }
             args, kwargs = obj.get_inputs()
             if explicit or len(args) > 0:
                 data["args"] = [
-                    _to_str(val) 
+                    __to_str(val) 
                     for val in args
                 ]
             if explicit or len(kwargs) > 0:
                 data["kwargs"] = {
-                    key: _to_str(val) 
+                    key: __to_str(val) 
                     for key, val in kwargs.items()
                 }
             return data
@@ -67,7 +67,7 @@ def _to_dict(obj, explicit: bool = False) -> str|dict:
         case GraphRT():
             return {
                 'nodes': {
-                    _to_str(key): _to_dict(value, explicit)
+                    __to_str(key): __to_dict(value, explicit)
                     for key, value in obj.nodes().items()
                 }
             }
@@ -78,10 +78,25 @@ def _to_dict(obj, explicit: bool = False) -> str|dict:
         case _:
             raise ValueError(f"Cannot serialize object of type {type(obj)}")
 
-def _from_dict(data: dict):
-    # Implement deserialization logic here
-    raise NotImplementedError("Deserialization is not yet implemented.")
+def _to_dict(graph: GraphRT, explicit: bool = False) -> str|dict:
+    return __to_dict(graph, explicit)
+
+def _from_dict(graph: dict)-> GraphRT:
+    G = GraphRT()
+    for module in graph['modules']:
+        # Implement logic to add modules to G
+        pass
+
+    for node in graph['nodes']:
+        # Implement logic to add nodes to G
+        
+        G.node()(op)
+
+    return G
 
 import json
 def serialize(obj, *, explicit: bool = False) -> str:
     return json.dumps(_to_dict(obj, explicit), indent=4)
+
+def deserialize(serialized: str) -> GraphRT:
+    raise NotImplementedError("Deserialization is not implemented yet.")
