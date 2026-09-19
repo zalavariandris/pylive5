@@ -1,49 +1,16 @@
-import inspect
 from types import MappingProxyType
-from typing import Any, Callable, Hashable, Mapping
-
-from pyparsing import Literal
+from typing import Literal, Any, Callable, Hashable, Mapping
 from qtpy.QtCore import Signal, QObject
+
+
+from myutils.source_diff import ast_functions_diff
 
 from .graph_rt2 import (
     AbstractOperator, 
-    FunctionOperator,
-)
-from myutils.source_diff import ast_functions_diff
-
-
-from qtpy.QtCore import (
-    QObject, 
-    Signal,
+    FunctionOperator
 )
 
-from abc import ABCMeta, abstractmethod
-class _AbstractQObjectMeta(type(QObject), ABCMeta):
-    pass
-
-
-class AbstractModule(QObject, metaclass=_AbstractQObjectMeta):
-    operators_added = Signal(list) # list[str]
-    operators_removed = Signal(list) # list[str]
-    operators_changed = Signal(list) # list[str]
-
-    def __init__(self, name: str):
-        super().__init__()
-        self._name = name
-
-    def name(self) -> str:
-        return self._name
-    
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self._name!r})"
-    
-    @abstractmethod
-    def operators(self) -> Mapping[str, AbstractOperator]:
-        pass
-
-    @abstractmethod
-    def get_operator(self, key: str) -> AbstractOperator | None:
-        pass
+from .abstract_module_rt import AbstractModule
 
 
 def _get_all_functions_from_script(
@@ -57,8 +24,7 @@ def _get_all_functions_from_script(
     return {key: value for key, value in namespace.items() if callable(value)}
 
 
-
-class ScriptModule(AbstractModule):
+class ScriptModuleRT(AbstractModule):
     """An editable script runtime exporting callable module-level bindings.
 
     Updates execute in a fresh shared namespace and commit before emitting signals.
@@ -70,13 +36,13 @@ class ScriptModule(AbstractModule):
     script_changed = Signal()
     script_failed = Signal(object)
 
-    def __init__(self, name: str, script: str = ""):
+    def __init__(self, name: str, script: str = "", parent:QObject | None = None):
         if not isinstance(name, str):
             raise TypeError("name must be a string")
         if not isinstance(script, str):
             raise TypeError("script must be a string")
         
-        super().__init__(name)
+        super().__init__(name, parent=parent)
         self._script = script
 
         # collect functions from the initial script

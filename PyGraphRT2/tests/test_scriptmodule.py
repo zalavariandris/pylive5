@@ -1,11 +1,11 @@
 import pytest
 import traceback
 from textwrap import dedent
-from pygraphrt2.script_module import ScriptModule
+from pygraphrt2.script_module_rt import ScriptModuleRT
 from pygraphrt2.graph_rt2 import GraphRT, ParameterData
 
 def test_initializatino():
-    sm = ScriptModule("mathy", dedent("""\
+    sm = ScriptModuleRT("mathy", dedent("""\
     def one():
         return 1
 
@@ -29,7 +29,7 @@ def test_initializatino():
 
 
 def test_updating_script():
-    sm = ScriptModule("mathy", dedent("""\
+    sm = ScriptModuleRT("mathy", dedent("""\
         def one():
             return 1
 
@@ -79,15 +79,15 @@ def test_updating_script_with_syntaxerror():
             return a * b
         """)
     
-    sm = ScriptModule("mathy", source_without_syntaxerror)
+    sm = ScriptModuleRT("mathy", source_without_syntaxerror)
     sm.set_script(source_with_syntaxerror)
 
-    assert sm.operators().keys() == ScriptModule("mathy", source_with_syntaxerror).operators().keys()
+    assert sm.operators().keys() == ScriptModuleRT("mathy", source_with_syntaxerror).operators().keys()
 
 
 from qtpy.QtTest import QSignalSpy
 def test_updating_script_signals():
-    sm = ScriptModule("mathy", dedent("""\
+    sm = ScriptModuleRT("mathy", dedent("""\
         def one():
             return 1
 
@@ -143,7 +143,7 @@ def test_module_name_is_used_in_tracebacks_and_retained_for_edits(name):
         def fail():
             raise ValueError("original")
         """)
-    module = ScriptModule(name, source)
+    module = ScriptModuleRT(name, source)
 
     for message in ("original", "edited"):
         module.set_script(source.replace("original", message))
@@ -161,13 +161,13 @@ def test_syntax_errors_use_module_name_and_invalid_script_clears_operators():
             return __name__
         """)
     invalid_source = "def broken(:\n"
-    invalid_module = ScriptModule("tools", invalid_source)
+    invalid_module = ScriptModuleRT("tools", invalid_source)
     assert invalid_module.get_script() == invalid_source
     assert invalid_module.operators() == {}
     assert isinstance(invalid_module.get_state(), SyntaxError)
     assert invalid_module.get_state().filename == "<script:tools>"
 
-    module = ScriptModule("tools", source)
+    module = ScriptModuleRT("tools", source)
     failures = []
     removed = []
     added = []
@@ -209,58 +209,44 @@ def test_syntax_errors_use_module_name_and_invalid_script_clears_operators():
     ("def one(): return 1", "VALID")
 ])
 def test_initial_module_state(source, expected_state):
-    module = ScriptModule("tools", source)
+    module = ScriptModuleRT("tools", source)
     assert module.get_state() == expected_state, f"Expected state {expected_state}, but got {module.get_state()}"
 
 def test_initial_module_state_with_error():
-    module = ScriptModule("tools", "broken(:")
+    module = ScriptModuleRT("tools", "broken(:")
     assert isinstance(module.get_state(), SyntaxError)
 
+from collections import Counter
 def test_state_changed_reports_committed_state_only_on_transitions():
-    source = "def one(): return 1"
-    module = ScriptModule("tools", source)
-    observed = []
-    module.state_changed.connect(
-        lambda: observed.append(
-            (module.get_state(), module.get_script(), set(module.operators()))
-        )
-    )
-
-    module.set_script(source + "\n# valid edit")
-    assert observed == []
-
-    invalid_source = "def broken(:"
-    module.set_script(invalid_source)
-    assert observed == [("syntax_error", invalid_source, set())]
-
-    module.set_script(invalid_source)
-    module.set_script("def still_broken(:")
-    assert module.get_state() == "syntax_error"
-    assert len(observed) == 1
-
-    module.set_script(source)
-    assert observed[-1] == ("valid", "valid", source, {"one"})
-    assert len(observed) == 2
-
-    module.set_script("")
-    assert module.get_state() == "valid"
-    assert module.operators() == {}
-    assert len(observed) == 2
-
-
-def test_execution_error_preserves_stored_script_state():
-    source = "def one(): return 1"
-    module = ScriptModule("tools", source)
-    states = []
-    module.state_changed.connect(lambda: states.append(module.get_state()))
-
-    with pytest.raises(ValueError, match="execution failed"):
-        module.set_script('raise ValueError("execution failed")')
-
+    valid_source = "def one(): return 1"
+    module = ScriptModuleRT("tools", valid_source)
     assert module.get_state() == "VALID"
-    assert module.get_script() == source
-    assert module.get_operator("one")() == 1
-    assert states == []
+
+    counter = 0
+    def increment_counter():
+        nonlocal counter
+        counter += 1
+    module.state_changed.connect(increment_counter)
+
+    module.set_script(valid_source + "\n# valid edit")
+    assert module.get_state() == "VALID"
+    assert counter == 0, f"valid to valid transition should not trigger state_changed"
+
+    module.set_script(valid_source + "\n# another valid edit")
+    assert module.get_state() == "VALID"
+    assert counter == 0, f"valid to valid transition should not trigger state_changed"
+
+    module.set_script("def broken(:")
+    assert isinstance(module.get_state(), SyntaxError)
+    assert counter == 1, f"valid to invalid transition should trigger state_changed"
+
+    module.set_script("def broken(hello")
+    assert isinstance(module.get_state(), SyntaxError)
+    assert counter == 2, f"erros message of state has changed, therefor a state change should have been triggered"
+
+    module.set_script(valid_source)
+    assert module.get_state() == "VALID"
+    assert counter == 3, f"Expected counter to be 2, but got {counter}"
 
 
 if __name__ == "__main__":

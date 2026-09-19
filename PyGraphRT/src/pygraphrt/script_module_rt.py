@@ -7,7 +7,7 @@ from qtpy.QtCore import Signal
 from .abstract_module_rt import AbstractModuleRT
 from .operator_rt import ParameterRT
 from .operator_rt_ref import OperatorRTRef
-from ....myutils.src.myutils.source_diff import ast_functions_diff
+from myutils.source_diff import ast_functions_diff
 
 
 def _get_all_functions_from_script(
