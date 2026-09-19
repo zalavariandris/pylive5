@@ -212,7 +212,7 @@ def test_initial_module_state(source, expected_state):
     module = ScriptModule("tools", source)
     assert module.get_state() == expected_state, f"Expected state {expected_state}, but got {module.get_state()}"
 
-def test_initial_module_state_with_error(source, expected_state):
+def test_initial_module_state_with_error():
     module = ScriptModule("tools", "broken(:")
     assert isinstance(module.get_state(), SyntaxError)
 
@@ -221,8 +221,8 @@ def test_state_changed_reports_committed_state_only_on_transitions():
     module = ScriptModule("tools", source)
     observed = []
     module.state_changed.connect(
-        lambda state: observed.append(
-            (state, module.get_state(), module.get_script(), set(module.operators()))
+        lambda: observed.append(
+            (module.get_state(), module.get_script(), set(module.operators()))
         )
     )
 
@@ -231,7 +231,7 @@ def test_state_changed_reports_committed_state_only_on_transitions():
 
     invalid_source = "def broken(:"
     module.set_script(invalid_source)
-    assert observed == [("syntax_error", "syntax_error", invalid_source, set())]
+    assert observed == [("syntax_error", invalid_source, set())]
 
     module.set_script(invalid_source)
     module.set_script("def still_broken(:")
@@ -252,7 +252,7 @@ def test_execution_error_preserves_stored_script_state():
     source = "def one(): return 1"
     module = ScriptModule("tools", source)
     states = []
-    module.state_changed.connect(states.append)
+    module.state_changed.connect(lambda: states.append(module.get_state()))
 
     with pytest.raises(ValueError, match="execution failed"):
         module.set_script('raise ValueError("execution failed")')
@@ -264,4 +264,4 @@ def test_execution_error_preserves_stored_script_state():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    pytest.main([__file__, "-v"])
