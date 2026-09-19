@@ -85,7 +85,6 @@ class TestOperatorCollectionSignals():
         assert my_node.get_operator() in spy[0][0], "operators_changed signal should contain the name of the changed operator"
 
 
-
 def test_executed_signal():
     G = rt.GraphRT()
     spy = QSignalSpy(G.executed)
@@ -106,7 +105,7 @@ def test_executed_signal():
     assert result == 6, "The result of executing the node should be correct"
 
     assert len(spy) == 1, "executed signal should have been emitted once"
-    assert all(name in spy[0][0] for name in ["two", "three", "mult"]), "executed signal should contain the names of the executed nodes"
+    assert all(name in spy[0][0] for name in [two, three, mult]), "executed signal should contain the names of the executed nodes"
     
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"]) 

@@ -1,8 +1,9 @@
-from .graph_rt2 import GraphRT, FunctionOperator, MemoryCache
+from .graph_rt2 import GraphRT, FunctionOperator, MemoryCache, HistoryMemoryCache
 
 
 all = [
     "GraphRT",
     "FunctionOperator",
-    "MemoryCache"
+    "MemoryCache",
+    "HistoryMemoryCache"
 ]

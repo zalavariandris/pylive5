@@ -1,6 +1,7 @@
 import ast
 from typing import Any
 from dataclasses import dataclass
+from textwrap import dedent
 
 @dataclass
 class FunctionsDiff:
@@ -8,6 +9,7 @@ class FunctionsDiff:
     unchanged: set[str]
     added: set[str]
     removed: set[str]
+
 
 def ast_functions_diff(source1: str, source2: str) -> FunctionsDiff:
     """Classify qualified function names by structural AST changes.
@@ -17,7 +19,9 @@ def ast_functions_diff(source1: str, source2: str) -> FunctionsDiff:
     structural approximation of behavior: changes to globals or dependencies
     are not tracked, and equivalent expressions may be reported as changed.
     Repeated definitions in the same scope are compared in source order.
-    Invalid Python raises SyntaxError.
+    
+    Invalid Python is treated as having no function definitions; the syntax error
+    is printed rather than raised.
     """
     def functions(source: str) -> dict[str, list[str]]:
         definitions: dict[str, list[str]] = {}
@@ -41,8 +45,12 @@ def ast_functions_diff(source1: str, source2: str) -> FunctionsDiff:
                 scope.pop()
 
             visit_AsyncFunctionDef = visit_FunctionDef
+        try:
+            module = ast.parse(source) 
+            Collector().visit(module)
+        except SyntaxError as error:
+            print(f"Syntax error in source: {error}")
 
-        Collector().visit(ast.parse(source))
         return definitions
 
     before = functions(source1)
@@ -51,12 +59,13 @@ def ast_functions_diff(source1: str, source2: str) -> FunctionsDiff:
     removed = before.keys() - after.keys()
     common = before.keys() & after.keys()
     changed = {name for name in common if before[name] != after[name]}
-    print(f"""AST Diff:
-    Added: {added}
-    Removed: {removed}
-    Changed: {changed}
-    Unchanged: {common - changed}
-    """)
+    print(dedent(f"""\
+    AST Diff:
+        Added: {added}
+        Removed: {removed}
+        Changed: {changed}
+        Unchanged: {common - changed}
+    """))
     return FunctionsDiff(
         changed=changed,
         unchanged=common - changed,

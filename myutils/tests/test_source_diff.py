@@ -1,7 +1,7 @@
 import ast
 import pytest
 from textwrap import dedent
-from pygraphrt.source_diff import ast_functions_diff, FunctionsDiff
+from myutils.source_diff import ast_functions_diff, FunctionsDiff
 
 
 def test_ast_diff_expectations():

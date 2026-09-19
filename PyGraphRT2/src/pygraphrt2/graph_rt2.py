@@ -1,8 +1,9 @@
 from collections import deque, defaultdict
 from collections.abc import Mapping
+import typing
 
 from pytools import UniqueNameGenerator
-from typing import Callable, Any, Iterable
+from typing import Callable, Any, ClassVar, Hashable, Iterable
 from types import MappingProxyType
 from dataclasses import dataclass
 import inspect
@@ -27,23 +28,55 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CacheEntry:
-    signature: tuple
+    fingerprint: Hashable
     value: Any
-    node_data: NodeData  # Retain immutable inputs used by identity in the signature.
 
 
 class MemoryCache:
-    """Keep cached input states separately for each node until removed or cleared."""
+    """Keep only the latest saved result for each node."""
 
-    def __init__(self):
-        self._entries: dict[NodeRef, dict[tuple, CacheEntry]] = {}
+    def __init__(self) -> None:
+        self._entries: dict[NodeRef, CacheEntry] = {}
 
-    def lookup(self, node: NodeRef, signature: tuple) -> CacheEntry | None:
-        return self._entries.get(node, {}).get(signature)
+    def lookup(self, node: NodeRef, fingerprint: Hashable) -> CacheEntry | None:
+        entry = self._entries.get(node)
+        if entry is not None and entry.fingerprint == fingerprint:
+            return entry
+        return None
 
-    def save(self, node: NodeRef, signature: tuple, value: Any, node_data: NodeData) -> CacheEntry:
-        entry = CacheEntry(signature, value, node_data)
-        self._entries.setdefault(node, {})[signature] = entry
+    def hit(self, node: NodeRef, fingerprint: Hashable) -> bool:
+        return self.lookup(node, fingerprint) is not None
+
+    def save(self, node: NodeRef, fingerprint: Hashable, value: Any) -> CacheEntry:
+        entry = CacheEntry(fingerprint, value)
+        self._entries[node] = entry
+        return entry
+
+    def remove(self, node: NodeRef) -> None:
+        self._entries.pop(node, None)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+
+class HistoryMemoryCache:
+    """Keep previous results per node and fingerprint until removed or cleared."""
+
+    def __init__(self)->None:
+        self._entries: dict[
+            NodeRef, 
+            dict[Hashable, CacheEntry]
+        ] = {}
+
+    def lookup(self, node: NodeRef, fingerprint: Hashable) -> CacheEntry | None:
+        return self._entries.get(node, {}).get(fingerprint)
+
+    def hit(self, node: NodeRef, fingerprint: Hashable) -> bool:
+        return fingerprint in self._entries.get(node, {})
+
+    def save(self, node: NodeRef, fingerprint: Hashable, value: Any) -> CacheEntry:
+        entry = CacheEntry(fingerprint, value)
+        self._entries.setdefault(node, {})[fingerprint] = entry
         return entry
 
     def remove(self, node: NodeRef) -> None:
@@ -54,11 +87,14 @@ class MemoryCache:
 
 
 class DummyCache:
-    def lookup(self, node: NodeRef, signature: tuple) -> CacheEntry | None:
+    def lookup(self, node: NodeRef, fingerprint: Hashable) -> CacheEntry | None:
         return None
 
-    def save(self, node: NodeRef, signature: tuple, value: Any, node_data: NodeData) -> CacheEntry:
-        return CacheEntry(signature, value, node_data)
+    def hit(self, node: NodeRef, fingerprint: Hashable) -> bool:
+        return False
+
+    def save(self, node: NodeRef, fingerprint: Hashable, value: Any) -> CacheEntry:
+        return CacheEntry(fingerprint, value)
 
     def remove(self, node: NodeRef) -> None:
         pass
@@ -94,10 +130,12 @@ class FunctionOperator(AbstractOperator):
         sig = inspect.signature(self._func)
         params = {}
         for name, param in sig.parameters.items():
-            annotation = param.annotation if param.annotation is not inspect.Parameter.empty else Any
-            param_data = ParameterData(name, annotation)
-            if param.default is not inspect.Parameter.empty:
-                param_data.default = param.default
+            param_data = ParameterData(
+                name, 
+                param.annotation if param.annotation is not inspect.Parameter.empty else ParameterData._empty,
+                param.default if param.default is not inspect.Parameter.empty else ParameterData._empty
+                )
+
             params[name] = param_data
         return MappingProxyType(params)
 
@@ -121,6 +159,10 @@ class OperatorRef:
 
     def __hash__(self):
         return hash((self.graph, self.name))
+
+    def get_parameters(self) -> Mapping[str, ParameterData]:
+        operator_data = self.graph._operators[self]
+        return operator_data.get_parameters()
 
 
 @dataclass
@@ -182,12 +224,15 @@ class NodeData(QObject):
         raise NotImplementedError("__call__ is not implemented for NodeRef")
 
 
+@dataclass(frozen=True)
 class ParameterData:
-    _empty = object()
-    def __init__(self, name: str, type_: type):
-        self.name = name
-        self.annotation = type_
-        self.default = self._empty
+    _empty:ClassVar = object()
+    name:str
+    annotation:type = _empty
+    default: Any = _empty
+
+    def __repr__(self):
+        return f"ParameterData(name='{self.name}', annotation={self.annotation}, default={self.default})"
 
 
 from myutils.profiler import Profiler
@@ -197,6 +242,11 @@ def freeze(value, active=None) -> tuple:
 
     The cache retains NodeData so objects identified by id() stay alive.
     """
+    # todo: consider moving freeze alongside with fingerprinting to the cache, 
+    #       or? a utility class? 
+    #       Figure out where fingerprinting and freeze belongs. 
+    #       to the memory or to the graph, or a third party component.
+
     kind = type(value)
     if kind in (type(None), bool, int, str, bytes):
         return kind, value
@@ -245,7 +295,7 @@ class GraphRT(QObject):
         self._profiler = Profiler()
         self.cache = DummyCache()
 
-    def op(self) -> Callable[[Callable, str|None], OperatorRef]:
+    def op(self) -> Callable[[Callable], OperatorRef]:
         def decorator(func: Callable) -> OperatorRef:
             ref = OperatorRef(self, func.__name__)
             data = FunctionOperator(func)
@@ -270,7 +320,7 @@ class GraphRT(QObject):
         self._operators[op_ref] = op_data
         self.operators_changed.emit([op_ref])
 
-    def node(self, *args: Value, **kwargs: Value) -> Callable[[Callable, str], NodeRef]:
+    def node(self, *args: Value, **kwargs: Value) -> Callable[..., NodeRef]: # todo: consider using a protocol for better type checking
         def decorator(func: Callable | OperatorRef, name: str|None=None) -> NodeRef:
             assert callable(func) or isinstance(func, OperatorRef), "func must be a callable function or an instance of OperatorRef"
 
@@ -360,37 +410,9 @@ class GraphRT(QObject):
 
         return sorted_nodes
 
-    def execute(self, root:NodeRef, profile: bool = True, ):
-        """Evaluate pure operators with immutable inputs and operator data.
-
-        Upstream signatures are reduced to Python hashes, so dependency hash
-        collisions are possible. Cache lookups compare full local signatures.
-        """
-        if root is None:
-            raise ValueError("No output node specified.")
-
-        if root not in self._nodes:
-            raise ValueError(f"Node {root} does not exist in the engine.")
-        
-        if profile:
-            self._profiler.clear()
-
-        entries: dict[NodeRef, CacheEntry] = {}
-
-        def resolve_cache(value: Any) -> Any:
-            return entries[value].value if isinstance(value, NodeRef) else value
-
-        ancestors = self.ancestors(root)
-        sorted_ancestors = self.topological_sort(ancestors)
-
+    def _build_fingerprints(self, sorted_nodes: list[NodeRef]) -> dict[NodeRef, int]:
         fingerprints: dict[NodeRef, int] = {}
-
-        # def input_fingerprint(value: Any) -> tuple:
-        #     if isinstance(value, NodeRef):
-        #         return ("node", value, fingerprints[value])
-        #     return ("literal", freeze(value))
-
-        for node_ref in sorted_ancestors:
+        for node_ref in sorted_nodes:
             node_data = self._nodes[node_ref]
             args, kwargs = node_data.get_inputs()
             operator_ref = node_data.get_operator()
@@ -415,27 +437,69 @@ class GraphRT(QObject):
             )
             # Dependencies already have hashes because this is topological order.
             fingerprints[node_ref] = hash(signature)
-            entry = self.cache.lookup(node_ref, signature)
+        return fingerprints
 
-            if entry is None:
-                resolved_args = [
-                    resolve_cache(value) 
+    def _resolve_node_inputs(self, node_ref:NodeRef, ancestor_results: dict[NodeRef, Any])->tuple[list[Any], dict[str, Any]]:
+        """ build fingerprint for teh memory cache """
+        node_data = self._nodes[node_ref]
+        args, kwargs = node_data.get_inputs()
+        resolved_args = [
+            ancestor_results[value] if isinstance(value, NodeRef) else value
+            for value in args
+        ]
+        
+        return resolved_args, resolved_kwargs
+        
+    def execute(self, root:NodeRef, profile: bool = True, ):
+        """Evaluate pure operators with immutable inputs and operator data.
+
+        Upstream signatures are reduced to Python hashes, so dependency hash
+        collisions are possible. Cache lookups compare full local signatures.
+        """
+        if root is None:
+            raise ValueError("No output node specified.")
+
+        if root not in self._nodes:
+            raise ValueError(f"Node {root} does not exist in the engine.")
+        
+        if profile:
+            self._profiler.clear()
+
+        ancestors = self.ancestors(root)
+        sorted_ancestors = self.topological_sort(ancestors)
+
+        # execute nodes
+        fingerprints = self._build_fingerprints(sorted_ancestors)
+        ancestors_output: dict[NodeRef, Any] = {} # store node output temporary
+        for node_ref in sorted_ancestors:
+            node_data = self._nodes[node_ref]
+            
+            if entry:=self.cache.lookup(node_ref, fingerprints[node_ref]):
+                ancestors_output[node_ref] = entry.value
+            else:
+                args, kwargs = node_data.get_inputs()
+                operator_ref = node_data.get_operator()
+                if operator_ref not in self._operators:
+                    raise MissingOperatorError(f"Operator {operator_ref} is missing from the graph")
+                operator_data = self._operators[operator_ref]
+                resolved_args = resolved_args = [
+                    ancestors_output[value] if isinstance(value, NodeRef) else value
                     for value in args
                 ]
-                resolved_kwargs = {
-                    key: resolve_cache(value) 
+
+                resolved_kwargs = resolved_kwargs = {
+                    key: ancestors_output[value] if isinstance(value, NodeRef) else value
                     for key, value in kwargs.items()
                 }
 
                 with self._profiler.profile(node_ref):
                     value = operator_data(*resolved_args, **resolved_kwargs)
 
-                entry = self.cache.save(node_ref, signature, value, node_data)
+                ancestors_output[node_ref] = value
+                entry = self.cache.save(node_ref, fingerprints[node_ref], value)
 
-            entries[node_ref] = entry
-
-        self.executed.emit({node_ref: entries[node_ref].value for node_ref in ancestors})
-        return entries[root].value
+        self.executed.emit({node_ref: ancestors_output[node_ref] for node_ref in ancestors})
+        return ancestors_output[root]
 
 if __name__ == "__main__":
     G = GraphRT()
