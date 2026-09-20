@@ -1,10 +1,13 @@
 from collections import defaultdict
+from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.graph_rt import NodeRef
+from pytools import UniqueNameGenerator
 from qtpy.QtCore import QPointF
-from typing import Iterable
+from typing import Iterable, override
 
 from qdageditor5.models.abstract_dag_model import (
-    AbstractDAGModel, 
+    AbstractDAGModel,
+    CellIdx, 
     DirectionalLinkId, 
     InletName, 
     NodeName, 
@@ -12,79 +15,98 @@ from qdageditor5.models.abstract_dag_model import (
 )
 
 import pygraphrt as rt
-
+from qtpy.QtCore import (
+    QObject, 
+    Qt,
+    Signal,
+    QPointF
+)
+from typing import Any
 
 class PyFlowRTModel(AbstractDAGModel):
     def __init__(self, rt: rt.GraphRT):
         super().__init__()
-        self.rt = rt
+        self._rt = rt
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
 
     def setRT(self, rt: rt.GraphRT):
         self._beginResetModel()
-        self.rt = rt
+        self._rt = rt
         self._endResetModel()
 
     # nodes
+    @override
     def nodes(self)->Iterable[NodeName]:
-        return [node_ref.get_name() for node_ref in self.rt.nodes()]
+        return [
+            node_ref.get_name() 
+            for node_ref in self._rt.nodes()
+        ]
 
     def getNode(self, node_name:NodeName)->rt.NodeRef|None:
         # todo: consider caching node references by name for faster lookup
         # find noderef by the name
-        for node_ref in self.rt.nodes():
+        for node_ref in self._rt.nodes():
             if node_ref.get_name() == node_name:
                 return node_ref
         return None
 
+    @override
     def nodePosition(self, node_name:NodeName)->QPointF:
-        return QPointF(*self._positions[node_name])
+        if node_name in self._positions:
+            x, y = self._positions[node_name]
+            return QPointF(x, y)
+        else:
+            return QPointF(0.0, 0.0)
 
-    def setNodePosition(self, node_name:NodeName, position:QPointF):
-        self._positions[node_name] = (position.x(), position.y())
+    @override
+    def setNodePosition(self, node_name:NodeName, position:QPointF|None):
+        if position:
+            self._positions[node_name] = (position.x(), position.y())
+        else:
+            del self._positions[node_name]
 
-    def nodeData(self, node_name):
+    @override
+    def nodeData(self, node: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         return None
 
     def removeNodes(self, nodes:Iterable[NodeName]):
         self._beginRemoveNodes(nodes)
-        for node in list(nodes):
-            node_rt = self.rt.get_node(node)
-            if node_rt is not None:
-                self.rt.remove_node(node_rt)
+        for node_name in list(nodes):
+            node_ref = self.getNode(node_name)
+            if node_ref is not None:
+                self._rt.remove_node(node_ref)
         self._endRemoveNodes()
 
     # ports
+    @override
     def inlets(self, node:NodeName)->Iterable[InletName]:
         if node_ref := self.getNode(node):
             if op := node_ref.get_operator():
                 yield from op.get_parameters().keys()
-        # args, kwargs = self.rt.get_node(node).get_inputs()
-        # for i, arg in enumerate(args):
-        #     yield f'{i+1}'
 
-        # for key in kwargs.keys():
-        #     yield key
-
+    @override
     def outlets(self, node:NodeName)->Iterable[OutletName]:
         return ['out']
 
-    def inletData(self, node:NodeName, inlet:InletName):
+    @override
+    def inletData(self, node: NodeName, inlet: InletName, role:int) -> Any:
         return None
 
-    def outletData(self, node:NodeName, outlet:OutletName):
+    @override
+    def outletData(self, node:NodeName, outlet:OutletName, role:int) -> Any:
         return None
 
     # cells
-
-    def nodeCellCount(self, node_name):
+    @override
+    def nodeCellCount(self, node_name: NodeName) -> int:
         return 0
 
-    def nodeCellData(self, node_name, cell):
+    @override
+    def nodeCellData(self, node_name: NodeName, cell: CellIdx, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         return None
 
     # links
-
+    @override
     def inLinks(self, node_name:NodeName, inlet_name:InletName)->Iterable[DirectionalLinkId]:
         node_ref:rt.NodeRef = self.getNode(node_name)
         op = node_ref.get_operator()
@@ -112,6 +134,7 @@ class PyFlowRTModel(AbstractDAGModel):
         #             yield m_value.get_name(), 'out', node_name, inlet_name
         # return []
 
+    @override
     def outLinks(self, node:NodeName, outlet:OutletName)->Iterable[DirectionalLinkId]:
         # todo: fix performance here
         for link in self.links():
@@ -120,8 +143,9 @@ class PyFlowRTModel(AbstractDAGModel):
                 yield link
         return []
 
+    @override
     def links(self)->Iterable[DirectionalLinkId]:
-        for node_ref in self.rt.nodes():
+        for node_ref in self._rt.nodes():
             op = node_ref.get_operator()
             # positional args bind to parameters by position, same as a real Python call
             param_names = list(op.get_parameters().keys()) if op is not None else []
@@ -138,15 +162,18 @@ class PyFlowRTModel(AbstractDAGModel):
 
         yield from []
 
-    def linkSource(self, link:DirectionalLinkId):
+    @override
+    def linkSource(self, link:DirectionalLinkId) -> tuple[NodeName|OutletName]|None:
         source, outlet, target, inlet = link
         return source, outlet
 
-    def linkTarget(self, link:DirectionalLinkId):
+    @override
+    def linkTarget(self, link:DirectionalLinkId) -> tuple[NodeName|InletName]|None:
         source, outlet, target, inlet = link
         return target, inlet
 
-    def removeLinks(self, links:Iterable[DirectionalLinkId]):
+    @override
+    def removeLinks(self, links:Iterable[DirectionalLinkId])->bool:
         self._beginRemoveLinks(links)
         for link in list(links):
             source, outlet, target, inlet = link
@@ -173,11 +200,12 @@ class PyFlowRTModel(AbstractDAGModel):
                     if not (k == inlet and isinstance(v, rt.NodeRef) and v.get_name() == source)
                 }
                 target_rt.set_inputs(*args, **new_kwargs)
-                
-        self._endRemoveLinks()
 
-    def addLink(self, source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
+        self._endRemoveLinks() # todo: check if QAbstractItemModel return values for these kind of methods
+        return True
 
+    def addLink(self, source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName)->None:
+        self._beginAddLinks([(source, outlet, target, inlet)])
         target_ref = self.getNode(target)
         source_ref = self.getNode(source)
         assert target_ref is not None, f"Target node '{target}' not found"
@@ -196,5 +224,21 @@ class PyFlowRTModel(AbstractDAGModel):
         else:
             kwargs[inlet] = source_ref
 
-        target_ref.set_inputs(*args, **kwargs)
-        print(f"Updated inputs for target node '{target}': args={args}, kwargs={kwargs}")
+            target_ref.set_inputs(*args, **kwargs)
+            print(f"Updated inputs for target node '{target}': args={args}, kwargs={kwargs}")
+        self._endAddLinks()
+
+    def addNode(self, operator:OperatorRef, position:QPointF|None=None)->bool:
+        """
+        position: QPointF|None, in scene coordinates"""
+        assert isinstance(operator, OperatorRef), f"operator must be an instance of OperatorRef, got: {operator}"
+        new_node_name = operator.name
+        node_names = [ref.get_name() for ref in self._rt.nodes()]
+        unique_name = UniqueNameGenerator(existing_names=node_names)(new_node_name)
+        self._beginAddNodes([unique_name])
+        new_node_ref = self._rt.node()(operator, name=unique_name)
+        if position:
+            self._positions[new_node_ref.get_name()] = position.x(), position.y()
+        self._endAddNodes()
+        
+        return True

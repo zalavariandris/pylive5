@@ -343,9 +343,9 @@ class GraphRT(QObject):
             node_data = self._nodes[node_ref]
             args, kwargs = node_data.get_inputs()
             operator_ref = node_data.get_operator()
-            if operator_ref not in self._local_module._operators:
-                raise MissingOperatorError(f"Operator {operator_ref} is missing from the graph")
-            operator_data = self._local_module._operators[operator_ref]
+            assert isinstance(operator_ref, OperatorRef), f"operator_ref must be an instance of OperatorRef, got: {operator_ref}"
+
+            operator_data = operator_ref.get_value()
             signature = (
                 operator_data,
                 tuple(
@@ -374,6 +374,10 @@ class GraphRT(QObject):
             ancestor_results[value] if isinstance(value, NodeRef) else value
             for value in args
         ]
+        resolved_kwargs = {
+            key: ancestor_results[value] if isinstance(value, NodeRef) else value
+            for key, value in kwargs.items()
+        }
         
         return resolved_args, resolved_kwargs
         
@@ -405,10 +409,8 @@ class GraphRT(QObject):
                 ancestors_output[node_ref] = entry.value
             else:
                 args, kwargs = node_data.get_inputs()
-                operator_ref = node_data.get_operator()
-                if operator_ref not in self._local_module._operators:
-                    raise MissingOperatorError(f"Operator {operator_ref} is missing from the graph")
-                operator_data = self._local_module._operators[operator_ref]
+                
+
                 resolved_args = resolved_args = [
                     ancestors_output[value] if isinstance(value, NodeRef) else value
                     for value in args
@@ -419,8 +421,9 @@ class GraphRT(QObject):
                     for key, value in kwargs.items()
                 }
 
+                operator_ref = node_data.get_operator()
                 with self._profiler.profile(node_ref):
-                    value = operator_data(*resolved_args, **resolved_kwargs)
+                    value = operator_ref.get_value()(*resolved_args, **resolved_kwargs)
 
                 ancestors_output[node_ref] = value
                 entry = self.cache.save(node_ref, fingerprints[node_ref], value)

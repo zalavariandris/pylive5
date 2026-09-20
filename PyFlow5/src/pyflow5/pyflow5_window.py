@@ -119,9 +119,8 @@ class PyFlow5Window(QMainWindow):
         splitter.setSizes([400, 400, 400])
         self.resize(3*400, 600)
 
-        central_widget = QWidget()
-        central_widget.setLayout(layout)
-        self.setCentralWidget(central_widget)
+
+        self.setCentralWidget(splitter)
 
         self._graph_view.setFocus()
 
@@ -202,7 +201,7 @@ class PyFlow5Window(QMainWindow):
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
         operators_map: dict[str, OperatorRef] = dict()
-        for op_ref in self._G._local_module.operators():
+        for op_ref in self._G.module().operators():
             path = f"{op_ref.module.name()}.{op_ref.name}"
             operators_map[path] = op_ref
 
@@ -212,13 +211,11 @@ class PyFlow5Window(QMainWindow):
                 operators_map[path] = op_ref
 
         dialog = OperatorSelectionDialog(operators_map.keys(), self)
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             if selected_op_name := dialog.selected_operator():
                 selected_op = operators_map[selected_op_name]
                 assert isinstance(selected_op, OperatorRef), f"Selected operator must be an instance of OperatorRef, got: {selected_op}"
-                new_node = self._G.node()(selected_op)
-                print(f"New node created: {new_node} with operator: {selected_op}")
-                self._model.setNodePosition(new_node.get_name(), scene_pos or QPointF(0, 0))
+                self._model.addNode(selected_op, scene_pos or QPointF(0, 0))
 
     @Slot()
     def _on_request_node(self, scene_pos:QPointF, source:NodeName):

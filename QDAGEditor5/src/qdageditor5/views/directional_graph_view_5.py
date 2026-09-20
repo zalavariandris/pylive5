@@ -33,6 +33,7 @@ from qtpy.QtGui import (
     QCursor,
     QFont,
     QFontMetrics,
+    QPaintEvent,
     QPainter,
     QMouseEvent,
     QPainterPath,
@@ -148,13 +149,36 @@ class DirectionalGraphView5(QFrame):
 
         if model is not None:
             self._model_connections = [
-                (model.modelReset, self.update),
-                (model.nodeAboutToMove, lambda node: self.updateScene(self._get_affected_rect(node))),
-                (model.nodeMoved, lambda node: self.updateScene(self._get_affected_rect(node))),
-                (model.nodesAdded, lambda nodes: self.updateScene(bounding_rect([self._get_affected_rect(node) for node in nodes]))),
-                (model.nodesAboutToBeRemoved, lambda nodes: self.updateScene(bounding_rect([self._get_affected_rect(node) for node in nodes]))),
-                (model.linksAdded, lambda links: [self.updateScene(bounding_rect([self._linkShape(link).boundingRect() for link in links]))]),
-                (model.linksAboutToBeRemoved, lambda links: [self.updateScene(bounding_rect([self._linkShape(link).boundingRect() for link in links]))]),
+                (model.modelReset, 
+                    self.update),
+
+                (model.nodeAboutToMove, 
+                    lambda node: self.updateScene(
+                        self._get_affected_rect(node))),
+
+                (model.nodeMoved, 
+                    lambda node: self.updateScene(
+                        self._get_affected_rect(node))),
+
+                (model.nodesAdded, 
+                    lambda nodes: self.updateScene(
+                        bounding_rect([self._get_affected_rect(node) 
+                                   for node in nodes]))),
+
+                (model.nodesRemoved, 
+                    lambda nodes: self.updateScene(
+                        bounding_rect([self._get_affected_rect(node) 
+                                   for node in nodes]))),
+
+                (model.linksAdded, 
+                    lambda links: [self.updateScene(
+                        bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
+                                   for link in links]))]),
+
+                (model.linksRemoved, 
+                    lambda links: [self.updateScene(
+                        bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
+                                   for link in links]))]),
             ]
             for signal, slot in self._model_connections:
                 signal.connect(slot)
@@ -313,9 +337,10 @@ class DirectionalGraphView5(QFrame):
 
     # links delegate
     def _linkShape(self, link: DirectionalLinkId) -> QPainterPath:
+        assert self._model is not None, "Model must be set before accessing link source and target"
         assert link is not None, "Link cannot be None"
-        source, outlet = self._model.linkSource(link)
-        target, inlet = self._model.linkTarget(link)
+        source, outlet =  self._model.linkSource(link)
+        target, inlet =   self._model.linkTarget(link)
         source_view_pos = self._outletPos(source, outlet)
         target_view_pos = self._inletPos(target, inlet)
 
@@ -428,10 +453,10 @@ class DirectionalGraphView5(QFrame):
         self.update(self.mapFromScene(scene_rect).toAlignedRect())
         # self.update()
 
-    def itemAt(self, pos: QPoint) -> _GraphItemId | None:
+    def itemAt(self, viewpos: QPoint) -> _GraphItemId | None:
         """Return the graph item at the given view position, or None if no item is found."""
         # rects returned by _nodeRect/_inletRect/_outletRect are already in view coordinates
-        scene_pos = self.mapToScene(QPointF(pos))
+        scene_pos = self.mapToScene(QPointF(viewpos))
         for node in self._model.nodes():
             for inlet in self._model.inlets(node):
                 if self._inletRect(node, inlet).contains(scene_pos):
@@ -507,7 +532,7 @@ class DirectionalGraphView5(QFrame):
         scene_pos = self.mapToScene(event.pos())
         self.requestNode.emit(scene_pos, None)
 
-    def paintEvent(self, event:QEvent):
+    def paintEvent(self, event:QPaintEvent):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.save()
@@ -523,9 +548,9 @@ class DirectionalGraphView5(QFrame):
             if isinstance(self._tool, LinkingToolData) and link == self._tool._source[1]:
                 continue # skip drawing the link if is being dragged by the tool
             link_option = QStyleOptionViewItem()
-            link_option.state = QStyle.State_Enabled
+            link_option.state = QStyle.StateFlag.State_Enabled
             if ('head', link) == self._hovered_item or ('tail', link) == self._hovered_item:
-                link_option.state |= QStyle.State_MouseOver
+                link_option.state |= QStyle.StateFlag.State_MouseOver
             
             self._paintLink(painter, link_option, link)
 
@@ -534,9 +559,9 @@ class DirectionalGraphView5(QFrame):
             node_rect = self._nodeRect(node)
             if dirty_scene_rect.intersects(node_rect):
                 node_option = QStyleOptionViewItem()
-                node_option.state = QStyle.State_Enabled
+                node_option.state = QStyle.StateFlag.State_Enabled
                 if ('node', node) == self._hovered_item:
-                    node_option.state |= QStyle.State_MouseOver
+                    node_option.state |= QStyle.StateFlag.State_MouseOver
                 if self._selection_model is not None:
                     if node in self._selection_model.selectedNodes():
                         node_option.state |= QStyle.State_Selected
@@ -549,14 +574,14 @@ class DirectionalGraphView5(QFrame):
                 inlet_rect = self._inletRect(node, inlet)
                 if dirty_scene_rect.intersects(inlet_rect):                
                     inlet_option = QStyleOptionViewItem()
-                    inlet_option.state = QStyle.State_Enabled
+                    inlet_option.state = QStyle.StateFlag.State_Enabled
                     if ('inlet', (node, inlet)) == self._hovered_item:
-                        inlet_option.state |= QStyle.State_MouseOver
+                        inlet_option.state |= QStyle.StateFlag.State_MouseOver
 
                     # highlight ports involved in linking
                     if isinstance(self._tool, LinkingToolData):
                         if self._tool._source == ('inlet', (node, inlet)) or self._tool._target == ('inlet', (node, inlet)):
-                            inlet_option.state |= QStyle.State_MouseOver
+                            inlet_option.state |= QStyle.StateFlag.State_MouseOver
                             
                     
                     painter.save()
@@ -567,14 +592,14 @@ class DirectionalGraphView5(QFrame):
                 outlet_rect = self._outletRect(node, outlet)
                 if dirty_scene_rect.intersects(outlet_rect):
                     outlet_option = QStyleOptionViewItem()
-                    outlet_option.state = QStyle.State_Enabled
+                    outlet_option.state = QStyle.StateFlag.State_Enabled
                     if ('outlet', (node, outlet)) == self._hovered_item:
-                        outlet_option.state |= QStyle.State_MouseOver
+                        outlet_option.state |= QStyle.StateFlag.State_MouseOver
 
                     # highlight ports involved in linking
                     if isinstance(self._tool, LinkingToolData):
                         if self._tool._source == ('outlet', (node, outlet)) or self._tool._target == ('outlet', (node, outlet)):
-                            outlet_option.state |= QStyle.State_MouseOver
+                            outlet_option.state |= QStyle.StateFlag.State_MouseOver
 
                     
                     painter.save()
@@ -634,24 +659,26 @@ class DirectionalGraphView5(QFrame):
 
             case ('head', _):
                 _, current_link = item
+                assert isinstance(current_link, tuple) and len(current_link) == 4, f"Expected a 4-tuple for current_link, got {current_link}"
                 self._tool = LinkingToolData(item, mouse_pos)
-                self.updateScene(self._linkShape(current_link).boundingRect())
+                self.updateScene(self._linkShape(current_link).boundingRect().adjusted(-2, -2, 2, 2))
 
             case ('tail', _):
                 _, current_link = item
+                assert isinstance(current_link, tuple) and len(current_link) == 4, f"Expected a 4-tuple for current_link, got {current_link}"              
                 self._tool = LinkingToolData(item, mouse_pos)
-                self.updateScene(self._linkShape(current_link).boundingRect())
+                self.updateScene(self._linkShape(current_link).boundingRect().adjusted(-2, -2, 2, 2))
 
             case _:
                 match event.button():
-                    case Qt.LeftButton:
+                    case Qt.MouseButton.LeftButton:
                         self._tool = RectSelectionToolData(
                             _start_pos=self.mapToScene(mouse_pos), 
                             _end_pos=self.mapToScene(mouse_pos)
                         )
-                    case Qt.MiddleButton:
+                    case Qt.MouseButton.MiddleButton:
                         self._tool = PanAndZoomToolData(mouse_pos, self._pan, self._zoom)
-                    case Qt.RightButton:
+                    case Qt.MouseButton.RightButton:
                         pass
                 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -668,7 +695,8 @@ class DirectionalGraphView5(QFrame):
                 )
 
                 # mouse delta is in scene coordinates
-                delta = self.mapToScene(mouse_view_pos) - self._tool._mouse_start_pos
+                mouse_scene_pos:QPointF = self.mapToScene(mouse_view_pos)
+                delta = mouse_scene_pos - self._tool._mouse_start_pos
                 for node in dragged_nodes:
                     original_position = self._tool._original_positions[node]
                     self._model.setNodePosition(node, original_position + delta)
@@ -685,7 +713,7 @@ class DirectionalGraphView5(QFrame):
                 old_line = self.__draft_link_line()
                 old_rect = geo.makeVerticalRoundedPath(old_line).boundingRect() # DRY: makeVerticalRounded path should be used only in one place. That means, we need to get the draft link boundingrect from the same source as an 'existin' link.
 
-                item_under_mouse = self.itemAt(mouse_view_pos)
+                item_under_mouse = self.itemAt(event.pos())
                 match self._tool._source.kind, item_under_mouse:
                     case 'inlet', ('outlet', _):
                         self._tool._target = item_under_mouse
@@ -833,6 +861,7 @@ class DirectionalGraphView5(QFrame):
                 self._tool = None
 
             case LinkingToolData():
+                assert self._model is not None, "Model must be set before linking"
                 if draft_link_shape := self._draftLinkShape():
                     self.updateScene(draft_link_shape.boundingRect())
 

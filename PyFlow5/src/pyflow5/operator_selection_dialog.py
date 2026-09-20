@@ -1,8 +1,10 @@
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QDialog, QVBoxLayout, QListWidget, QListWidgetItem, QDialogButtonBox
+from typing import Iterable
+
 
 class OperatorSelectionDialog(QDialog):
-    def __init__(self, items: list[str], parent=None):
+    def __init__(self, items: Iterable[str], parent=None):
         super().__init__(parent)
         self.setWindowTitle("Select Operator")
         self.setMinimumWidth(280)
@@ -18,7 +20,7 @@ class OperatorSelectionDialog(QDialog):
 
         # Optional buttons (still useful for mouse users)
         buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             parent=self
         )
         buttons.accepted.connect(self.accept)

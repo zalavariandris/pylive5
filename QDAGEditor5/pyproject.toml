@@ -23,6 +23,9 @@ where = ["src"]
 include = ["qdageditor5", "qdageditor5.*"]
 namespaces = false
 
+[tool.setuptools.package-data]
+qdageditor5 = ["py.typed"]
+
 [tool.setuptools.exclude-package-data]
 "*" = ["__pycache__/*", ".venv_/*"]
 

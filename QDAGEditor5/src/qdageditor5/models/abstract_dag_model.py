@@ -136,8 +136,8 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
 
     # == NODES API ==
     @abstractmethod
-    def nodes(self) -> tuple[NodeName, ...]:
-        """Return a tuple of all node keys in the model."""
+    def nodes(self) -> Iterable[NodeName]:
+        """Return an iterable of all node keys in the model."""
         pass
     
     def has_node(self, node: NodeName) -> bool:
@@ -237,7 +237,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     
     # == INLETS API ==
     @abstractmethod
-    def inlets(self, node: NodeName) -> tuple[InletName]:
+    def inlets(self, node: NodeName) -> Iterable[InletName]:
         pass
 
     @abstractmethod
@@ -268,7 +268,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
 
     # == OUTLETS API ==
     @abstractmethod
-    def outlets(self, node: NodeName) -> tuple[OutletName, ...]:
+    def outlets(self, node: NodeName) -> Iterable[OutletName]:
         """Return a tuple of all outlet keys for the given node."""
         pass
 
@@ -303,15 +303,15 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         pass
 
     @abstractmethod
-    def links(self) -> tuple[DirectionalLinkId, ...]:
+    def links(self) -> Iterable[DirectionalLinkId]:
         pass
 
     @abstractmethod
-    def linkSource(self, link: DirectionalLinkId) -> tuple[NodeName|OutletName]|None:
+    def linkSource(self, link: DirectionalLinkId) -> tuple[NodeName|OutletName]:
         pass
 
     @abstractmethod
-    def linkTarget(self, link: DirectionalLinkId) -> tuple[NodeName|InletName]|None:
+    def linkTarget(self, link: DirectionalLinkId) -> tuple[NodeName|InletName]:
         pass
 
     def _beginAddLinks(self, links: Iterable[DirectionalLinkId]) -> None:
@@ -348,7 +348,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
             assert len(link) == 4
 
         for link in links_to_remove:
-            if link not in self.links():
+            if link not in set(self.links()): #todo: what about performance? do we really need this here in the abstract class?
                 raise ValueError(f"Link {link} does not exist in the model.")
 
         msg = RemoveLinkMessage(links_to_remove)
@@ -388,3 +388,6 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
             ancestors = nx.ancestors(G, root)
             subgraph = G.subgraph(ancestors | {root})
             return list(nx.topological_sort(subgraph))
+
+    def removeLinks(self, links:Iterable[DirectionalLinkId])->bool:
+        return False

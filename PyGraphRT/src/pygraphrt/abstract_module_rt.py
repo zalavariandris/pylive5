@@ -41,7 +41,6 @@ class ParameterData:
         return f"ParameterData(name='{self.name}', annotation={self.annotation}, default={self.default})"
 
 
-
 @dataclass
 class OperatorRef:
     module: 'AbstractModule'
