@@ -54,24 +54,69 @@ def test_remove_node_from_graph():
 
     # now remove the node
     G.remove_node(add)
-    with pytest.raises(KeyError):
+    assert mult.get_inputs() == ((), {"b": 3})
+    with pytest.raises(TypeError):
         result = G.execute(mult)
 
 def test_removing_nodes_cleanup_dependent_inputs():
     G = rt.GraphRT()
 
     @G.node()
-    def the_source_value() -> int:
+    def source():
         return 2
 
-    @G.node(the_source_value)
-    def add(a:int, b:int) -> int:
+    @G.node()
+    def other():
+        return 3
+
+    @G.node(source, 10, source, other, removed=source, kept=other, literal=4)
+    def collect(*args, **kwargs):
+        return args, kwargs
+
+    G.remove_node(source)
+
+    assert collect.get_inputs() == ((10, other), {"kept": other, "literal": 4})
+    assert G.execute(collect) == ((10, 3), {"kept": 3, "literal": 4})
+
+
+@pytest.mark.parametrize("cache_type", [rt.DummyCache, rt.MemoryCache, rt.HistoryMemoryCache])
+def test_removing_node_updates_dependents_and_their_cached_results(cache_type):
+    G = rt.GraphRT()
+    G.cache = cache_type()
+
+    @G.node()
+    def source():
+        return 2
+
+    @G.node(value=source)
+    def first(value=7):
+        return value
+
+    @G.node(value=source)
+    def second(value=9):
+        return value
+
+    @G.node(first, second)
+    def downstream(a, b):
         return a + b
 
-    G.remove_node(the_source_value)
-    assert the_source_value not in add.get_value().args
-    assert the_source_value not in add.get_value().kwargs.values()
-    
+    assert G.execute(downstream) == 4
+    changes = []
+    removals = []
+    G.nodes_changed.connect(changes.extend)
+    G.nodes_removed.connect(removals.extend)
+
+    G.remove_node(source)
+
+    assert first.get_inputs() == ((), {})
+    assert second.get_inputs() == ((), {})
+    assert downstream.get_inputs() == ((first, second), {})
+    assert changes == [first, second]
+    assert removals == [source]
+    assert source not in G.nodes()
+    assert G.execute(downstream) == 16
+
+
 def test_remove_operator_from_graph_throws_missing_operator_error():
     G = rt.GraphRT()
     

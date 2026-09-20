@@ -307,6 +307,27 @@ class GraphRT(QObject):
         
         del self._nodes[node_ref]
         self.cache.remove(node_ref)
+
+        changed_nodes = []
+        for dependent, node_data in self._nodes.items():
+            args, kwargs = node_data.get_inputs()
+            remaining_args = tuple(
+                value for value in args
+                if not (isinstance(value, NodeRef) and value == node_ref)
+            )
+            remaining_kwargs = {
+                key: value for key, value in kwargs.items()
+                if not (isinstance(value, NodeRef) and value == node_ref)
+            }
+            if len(remaining_args) != len(args) or len(remaining_kwargs) != len(kwargs):
+                self._nodes[dependent] = NodeData(
+                    node_data.get_operator(), remaining_args, remaining_kwargs
+                )
+                changed_nodes.append(dependent)
+
+        # Finish clearing all references before notifying listeners.
+        if changed_nodes:
+            self.nodes_changed.emit(changed_nodes)
         self.nodes_removed.emit([node_ref])
 
     def nodes(self) -> list[NodeRef]:
