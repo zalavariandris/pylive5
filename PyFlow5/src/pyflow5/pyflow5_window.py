@@ -40,6 +40,8 @@ from pyflow5.pygraphrt_model import PyFlowRTModel
 
 from textwrap import dedent
 
+from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
+
 class PyFlow5Window(QMainWindow):
     output_node_changed = Signal()
     def setupActions(self)->None:
@@ -97,7 +99,8 @@ class PyFlow5Window(QMainWindow):
         toolbar:QToolBar = self.addToolBar("Main Toolbar")
         toolbar.addAction(self._restart_kernel_action)
         
-        self._code_editor = ScriptEdit2(self)
+        # self._code_editor = ScriptEdit2(self)
+        self._code_editor = ScriptEditAdvanced(parent=self)
         self._code_editor.setPlainText(self._script_module.get_script())
         self._code_editor.textChanged.connect(lambda: self._script_module.set_script(self._code_editor.toPlainText()))
         self._script_module.script_changed.connect(self._on_script_changed)
@@ -131,10 +134,33 @@ class PyFlow5Window(QMainWindow):
 
     def _on_script_module_state_changed(self):
         # set code editor style to red border if the script module is in an error state
-        if isinstance(self._script_module.get_state(), Exception):
-            self._code_editor.showError(self._script_module.get_state())
-        else:
-            self._code_editor.clearError()
+        match self._code_editor:
+            case ScriptEditAdvanced():
+                state = self._script_module.get_state()
+                match state:
+                    case SyntaxError() as e:
+                        self._code_editor.linter.clear()
+                        self._code_editor.linter.lintException(e, 'underline')
+                    case Exception() as e:
+                        self._code_editor.linter.clear()
+                        self._code_editor.linter.lintException(e, 'label')
+                    case "VALID":
+                        self._code_editor.linter.clear()
+                    case _:
+                        print(f"Unknown script module state: {state}")
+                        self._code_editor.linter.clear()
+
+            case ScriptEdit2():
+                match self._script_module.get_state():
+                    case SyntaxError() as e:
+                        self._code_editor.showError(e)
+                    case Exception() as e:
+                        self._code_editor.showError(e)
+                    case "VALID":
+                        self._code_editor.clearError()
+                    case _:
+                        pass
+
 
     def get_output_node(self) -> NodeRef|None:
         return self._output_node

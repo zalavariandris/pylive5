@@ -18,6 +18,7 @@ dependencies = [
     "pygraphrt",
     "qdageditor5",
     "QScriptEdit2",
+    "QtScriptEditorAdvanced"
 ]
 
 [tool.uv.sources]
@@ -26,6 +27,7 @@ myqtx = { workspace = true }
 pygraphrt = { workspace = true }
 qdageditor5 = { workspace = true }
 QScriptEdit2 = { workspace = true }
+QtScriptEditorAdvanced = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

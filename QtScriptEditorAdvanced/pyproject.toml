@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "QtScriptEditorAdvanced"
+version = "0.1.0"
+authors = [
+    { name = "András Zalavári", email = "zalavariandris@gmail.com" }
+]
+description = "Qt Python source editor with syntax highlighting."
+requires-python = ">=3.10"
+dependencies = [
+    "qtpy",
+    "pygments",
+    "rope",
+    "jedi"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["QtScriptEditorAdvanced", "QtScriptEditorAdvanced.*"]
+namespaces = false
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", ".venv_/*"]
