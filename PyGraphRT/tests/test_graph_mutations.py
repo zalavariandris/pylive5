@@ -1,4 +1,6 @@
+from pygraphrt.abstract_module_rt import MissingOperatorError
 import pytest
+
 import pygraphrt as rt
 
 
@@ -52,18 +54,18 @@ def test_remove_node_from_graph():
 
     # now remove the node
     G.remove_node(add)
-    with pytest.raises(TypeError):
+    with pytest.raises(KeyError):
         result = G.execute(mult)
 
 
-def test_remove_operator_from_graph():
+def test_remove_operator_from_graph_throws_missing_operator_error():
     G = rt.GraphRT()
     
     @G.node()
     def two() -> int:
         return 2
 
-    @G.module().op()
+    @G.op()
     def add_op(a:int, b:int) -> int:
         return a + b
 
@@ -77,8 +79,8 @@ def test_remove_operator_from_graph():
     assert result == 9, "Node should compute (1 + 2) * 3 = 9"
 
     # now remove the node
-    G.module().remove_operator(add_op)
-    with pytest.raises(ValueError):
+    G._local_module.remove_operator(add_op)
+    with pytest.raises(MissingOperatorError):
         result = G.execute(mult)
 
 def test_setting_output():
@@ -111,7 +113,7 @@ class TestUpdatingOperatorFunction:
         def add(a:int, b:int) -> int:
             return a + b + 1
 
-        G.module().update_operator(the_node.get_operator(), func=add)
+        G._local_module.update_operator(the_node.get_operator(), rt.FunctionOperator(add))
 
         result = G.execute(the_node)
         assert result == 4, "Node should compute 1 + 2 + 1 = 4 after updating operator body"
@@ -130,7 +132,7 @@ class TestUpdatingOperatorFunction:
         def add_three(a:int, b:int, c:int) -> int:
             return a + b + c
 
-        G.module().update_operator(the_node.get_operator(), func=add_three)
+        G._local_module.update_operator(the_node.get_operator(), rt.FunctionOperator(add_three))
 
         with pytest.raises(TypeError):
             result = G.execute(the_node)
@@ -138,11 +140,11 @@ class TestUpdatingOperatorFunction:
     def test_set_operator_function_with_same_signature(self):
         G = rt.GraphRT()
 
-        @G.module().op()
+        @G.op()
         def add_op(a:int, b:int) -> int:
             return a + b
 
-        @G.module().op()
+        @G.op()
         def mult_op(a:int, b:int) -> int:
             return a * b
 
@@ -156,7 +158,7 @@ class TestUpdatingOperatorFunction:
         def divide(a:int, b:int) -> int:
             return a / b
 
-        G.module().update_operator(mult_op, func=divide)
+        G._local_module.update_operator(mult_op, rt.FunctionOperator(divide))
 
         result = G.execute(mult_node)
         assert result == 1, "Node should compute (1 + 2) / 3 = 1 after changing add to divide"

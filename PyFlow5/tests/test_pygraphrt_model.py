@@ -1,6 +1,8 @@
+from textwrap import dedent
+
 import pytest
 
-from pyflow5.pygraphrt_model import PyFlowRtModel
+from pyflow5.pygraphrt_model import PyFlowRTModel
 from pygraphrt.graph_rt import GraphRT
 from pygraphrt.script_module_rt import ScriptModuleRT
 
@@ -21,9 +23,11 @@ def graph_and_operator(request):
             def mult(unrelated):
                 return unrelated
 
-        module = ScriptModuleRT("mathy", "def mult(a, b):\n    return a * b\n")
-        graph.add_modules([module])
-        operator = module.get_operator("mult")
+        module = ScriptModuleRT("mathy", dedent("""\
+            def mult(a, b):
+                return a * b
+        """))
+        operator = module.operators()[0] # get the mult operator
 
     return graph, operator
 
@@ -31,7 +35,7 @@ def graph_and_operator(request):
 def test_node_inlets_use_its_own_operator(graph_and_operator):
     graph, operator = graph_and_operator
     node = graph.node()(operator)
-    model = PyFlowRtModel(graph)
+    model = PyFlowRTModel(graph)
 
     assert list(model.inlets(node.get_name())) == ["a", "b"]
     assert list(model.inLinks(node.get_name(), "a")) == []
@@ -53,7 +57,7 @@ def test_incoming_links_use_its_own_operator(graph_and_operator, binding):
     else:
         node = graph.node(one, b=one)(operator)
 
-    model = PyFlowRtModel(graph)
+    model = PyFlowRTModel(graph)
     expected = [
         (one.get_name(), "out", node.get_name(), "a"),
         (one.get_name(), "out", node.get_name(), "b"),

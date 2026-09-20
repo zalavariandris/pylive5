@@ -24,7 +24,7 @@ def replace_when_available(source_path, target_path, timeout_ms=3000):
 
 
 @pytest.fixture
-def binding(tmp_path, qt_app):
+def binding(tmp_path, qapp):
     path = tmp_path / "notes.txt"
     path.write_text("first note", encoding="utf-8")
     buffer = FileBinding(path)
@@ -37,48 +37,48 @@ def binding(tmp_path, qt_app):
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
-def test_standalone_buffer_watches_a_non_python_file(binding, wait_until):
+def test_standalone_buffer_watches_a_non_python_file(binding, qtbot):
     changes = []
     threads = []
     binding.changed.connect(lambda: changes.append(binding.get_text()))
     binding.changed.connect(lambda: threads.append(QThread.currentThread()))
 
     binding.path().write_text("second note", encoding="utf-8")
-    wait_until(lambda: changes)
+    qtbot.waitUntil(lambda: bool(changes))
 
     assert changes == ["second note"]
     assert binding.get_text() == "second note"
     assert threads == [binding.thread()]
 
 
-def test_atomic_replacement_and_later_writes_are_detected(binding, wait_until):
+def test_atomic_replacement_and_later_writes_are_detected(binding, qtbot):
     for text in ("second note", "third note"):
         replacement = binding.path().with_name("replacement.txt")
         replacement.write_text(text, encoding="utf-8")
         replace_when_available(replacement, binding.path())
-        wait_until(lambda: binding.get_text() == text)
+        qtbot.waitUntil(lambda: binding.get_text() == text)
         assert binding.path().as_posix() in binding._file_watcher.files()
 
     binding.path().write_text("fourth note", encoding="utf-8")
-    wait_until(lambda: binding.get_text() == "fourth note")
+    qtbot.waitUntil(lambda: binding.get_text() == "fourth note")
 
 
-def test_deleted_file_keeps_buffer_and_recreation_resumes_watching(binding, wait_until):
+def test_deleted_file_keeps_buffer_and_recreation_resumes_watching(binding, qtbot):
     failures = []
     binding.reload_failed.connect(failures.append)
     binding.path().unlink()
-    wait_until(lambda: failures)
+    qtbot.waitUntil(lambda: bool(failures))
     assert isinstance(failures[0], FileNotFoundError)
     assert binding.get_text() == "first note"
 
     binding.path().write_text("second note", encoding="utf-8")
-    wait_until(lambda: binding.get_text() == "second note")
+    qtbot.waitUntil(lambda: binding.get_text() == "second note")
     binding.path().write_text("third note", encoding="utf-8")
-    wait_until(lambda: binding.get_text() == "third note")
+    qtbot.waitUntil(lambda: binding.get_text() == "third note")
 
 
 def test_open_switches_watches_and_ignores_pending_events_for_the_old_file(
-    binding, tmp_path, wait_until
+    binding, tmp_path, qtbot
 ):
     previous_path = binding.path()
     previous_path.write_text("pending edit", encoding="utf-8")
@@ -96,7 +96,7 @@ def test_open_switches_watches_and_ignores_pending_events_for_the_old_file(
     assert binding.get_text() == "second note"
 
     next_path.write_text("third note", encoding="utf-8")
-    wait_until(lambda: binding.get_text() == "third note")
+    qtbot.waitUntil(lambda: binding.get_text() == "third note")
 
 
 def test_unrelated_directory_changes_preserve_unsaved_memory_edits(binding):
@@ -124,19 +124,19 @@ def test_saving_buffer_does_not_emit_duplicate_changes(binding):
     assert binding.path().read_text(encoding="utf-8") == "second note"
 
 
-def test_bursts_of_file_events_are_debounced(binding, wait_until):
+def test_bursts_of_file_events_are_debounced(binding, qtbot):
     binding._reload_timer.setInterval(200)
     changes = []
     binding.changed.connect(lambda: changes.append(binding.get_text()))
     for text in ("second note", "third note", "fourth note"):
         binding.path().write_text(text, encoding="utf-8")
         QTest.qWait(20)
-    wait_until(lambda: changes)
+    qtbot.waitUntil(lambda: bool(changes))
 
     assert changes == ["fourth note"]
 
 
-def test_close_cancels_pending_reload_and_watching_can_restart(binding, wait_until):
+def test_close_cancels_pending_reload_and_watching_can_restart(binding, qtbot):
     binding.path().write_text("second note", encoding="utf-8")
     QCoreApplication.processEvents()
     binding.close()
@@ -149,7 +149,7 @@ def test_close_cancels_pending_reload_and_watching_can_restart(binding, wait_unt
     binding.path().write_text("third note", encoding="utf-8")
     binding.start_watching()
     binding.start_watching()
-    wait_until(lambda: binding.get_text() == "third note")
+    qtbot.waitUntil(lambda: binding.get_text() == "third note")
 
 
 def test_destroying_binding_also_destroys_watcher_and_pending_timer(binding):
@@ -171,7 +171,7 @@ def test_destroying_binding_also_destroys_watcher_and_pending_timer(binding):
 
 
 def test_conflicting_file_edits_keep_local_text_and_report_each_new_disk_version(
-    binding, wait_until
+    binding, qtbot
 ):
     binding.set_text("local edit")
     changes = []
@@ -180,7 +180,7 @@ def test_conflicting_file_edits_keep_local_text_and_report_each_new_disk_version
     binding.conflict_detected.connect(lambda *versions: conflicts.append(versions))
 
     binding.path().write_text("external edit", encoding="utf-8")
-    wait_until(lambda: conflicts)
+    qtbot.waitUntil(lambda: bool(conflicts))
     assert conflicts == [("first note", "local edit", "external edit")]
     assert binding.get_text() == "local edit"
     assert binding.is_modified()
@@ -193,14 +193,14 @@ def test_conflicting_file_edits_keep_local_text_and_report_each_new_disk_version
     assert len(conflicts) == 1
 
     binding.path().write_text("another external edit", encoding="utf-8")
-    wait_until(lambda: len(conflicts) == 2)
+    qtbot.waitUntil(lambda: len(conflicts) == 2)
     assert conflicts[-1] == ("first note", "local edit", "another external edit")
     assert binding.get_text() == "local edit"
     assert changes == []
 
 
 def test_matching_external_edit_marks_local_text_clean_without_duplicate_changes(
-    binding, wait_until
+    binding, qtbot
 ):
     binding.set_text("matching edit")
     changes = []
@@ -209,18 +209,18 @@ def test_matching_external_edit_marks_local_text_clean_without_duplicate_changes
     binding.conflict_detected.connect(lambda *versions: conflicts.append(versions))
 
     binding.path().write_text("matching edit", encoding="utf-8")
-    wait_until(lambda: not binding.is_modified())
+    qtbot.waitUntil(lambda: not binding.is_modified())
     assert changes == []
     assert conflicts == []
 
     binding.path().write_text("next external edit", encoding="utf-8")
-    wait_until(lambda: binding.get_text() == "next external edit")
+    qtbot.waitUntil(lambda: binding.get_text() == "next external edit")
     assert changes == ["next external edit"]
     assert not binding.is_modified()
 
 
 def test_restarting_watch_preserves_local_edits_when_disk_changed_while_stopped(
-    binding, wait_until
+    binding, qtbot
 ):
     binding.stop_watching()
     binding.set_text("local edit")
@@ -229,7 +229,7 @@ def test_restarting_watch_preserves_local_edits_when_disk_changed_while_stopped(
     binding.path().write_text("external edit", encoding="utf-8")
 
     binding.start_watching()
-    wait_until(lambda: conflicts)
+    qtbot.waitUntil(lambda: bool(conflicts))
 
     assert conflicts == [("first note", "local edit", "external edit")]
     assert binding.get_text() == "local edit"

@@ -1,7 +1,7 @@
 {
     "explorer.excludeGitIgnore": true,
     "python.testing.pytestArgs": [
-        "PyGraphRT2"
+        "."
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true

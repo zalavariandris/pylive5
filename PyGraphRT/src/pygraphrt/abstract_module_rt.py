@@ -1,66 +1,96 @@
-from __future__ import annotations
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Hashable, Mapping
-
-if TYPE_CHECKING:
-    from pygraphrt.graph_rt import GraphRT
-
-from pygraphrt.operator_rt import ParameterRT
-from qtpy.QtCore import (
-    QObject, 
-    Signal
-)
-
-from .operator_rt_ref import OperatorRTRef
-
+from abc import ABCMeta, abstractmethod
+from typing import Callable, Any, ClassVar, Iterable, Mapping
+import inspect
 from qtpy.QtCore import (
     QObject, 
     Signal,
 )
 
-from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
+
+class MissingOperatorError(Exception):
+    pass
+
+import abc
+class AbstractOperator(abc.ABC):
+    def __init__(self):
+        super().__init__()
+
+    @abc.abstractmethod
+    def get_parameters(self) -> Mapping[str, ParameterData]:
+        pass
+
+    @abc.abstractmethod
+    def get_return_type(self) -> type:
+        pass
+
+    @abc.abstractmethod
+    def __call__(self, *args, **kwargs) -> Any:
+        pass
+
+
+@dataclass(frozen=True)
+class ParameterData:
+    _empty:ClassVar = object()
+    name:str
+    annotation:type = _empty
+    default: Any = _empty
+
+    def __repr__(self):
+        return f"ParameterData(name='{self.name}', annotation={self.annotation}, default={self.default})"
+
+
+
+@dataclass
+class OperatorRef:
+    module: 'AbstractModule'
+    name: str
+
+    def _post_init__(self):
+        assert isinstance(self.module, AbstractModule), "module must be an instance of AbstractModule"
+
+    def __eq__(self, other):
+        if not isinstance(other, OperatorRef):
+            return False
+        return self.module == other.module and self.name == other.name
+
+    def __hash__(self):
+        return hash((self.module, self.name))
+
+    def get_value(self) -> AbstractOperator | None:
+        return self.module.get_value(self)
+    
+    def get_parameters(self) -> Mapping[str, ParameterData]:
+        operator_data = self.get_value()
+        return operator_data.get_parameters()
+
+
 class _AbstractQObjectMeta(type(QObject), ABCMeta):
     pass
 
 
-class AbstractModuleRT(QObject, metaclass=_AbstractQObjectMeta):
-    operators_added = Signal(list) # list[str]
-    operators_removed = Signal(list) # list[str]
-    operators_changed = Signal(list) # list[str]
+class AbstractModule(QObject, metaclass=_AbstractQObjectMeta):
+    operators_added = Signal(list) # list[OperatorRef]
+    operators_removed = Signal(list) # list[OperatorRef]
+    operators_changed = Signal(list) # list[OperatorRef]
 
-    def __init__(self, name: str):
-            super().__init__()
-            self._name = name
+    def __init__(self, name: str, parent: QObject | None = None):
+        super().__init__(parent=parent)
+        self._name = name
 
     def name(self) -> str:
-            return self._name
+        return self._name
     
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self._name!r})"
     
     @abstractmethod
-    def operators(self) -> Mapping[str, OperatorRTRef]:
+    def operators(self) -> Iterable[OperatorRef]:
         pass
 
     @abstractmethod
-    def get_operator(self, name: str) -> OperatorRTRef | None:
+    def get_value(self, ref: OperatorRef) -> AbstractOperator | None:
         pass
 
-    @abstractmethod
-    def isValid(self, operator: OperatorRTRef) -> bool:
-        pass
 
-    @abstractmethod
-    def get_parameters(self, operator: OperatorRTRef) -> MappingProxyType[str, ParameterRT]:
-        pass
-
-    @abstractmethod
-    def fingerprint(self, operator: OperatorRTRef) -> Hashable:
-        pass
-
-    @abstractmethod
-    def call(self, op: OperatorRTRef, *args, **kwargs):
-        pass
-
-    
-    

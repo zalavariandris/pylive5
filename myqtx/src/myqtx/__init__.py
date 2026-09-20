@@ -7,5 +7,6 @@ __all__ = [
     "QPathEdit",
     "DisplayWidget",
     "blockingSignals",
-    "FileBinding"
+    "FileBinding",
+    "DisplayWidget"
 ]

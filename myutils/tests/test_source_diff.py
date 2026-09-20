@@ -102,8 +102,13 @@ def test_ast_diff_global_change_affects_behavior_but_reports_unchanged():
 
 
 def test_ast_diff_invalid_source():
-    with pytest.raises(SyntaxError):
-        ast_functions_diff("def broken(", "")
+    valid_source = "def f(): return 1"
+    broken_source = "def broken("
+    
+    first_diff = ast_functions_diff("", valid_source)
+    assert first_diff.added == {"f"}
+    second_diff = ast_functions_diff(valid_source, broken_source)
+    assert second_diff.removed == {"f"}
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

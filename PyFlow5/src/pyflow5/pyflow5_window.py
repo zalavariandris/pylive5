@@ -5,10 +5,11 @@ import traceback
 import warnings
 
 from pyflow5.operator_selection_dialog import OperatorSelectionDialog
-from qtpy.QtCore import QObject, QPoint, QPointF, Qt, Signal
-from qtpy.QtWidgets import QAction
+from pygraphrt.abstract_module_rt import OperatorRef
+from pygraphrt.graph_rt import NodeRef
+from qtpy.QtCore import QObject, QPoint, QPointF, Qt, Signal, Slot
+from qtpy.QtWidgets import QAction, QToolBar
 
-from pygraphrt.operator_rt import OperatorRT
 from pygraphrt.script_module_rt import ScriptModuleRT
 from qtpy.QtWidgets import (
     QComboBox,
@@ -34,27 +35,32 @@ from QScriptEdit2.script_edit import ScriptEdit2
 import myqtx
 
 import pygraphrt as rt
-from pyflow5.pygraphrt_model import PyFlowRtModel
+from pyflow5.pygraphrt_model import PyFlowRTModel
 
+from textwrap import dedent
 
 class PyFlow5Window(QMainWindow):
-    def __init__(self, parent=None):
+    output_node_changed = Signal()
+    def setupActions(self)->None:
+        self._restart_kernel_action:QAction = QAction("Restart Kernel", self)
+        self._restart_kernel_action.triggered.connect(self.reset_graph)
+        open_operator_dialog_action = QAction("Open Operator Dialog", self)
+        self.addAction(open_operator_dialog_action)
+        open_operator_dialog_action.setShortcut("Ctrl+P")
+        open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
+
+        delete_selected_nodes_action = QAction("Delete Selected Nodes", self)
+        self.addAction(delete_selected_nodes_action)
+        delete_selected_nodes_action.setShortcut("Del")
+        delete_selected_nodes_action.triggered.connect(self.deleteSelectedNodes)
+
+    def __init__(self, parent=None)->None:
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
-
-        toolbar = self.addToolBar("Main Toolbar")
-        action  =toolbar.addAction("Restart Kernel")
-
-        def reset_graph():
-            G = rt.graph_utils.graph_from_script(self._code_editor.toPlainText(), 'G')
-            self._model.setRT(G)
-        action.triggered.connect(reset_graph)
-
-        from textwrap import dedent
-
+        # setup Model
         self._G = rt.GraphRT()
 
-        self._script_rt = ScriptModuleRT("mathy", dedent("""\
+        self._script_module = ScriptModuleRT("mathy", dedent("""\
         def one():
             return 1
 
@@ -63,66 +69,42 @@ class PyFlow5Window(QMainWindow):
 
         def mult(a, b):
             return a * b
-        """)) 
+        """))
 
-        self._G.add_modules([self._script_rt])
+        self._imports: Iterable[ScriptModuleRT] = [
+            self._script_module
+        ]
 
-        def _on_results_changed():
-            try:
-                result = self._G.execute()
-                self._display_widget.display(result)
-            except Exception as e:
-                self._display_widget.display(e)
-                traceback.print_exc()
+        self._model = PyFlowRTModel(self._G)
+        self._selection = GraphSelectionModel(self._model)
+        self._selection.nodesSelectionChanged.connect(
+            lambda selected, deselected: 
+            self._on_nodes_selection_changed(selected, deselected)
+        )
 
         self._watcher:rt.Watcher|None = None
-        def _on_output_node_changed(node:rt.NodeRT):
-            if self._watcher:
-                self._watcher.stop()
-            if node is not None:
-                self._watcher = rt.watch(self._G, node, _on_results_changed)
-            _on_results_changed()
+        self._output_node: NodeRef|None = None
 
-        self._G.output_node_changed.connect(lambda: _on_output_node_changed(self._G.output))
-        
-        self._model = PyFlowRtModel(self._G)
-        self._selection = GraphSelectionModel(self._model)
-        self._selection.nodesSelectionChanged.connect(lambda selected, deselected: self._on_nodes_selection_changed(selected, deselected))
-
+        # Setup UI
         layout = QHBoxLayout(self)
         splitter = QSplitter(self)
         layout.addWidget(splitter)
+
+        self.setupActions()
+
+        toolbar:QToolBar = self.addToolBar("Main Toolbar")
+        toolbar.addAction(self._restart_kernel_action)
         
         self._code_editor = ScriptEdit2(self)
-        self._code_editor.setPlainText(self._script_rt.get_script())
-        self._code_editor.textChanged.connect(lambda: self._script_rt.set_script(self._code_editor.toPlainText()))
-
-        def _on_script_changed():
-            # Same Value Guard
-            new_text = self._script_rt.get_script()
-            if self._code_editor.toPlainText() == new_text:
-                return  # nothing changed → do nothing
-
-            with myqtx.blockingSignals(self._code_editor):
-                # preserve cursor & scroll
-                cursor = self._code_editor.textCursor()
-                pos = cursor.position()
-                scroll = self._code_editor.verticalScrollBar().value()
-
-                self._code_editor.setPlainText(new_text)
-                
-                # restore cursor
-                cursor.setPosition(min(pos, len(new_text)))
-                self._code_editor.setTextCursor(cursor)
-                self._code_editor.verticalScrollBar().setValue(scroll)
-
-        self._script_rt.script_changed.connect(_on_script_changed)
+        self._code_editor.setPlainText(self._script_module.get_script())
+        self._code_editor.textChanged.connect(lambda: self._script_module.set_script(self._code_editor.toPlainText()))
+        self._script_module.script_changed.connect(self._on_script_changed)
         
         # - Setup graphview -
         self._graph_view = DirectionalGraphView5(self)
         self._graph_view.setModel(self._model)
         self._graph_view.setSelectionModel(self._selection)
-        self._graph_view.requestLink.connect(self._on_request_link)
+        self._graph_view.requestLink.connect(lambda src, outlet, dst, inlet: self._on_request_link(src, outlet, dst, inlet))
         self._graph_view.requestNode.connect(lambda pos, source: self._on_request_node(pos, source))
         self._graph_view.layout_nodes()
         self._graph_view.fitNodes()
@@ -144,80 +126,112 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.setFocus()
 
         # - Initial results update -
-        _on_results_changed()
+        self._on_watcher_triggered()
 
-        # setup actions
-        open_operator_dialog_action = QAction("Open Operator Dialog", self)
-        self.addAction(open_operator_dialog_action)
-        open_operator_dialog_action.setShortcut("Ctrl+P")
-        open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
+    def get_output_node(self) -> NodeRef|None:
+        return self._output_node
 
-        delete_selected_nodes_action = QAction("Delete Selected Nodes", self)
-        self.addAction(delete_selected_nodes_action)
-        delete_selected_nodes_action.setShortcut("Del")
-        delete_selected_nodes_action.triggered.connect(self.deleteSelectedNodes)
+    def set_output_node(self, node_ref: NodeRef|None) -> None:
+        assert isinstance(node_ref, (NodeRef, type(None))), f"Expected NodeRef or None, got {type(node_ref)}"
+        self._output_node = node_ref
+
+        if self._watcher:
+            self._watcher.stop()
+            self._watcher = None
+
+        if self._output_node is not None:
+            self._watcher = rt.watch(self._G, self._output_node, self._on_watcher_triggered)
+
+        self._on_watcher_triggered()
+
+    @Slot()
+    def reset_graph(self):
+        G = rt.graph_utils.graph_from_script(self._code_editor.toPlainText(), 'G')
+        self._model.setRT(G)
+
+    @Slot()
+    def _on_script_changed(self):
+        # Same Value Guard
+        new_text = self._script_module.get_script()
+        if self._code_editor.toPlainText() == new_text:
+            return  # nothing changed → do nothing
+
+        with myqtx.blockingSignals(self._code_editor):
+            # preserve cursor & scroll
+            cursor = self._code_editor.textCursor()
+            pos = cursor.position()
+            scroll = self._code_editor.verticalScrollBar().value()
+
+            self._code_editor.setPlainText(new_text)
+            
+            # restore cursor
+            cursor.setPosition(min(pos, len(new_text)))
+            self._code_editor.setTextCursor(cursor)
+            self._code_editor.verticalScrollBar().setValue(scroll)
+
+    @Slot()
+    def _on_watcher_triggered(self):
+        if self._output_node is None:
+            return
+        
+        try:
+            result = self._G.execute(self._output_node)
+            self._display_widget.display(result)
+
+        except Exception as e:
+            self._display_widget.display(e)
+            traceback.print_exc()
 
     def deleteSelectedNodes(self):
         selected_nodes = self._selection.selectedNodes()
         self._model.removeNodes(selected_nodes)
-    
+
+    @Slot()
     def _on_nodes_selection_changed(self, selected:set[NodeName], deselected:set[NodeName]):
         print("Selected nodes changed:", selected, "Deselected nodes:", deselected)
 
         first_selected_node = self._selection.selectedNodes()[0] if self._selection.selectedNodes() else None
         last_selected_node = self._selection.selectedNodes()[-1] if self._selection.selectedNodes() else None
         if last_selected_node is not None:
-            node_rt = self._G.get_node(last_selected_node)
-            self._G.output = node_rt
-            print(f"Output node changed to: {last_selected_node}")
+            node_ref = self._model.getNode(last_selected_node)
+            self.set_output_node(node_ref)
+            print(f"Output node changed to: {node_ref}")
         else:
-            self._G.output = None
+            self.set_output_node(None)
             print("Output node cleared")
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
-        operators_map:dict[str, OperatorRT] = dict()
-        for module in self._G.modules():
-            for op_name, op in module.operators().items():
-                path = f"{module.name()}.{op_name}" 
-                operators_map[path] = op
+        operators_map: dict[str, OperatorRef] = dict()
+        for op_ref in self._G._local_module.operators():
+            path = f"{op_ref.module.name()}.{op_ref.name}"
+            operators_map[path] = op_ref
+
+        for module in self._imports:
+            for op_ref in module.operators():
+                path = f"{module.name()}.{op_ref.name}" 
+                operators_map[path] = op_ref
 
         dialog = OperatorSelectionDialog(operators_map.keys(), self)
         if dialog.exec_() == QDialog.Accepted:
             if selected_op_name := dialog.selected_operator():
                 selected_op = operators_map[selected_op_name]
+                assert isinstance(selected_op, OperatorRef), f"Selected operator must be an instance of OperatorRef, got: {selected_op}"
                 new_node = self._G.node()(selected_op)
                 print(f"New node created: {new_node} with operator: {selected_op}")
                 self._model.setNodePosition(new_node.get_name(), scene_pos or QPointF(0, 0))
 
+    @Slot()
     def _on_request_node(self, scene_pos:QPointF, source:NodeName):
         print(f"Request node signal received {scene_pos} {source}")
         # show a dialog with a multiselection of operator in GraphRT
         self.openOperatorDialog(scene_pos=scene_pos, source=source)
 
+    @Slot()
     def _on_request_link(self, source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
-        target_rt = self._model.rt.get_node(target)
-        source_rt = self._model.rt.get_node(source)
-        assert target_rt is not None, f"Target node '{target}' not found"
-        assert source_rt is not None, f"Source node '{source}' not found"
-        args, kwargs = target_rt.get_inputs()
-        op_rt = target_rt.get_operator()
+        self._model.addLink(source, outlet, target, inlet)
 
-        # if there are already positional arguments for this inlet, replace that otherwise add it to keyword arguments
-        inlets = [name for name in op_rt.get_parameters().keys()]
-        if inlet not in inlets:
-            print(f"Inlet '{inlet}' not found in operator parameters")
-            return
-        inlet_idx = inlets.index(inlet)
-        if inlet_idx < len(args):
-            
-            args[inlet_idx] = source_rt
-        else:
-            kwargs[inlet] = source_rt
-
-        target_rt.set_inputs(*args, **kwargs)
-        print(f"Updated inputs for target node '{target}': args={args}, kwargs={kwargs}")
-
+    @Slot()
     def _on_graph_output_changed(self):
         print("Graph output changed signal received")
-        output_node = self._model.rt.get_output_node()
-        print(f"New output node: {output_node.get_name() if output_node else 'None'}")
+        output_node = self.get_output_node()
+        print(f"New output node: {output_node}")

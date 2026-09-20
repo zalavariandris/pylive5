@@ -16,7 +16,6 @@ dependencies = [
     "myutils",
     "myqtx",
     "pygraphrt",
-    "pygraphrt2",
     "qdageditor5",
     "QScriptEdit2",
 ]
@@ -25,7 +24,6 @@ dependencies = [
 myutils = { workspace = true }
 myqtx = { workspace = true }
 pygraphrt = { workspace = true }
-pygraphrt2 = { workspace = true }
 qdageditor5 = { workspace = true }
 QScriptEdit2 = { workspace = true }
 

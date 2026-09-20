@@ -11,7 +11,7 @@ class FunctionsDiff:
     removed: set[str]
 
 
-def ast_functions_diff(source1: str, source2: str) -> FunctionsDiff:
+def ast_functions_diff(source_before: str, source_after: str) -> FunctionsDiff:
     """Classify qualified function names by structural AST changes.
 
     Formatting, comments, and source positions are ignored. Signatures,
@@ -23,7 +23,8 @@ def ast_functions_diff(source1: str, source2: str) -> FunctionsDiff:
     Invalid Python is treated as having no function definitions; the syntax error
     is printed rather than raised.
     """
-    def functions(source: str) -> dict[str, list[str]]:
+    def collect_functions(source: str) -> dict[str, list[str]]:
+        """Collect function definitions from the source code."""
         definitions: dict[str, list[str]] = {}
         scope: list[str] = []
 
@@ -53,8 +54,8 @@ def ast_functions_diff(source1: str, source2: str) -> FunctionsDiff:
 
         return definitions
 
-    before = functions(source1)
-    after = functions(source2)
+    before = collect_functions(source_before)
+    after = collect_functions(source_after)
     added = after.keys() - before.keys()
     removed = before.keys() - after.keys()
     common = before.keys() & after.keys()

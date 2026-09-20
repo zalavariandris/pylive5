@@ -25,17 +25,20 @@ members = [
     "myutils",
     "PyFlow5", 
     "PyGraphRT", 
-    "PyGraphRT2", 
-    "ScriptGraph",
     "QDAGEditor5", 
     "QScriptEdit2"
 ]
 
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "pytest",
+    "pytest-qt>=4.5.0",
+]
 
 [project.optional-dependencies]
 exe = ["pyinstaller>=6.16,<7"]
 
 [tool.pytest.ini_options]
-addopts = ["--import-mode=importlib"]
+# Keep test temporary files in the workspace to avoid system-temp permission issues.
+addopts = ["--import-mode=importlib", "--basetemp=.pytest_cache/tmp"]
+consider_namespace_packages = true

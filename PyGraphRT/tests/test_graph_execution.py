@@ -1,5 +1,5 @@
 import pytest
-import pygraphrt2 as rt
+import pygraphrt as rt
 from textwrap import dedent
 
 def test_operator_decorator():

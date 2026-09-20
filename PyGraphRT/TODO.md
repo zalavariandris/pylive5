@@ -1,16 +1,23 @@
 # GraphRT
 
+- [ ] review parameters and getters semantic. whic one to use where and why.
+
+- [ ] testing. subclasses that share behaviour, should have shared tests.
+      share test between local_module and script_module, 
+      see: pygraphrt model tests. its uses fixture, and parametrize
+
 ## Features
 - [ ] graph snapshots and serialization
 - [ ] support callable objects not just functions
 - [x] refactor Cache to be pluggable.
 
-# todo
+
 - [x] emit signals, when functions actually added, removed changed. dont emit add, remove, change signlas, when only the script has changed.
 - [x] test change signal, when the function itself did not, but due to its scope the behaviour has changed.
 
 
 ## Architecture
+NOTE: these might be outdated:
 - [ ] Investigate operator fingerprints in ScriptModuleRT. Re-executing a script
       recreates unchanged functions and changes their fingerprints despite selective
       change signals. Review stable fingerprints for unaffected operators, module
