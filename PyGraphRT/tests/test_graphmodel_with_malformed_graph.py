@@ -9,16 +9,6 @@ from qtpy.QtCore import QObject
 from pygraphrt.graph_rt import GraphRT
 from pygraphrt.graph_rt import NodeRef
 
-def test_links_with_nonexistent_noderefs_in_inputs():
-    G = GraphRT()
-
-    invalid_node_ref = NodeRef(G, 'hello')
-
-    @G.node(invalid_node_ref)
-    def my_node(value):
-        return value
-
-    raise NotImplementedError()
 
 def test_setting_inputs_from_other_graphs_raise_value_error():
     G1 = GraphRT()

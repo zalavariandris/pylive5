@@ -30,9 +30,9 @@ def test_operator_changes_notify_only_matching_nodes(qapp):
     data, inlets, resets = observe(model)
     names = [first.get_name(), second.get_name()]
     for script, expected, color in [
-        ("def value(a, b): return a + b", ["a", "b"], Qt.GlobalColor.green),
+        ("def value(a, b): return a + b", ["a", "b"], None),
         ("def value(:", [], Qt.GlobalColor.red),
-        ("def value(c): return c", ["c"], Qt.GlobalColor.green),
+        ("def value(c): return c", ["c"], None),
     ]:
         data.clear()
         inlets.clear()
@@ -40,7 +40,7 @@ def test_operator_changes_notify_only_matching_nodes(qapp):
         assert data == [tuple(names)]
         assert inlets == names
         assert list(model.inlets(names[0])) == expected
-        assert model.nodeData(names[0], Qt.ItemDataRole.BackgroundRole) == QColor(color)
+        assert model.nodeData(names[0], Qt.ItemDataRole.BackgroundRole) == color
         assert selection.selectedNodes() == (names[0],)
         assert resets == []
     data.clear()

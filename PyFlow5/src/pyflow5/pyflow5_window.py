@@ -72,6 +72,8 @@ class PyFlow5Window(QMainWindow):
             return a * b
         """))
 
+        self._script_module.state_changed.connect(self._on_script_module_state_changed)
+
         self._imports: Iterable[ScriptModuleRT] = [
             self._script_module
         ]
@@ -126,6 +128,13 @@ class PyFlow5Window(QMainWindow):
 
         # - Initial results update -
         self._on_watcher_triggered()
+
+    def _on_script_module_state_changed(self):
+        # set code editor style to red border if the script module is in an error state
+        if isinstance(self._script_module.get_state(), Exception):
+            self._code_editor.showError(self._script_module.get_state())
+        else:
+            self._code_editor.clearError()
 
     def get_output_node(self) -> NodeRef|None:
         return self._output_node

@@ -169,7 +169,7 @@ class DirectionalGraphView5(QFrame):
                         bounding_rect([self._get_affected_rect(node) 
                                    for node in nodes]))),
 
-                (model.nodesRemoved, 
+                (model.nodesAboutToBeRemoved, 
                     lambda nodes: self.updateScene(
                         bounding_rect([self._get_affected_rect(node) 
                                    for node in nodes]))),
@@ -179,7 +179,7 @@ class DirectionalGraphView5(QFrame):
                         bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
                                    for link in links]))]),
 
-                (model.linksRemoved, 
+                (model.linksAboutToBeRemoved, 
                     lambda links: [self.updateScene(
                         bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
                                    for link in links]))]),
