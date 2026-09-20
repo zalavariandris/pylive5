@@ -5,6 +5,7 @@ import traceback
 import warnings
 
 from pyflow5.operator_selection_dialog import OperatorSelectionDialog
+from pyflow5.module_operator_tree_model import ModuleOperatorTreeModel
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.graph_rt import NodeRef
 from qtpy.QtCore import QObject, QPoint, QPointF, Qt, Signal, Slot
@@ -42,7 +43,7 @@ from textwrap import dedent
 class PyFlow5Window(QMainWindow):
     output_node_changed = Signal()
     def setupActions(self)->None:
-        self._restart_kernel_action:QAction = QAction("Restart Kernel", self)
+        self._restart_kernel_action:QAction = QAction("Reset Graph View", self)
         self._restart_kernel_action.triggered.connect(self.reset_graph)
         open_operator_dialog_action = QAction("Open Operator Dialog", self)
         self.addAction(open_operator_dialog_action)
@@ -75,6 +76,7 @@ class PyFlow5Window(QMainWindow):
             self._script_module
         ]
 
+        self._operator_model = ModuleOperatorTreeModel([self._G.module(), *self._imports], self)
         self._model = PyFlowRTModel(self._G)
         self._selection = GraphSelectionModel(self._model)
         self._selection.nodesSelectionChanged.connect(
@@ -86,9 +88,7 @@ class PyFlow5Window(QMainWindow):
         self._output_node: NodeRef|None = None
 
         # Setup UI
-        layout = QHBoxLayout(self)
         splitter = QSplitter(self)
-        layout.addWidget(splitter)
 
         self.setupActions()
 
@@ -145,8 +145,9 @@ class PyFlow5Window(QMainWindow):
 
     @Slot()
     def reset_graph(self):
-        G = rt.graph_utils.graph_from_script(self._code_editor.toPlainText(), 'G')
-        self._model.setRT(G)
+        """Recover the model/view while preserving the current runtime and script."""
+        self.set_output_node(None)
+        self._model.reset()
 
     @Slot()
     def _on_script_changed(self):
@@ -171,6 +172,7 @@ class PyFlow5Window(QMainWindow):
     @Slot()
     def _on_watcher_triggered(self):
         if self._output_node is None:
+            self._display_widget.display("")
             return
         
         try:
@@ -200,22 +202,13 @@ class PyFlow5Window(QMainWindow):
             print("Output node cleared")
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
-        operators_map: dict[str, OperatorRef] = dict()
-        for op_ref in self._G.module().operators():
-            path = f"{op_ref.module.name()}.{op_ref.name}"
-            operators_map[path] = op_ref
-
-        for module in self._imports:
-            for op_ref in module.operators():
-                path = f"{module.name()}.{op_ref.name}" 
-                operators_map[path] = op_ref
-
-        dialog = OperatorSelectionDialog(operators_map.keys(), self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            if selected_op_name := dialog.selected_operator():
-                selected_op = operators_map[selected_op_name]
-                assert isinstance(selected_op, OperatorRef), f"Selected operator must be an instance of OperatorRef, got: {selected_op}"
-                self._model.addNode(selected_op, scene_pos or QPointF(0, 0))
+        dialog = OperatorSelectionDialog(self._operator_model, self)
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                if selected_op := dialog.selected_operator():
+                    self._model.addNode(selected_op, scene_pos or QPointF(0, 0))
+        finally:
+            dialog.deleteLater()
 
     @Slot()
     def _on_request_node(self, scene_pos:QPointF, source:NodeName):

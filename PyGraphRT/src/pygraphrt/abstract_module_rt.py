@@ -61,8 +61,9 @@ class OperatorRef:
         return self.module.get_value(self)
     
     def get_parameters(self) -> Mapping[str, ParameterData]:
-        operator_data = self.get_value()
-        return operator_data.get_parameters()
+        if operator_data := self.get_value():
+            return operator_data.get_parameters()
+        return dict()
 
 
 class _AbstractQObjectMeta(type(QObject), ABCMeta):

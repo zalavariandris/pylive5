@@ -149,8 +149,12 @@ class DirectionalGraphView5(QFrame):
 
         if model is not None:
             self._model_connections = [
-                (model.modelReset, 
-                    self.update),
+                (model.modelReset,
+                    self._on_model_reset),
+
+                (model.nodeDataChanged, self._on_node_presentation_changed),
+                (model.inletsChanged, self._on_node_presentation_changed),
+                (model.outletsChanged, self._on_node_presentation_changed),
 
                 (model.nodeAboutToMove, 
                     lambda node: self.updateScene(
@@ -183,6 +187,19 @@ class DirectionalGraphView5(QFrame):
             for signal, slot in self._model_connections:
                 signal.connect(slot)
         self._model = model
+        self.update()
+
+    def _on_node_presentation_changed(self, *args):
+        # Port changes move links and can shrink old painted bounds. Invalidate
+        # the whole view so both old and new geometry are repainted.
+        self.update()
+
+    def _on_model_reset(self):
+        """Discard interactions whose node/link references may be stale."""
+        self._tool = None
+        self._hovered_item = None
+        self._press_pos = None
+        self._pressed = False
         self.update()
 
     def setSelectionModel(self, selection_model: GraphSelectionModel|None):
@@ -220,10 +237,15 @@ class DirectionalGraphView5(QFrame):
 
         scene_rect = self._nodeRect(node)
 
+        if self._model and self._model.nodeData(node, Qt.ItemDataRole.BackgroundRole) is not None:
+            brush = self._model.nodeData(node, Qt.ItemDataRole.BackgroundRole)
+
+        # paint background
         painter.setPen(QPen(palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
         painter.setBrush(brush)
         painter.drawRoundedRect(scene_rect, 5, 5)
 
+        # paint text
         painter.setPen(palette.text().color())
         painter.setFont(QFont("Courier", 9))
         painter.drawText(scene_rect, Qt.AlignmentFlag.AlignCenter, f"{node}")
@@ -826,7 +848,7 @@ class DirectionalGraphView5(QFrame):
             match item_under_mouse:
                 case ('node', _):
                     kind, node_name = item_under_mouse
-                    self._selection_model.selectNode(node_name)
+                    self._selection_model.selectNodes([node_name])
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton and self._pressed:

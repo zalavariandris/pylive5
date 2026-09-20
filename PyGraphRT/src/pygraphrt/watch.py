@@ -24,12 +24,7 @@ class Watcher:
 			(graph.nodes_removed, self._on_nodes_removed),
 		]
 
-		operator = self._node().get_operator()
-		module = operator.module
-		self._module_connections = [
-			(module.operators_changed, self._on_operators_changed),
-			(module.operators_removed, self._on_operators_removed),
-		]
+		self._module_connections = self._make_module_connections()
 
 		self._running = False
 
@@ -63,13 +58,8 @@ class Watcher:
 			for signal, slot in self._module_connections:
 				signal.disconnect(slot)
 
-			operator = self._node().get_operator()
-			module = operator.module
+			self._module_connections = self._make_module_connections()
 
-			self._module_connections = [
-				(module.operators_changed, self._on_operators_changed),
-				(module.operators_removed, self._on_operators_removed),
-			]
 			for signal, slot in self._module_connections:
 				signal.connect(slot)
 
@@ -78,7 +68,7 @@ class Watcher:
 	def _on_nodes_removed(self, node_name: str):
 		self.stop()
 
-	def _on_operators_changed(self, changed_operators: list[str | OperatorRef]):
+	def _on_operators_changed(self, changed_operators: list[OperatorRef]):
 		ancestor_operators = set()
 
 		for node in self._graph().ancestors(self._node()):
@@ -86,24 +76,22 @@ class Watcher:
 			if operator is not None:
 				ancestor_operators.add(operator)
 
-		# Local modules emit references; script modules emit names.
+		# Compare module-qualified references to avoid collisions between modules.
 		if any(
-			operator in changed_operators or operator.name in changed_operators
+			operator in changed_operators
 			for operator in ancestor_operators
 		):
 			self._callback()
 
-	def _on_operators_removed(self, removed_operators: list[str | OperatorRef]):
-		if self._node() is None:
-			return
-		if self._node().get_operator() is None:
-			return
-
-		operator = self._node().get_operator()
-		if operator in removed_operators or operator.name in removed_operators:
-			self.stop()
-
-	
+	def _make_module_connections(self):
+		# Missing operators retain their module-qualified reference and can return.
+		modules = {node.get_operator().module for node in self._ancestors}
+		return [
+			(signal, self._on_operators_changed)
+			for module in modules
+			for signal in (module.operators_added, module.operators_changed,
+			               module.operators_removed)
+		]
 
 	def __del__(self):
 		try:

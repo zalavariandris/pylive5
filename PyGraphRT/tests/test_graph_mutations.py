@@ -57,7 +57,21 @@ def test_remove_node_from_graph():
     with pytest.raises(KeyError):
         result = G.execute(mult)
 
+def test_removing_nodes_cleanup_dependent_inputs():
+    G = rt.GraphRT()
 
+    @G.node()
+    def the_source_value() -> int:
+        return 2
+
+    @G.node(the_source_value)
+    def add(a:int, b:int) -> int:
+        return a + b
+
+    G.remove_node(the_source_value)
+    assert the_source_value not in add.get_value().args
+    assert the_source_value not in add.get_value().kwargs.values()
+    
 def test_remove_operator_from_graph_throws_missing_operator_error():
     G = rt.GraphRT()
     

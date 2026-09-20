@@ -78,5 +78,14 @@ def test_linking_to_nonexistent_inlet_raises_value_error(hello_world_model):
 
     assert set(model.links()) == original_links
 
+def test_removing_nodes_remove_links(hello_world_model):
+    model = hello_world_model
+
+    original_link_count = len(set(model.links()))
+    model.removeNodes(["the_name"])
+
+    assert set(model.nodes()) == {"the_greeting", "hello_world"}
+    assert len(list(model.links())) == original_link_count - 1
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

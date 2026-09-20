@@ -1,3 +1,4 @@
+from pygraphrt.abstract_module_rt import OperatorRef
 import pytest
 import traceback
 from textwrap import dedent
@@ -129,9 +130,9 @@ def test_updating_script_signals():
             return a * b
         """))
 
-    assert added == ["two"]
-    assert removed == ["one"]
-    assert changed == ["pow"]
+    assert added == [OperatorRef(sm, "two")]
+    assert removed == [OperatorRef(sm, "one")]
+    assert changed == [OperatorRef(sm, "pow")]
 
 
 def test_syntax_errors_use_module_name():
@@ -191,3 +192,12 @@ def test_state_changed_reports_committed_state_only_on_transitions():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+@pytest.mark.parametrize("invalid_script", ["def broken(:", "raise RuntimeError('broken')"])
+def test_failed_script_emits_removed_operator_refs(invalid_script):
+    module = ScriptModuleRT("tools", "def one(): return 1")
+    removed = []
+    module.operators_removed.connect(removed.append)
+    module.set_script(invalid_script)
+    assert removed == [[OperatorRef(module, "one")]]
+    assert removed[0][0].get_value() is None

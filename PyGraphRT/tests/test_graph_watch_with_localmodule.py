@@ -126,14 +126,14 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
 
-def test_operator_removal_stops_watcher():
+def test_operator_removal_keeps_watcher_for_restoration():
     graph = rt.GraphRT()
     node = graph.node()(lambda: 1)
     changes = []
     watcher = rt.watch(graph, node, lambda: changes.append(True))
     graph.module().remove_operator(node.get_operator())
-    assert not watcher._running
-    assert changes == []
+    assert watcher._running
+    assert changes == [True]
     watcher.stop()
 
 
@@ -172,6 +172,7 @@ def test_script_operator_notifications():
         module.set_script("def output(): return 2")
         assert changes == [True]
         module.set_script("")
-        assert not watcher._running
+        assert watcher._running
+        assert changes == [True, True]
     finally:
         watcher.stop()

@@ -30,6 +30,7 @@ class ScriptModuleRT(AbstractModule):
     """An editable script runtime exporting callable module-level bindings.
 
     Updates execute in a fresh shared namespace and commit before emitting signals.
+    All operator signals carry lists of OperatorRef, including removed exports.
     Operator change notifications use structural function differences; changes to
     globals and dependencies are not tracked by this analysis.
     Tracebacks identify the script by its module name as <script:name>.
@@ -133,13 +134,13 @@ class ScriptModuleRT(AbstractModule):
                 self.state_changed.emit()
             
             if removed_names:
-                self.operators_removed.emit(removed_names)
+                self.operators_removed.emit([OperatorRef(self, name) for name in removed_names])
     
             if added_names:
-                self.operators_added.emit(added_names)
+                self.operators_added.emit([OperatorRef(self, name) for name in added_names])
     
             if changed_names:
-                self.operators_changed.emit(changed_names)
+                self.operators_changed.emit([OperatorRef(self, name) for name in changed_names])
 
         except BaseException as error:
             removed = list(self._operators_cache.keys())
@@ -149,7 +150,7 @@ class ScriptModuleRT(AbstractModule):
                 self._state = error
                 self.state_changed.emit()
             if removed:
-                self.operators_removed.emit(removed)
+                self.operators_removed.emit([OperatorRef(self, name) for name in removed])
 
         self.script_changed.emit()
 

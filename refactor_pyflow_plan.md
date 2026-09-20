@@ -26,7 +26,7 @@ The session owns the graph lifecycle. The adapter holds a reference to the sessi
 - [ ] Specify link replacement and disconnection behavior before implementing them. Disconnecting one inlet must preserve the identities and bindings of all other parameters, including literals and repeated references to the same source.
 - [ ] Decide how to represent an unbound positional input. If the runtime cannot express a hole, implement the necessary binding representation/API first, or explicitly reject unsupported disconnections without changing state. Do not silently shift later arguments.
 - [ ] Define node deletion: handle incoming/outgoing references, positions, selection, and active output consistently. Choose whether referenced nodes can be deleted and how downstream inputs become unbound.
-- [ ] Define what "Restart Kernel" means: cache invalidation, module re-execution, or graph replacement. Specify which graph bindings, positions, selection, and output should survive. Do not rebuild a graph from an operator-only script by assumption.
+- [x] "Reset Graph View" resets the existing model in place around the same runtime. Preserve nodes, bindings, operators, cache, script text, and positions of surviving nodes. Abandon unfinished mutation bookkeeping; clear selection, output/watcher, and active view interactions. Emit modelAboutToBeReset/modelReset. This recovers presentation state after a failed edit has unwound; it does not repair runtime corruption or re-execute modules.
 
 **Completion gate:** editing and restart behavior have explicit expected outcomes that can be tested without constructing the main window.
 
@@ -57,7 +57,7 @@ Build on the behavior from stage 1 and notification mechanism from stage 2.
 - [ ] Fix `removeLinks()` to target the requested inlet only, support literal arguments, and preserve other bindings according to stage 1.
 - [ ] Fix `outLinks()` variable shadowing and filter by the requested outlet.
 - [x] Implement `addNode(operator, position)` as the public UI command. Arrange initialization so observers can read a valid position when the node becomes visible.
-- [ ] Make `setNodePosition()` honor its base-class return contract, use `position is not None`, safely clear missing positions, and emit movement notifications only for actual changes.
+- [x] Make `setNodePosition()` honor its base-class return contract, use `position is not None`, safely clear missing positions, and emit movement notifications only for actual changes.
 - [ ] Clean up positions when nodes are removed. Apply an explicit preservation/clearing policy when the runtime changes.
 - [ ] Reconcile base and implementation annotations: iterable versus tuple returns, two-element endpoint tuples, optional node lookup results, and mutation return types. Update affected implementations together.
 - [ ] Ensure operator signature changes refresh ports and affected links in the view.

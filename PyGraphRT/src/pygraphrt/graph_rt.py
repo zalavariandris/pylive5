@@ -127,14 +127,11 @@ class NodeRef:
         return f"NodeRef('{self._name}')"
 
     def __call__(self, *args, **kwargs) -> Any:
-        # simply call the underlying operator
-        node_data = self._graph._nodes[self]
-        operator_ref = node_data.get_operator()
-        if operator_ref not in self._graph._operators:
-            raise MissingOperatorError(f"Operator {operator_ref} is missing from the graph")
-        operator_data = self._graph._operators[operator_ref]
-        return operator_data(*args, **kwargs)
-
+        if operator_data:=self.get_operator().get_value():
+            return operator_data(*args, **kwargs)
+        else:
+            raise MissingOperatorError(f"Operator {self.get_operator()} is missing from the graph")
+        
     def __hash__(self):
         return hash((self._graph, self._name))
 
@@ -146,30 +143,37 @@ class NodeRef:
     def get_name(self) -> str:
         return self._name
 
-    def get_operator(self) -> OperatorRef:
+    def get_value(self) -> NodeData|None:
         node_data = self._graph._nodes[self]
+        return node_data
+
+    def get_operator(self) -> OperatorRef:
+        node_data = self.get_value()
         return node_data.get_operator()
 
     def set_inputs(self, *args, **kwargs) -> None:
-        prev_data = self._graph._nodes[self]
+        prev_data = self.get_value()
+        self._graph._validate_inputs(*args, **kwargs)
         next_data = NodeData(prev_data.get_operator(), args, dict(kwargs))
         self._graph._update_node(self, next_data)
 
     def get_inputs(self) -> tuple[tuple[Value], dict[str, Value]]:
-        node_data = self._graph._nodes[self]
+        node_data = self.get_value()
         return node_data.get_inputs()
         
 
 type LiteralValue = None | bool | int | float | str
 type Value = 'NodeRef' | LiteralValue
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
-class NodeData(QObject):
+class NodeData:
     operator: OperatorRef
     args: tuple[Value]
     kwargs: dict[str, Value]
 
-    def get_inputs(self):
-        return tuple(self.args), {k: v for k, v in self.kwargs.items()} # todo: create a view
+    def get_inputs(self)->Iterable[Value]:
+        return tuple(self.args), {
+            k: v for k, v in self.kwargs.items()
+        } # todo: create a view
 
     def get_operator(self) -> OperatorRef:
         return self.operator
@@ -247,6 +251,21 @@ class GraphRT(QObject):
             raise MissingOperatorError(f"Operator {op_ref} does not exist in the graph.")
         return self._local_module._operators[op_ref]
 
+    def _validate_inputs(self, *args: Value, **kwargs: Value) -> None:
+        """Validate that all NodeRef inputs exist in the graph.
+
+        Raises:
+            ValueError: If any NodeRef in args or kwargs does not exist in the graph.
+        """
+        for arg in args:
+            if isinstance(arg, NodeRef):
+                if arg not in self._nodes:
+                    raise ValueError(f"Node {arg} does not exist in the graph.")
+        for key, value in kwargs.items():
+            if isinstance(value, NodeRef):
+                if value not in self._nodes:
+                    raise ValueError(f"Node {value} does not exist in the graph.")
+
     def node(self, *args: Value, **kwargs: Value) -> Callable[..., NodeRef]: # todo: consider using a protocol for better type checking
         def decorator(func: Callable | OperatorRef, name: str|None=None) -> NodeRef:
             assert (callable(func) and hasattr(func, "__code__")) or isinstance(func, OperatorRef), f"func must be a callable function or an instance of OperatorRef, got:{func}"
@@ -259,6 +278,9 @@ class GraphRT(QObject):
 
             assert isinstance(operator, OperatorRef), f"operator must be an instance of OperatorRef, got: {operator}"
 
+            # validate inputs
+            self._validate_inputs(*args, **kwargs)
+                    
             node_data = NodeData(operator, args, kwargs)
 
             if name is None:
@@ -282,6 +304,7 @@ class GraphRT(QObject):
     def remove_node(self, node_ref: NodeRef) -> None:
         if node_ref not in self._nodes:
             raise MissingNodeError(f"Node {node_ref} does not exist in the graph.")
+        
         del self._nodes[node_ref]
         self.cache.remove(node_ref)
         self.nodes_removed.emit([node_ref])
@@ -423,7 +446,10 @@ class GraphRT(QObject):
 
                 operator_ref = node_data.get_operator()
                 with self._profiler.profile(node_ref):
-                    value = operator_ref.get_value()(*resolved_args, **resolved_kwargs)
+                    if operator := operator_ref.get_value():
+                        value = operator(*resolved_args, **resolved_kwargs)
+                    else:
+                        raise MissingOperatorError(f"Operator for node {node_ref} is missing.")
 
                 ancestors_output[node_ref] = value
                 entry = self.cache.save(node_ref, fingerprints[node_ref], value)
