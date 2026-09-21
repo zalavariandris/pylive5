@@ -1,41 +1,23 @@
 from collections import deque, defaultdict
-from collections.abc import Mapping
-
-
-from pytools import UniqueNameGenerator
-from typing import TYPE_CHECKING, Callable, Any, ClassVar, Hashable, Iterable
-from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Callable, Hashable, Callable, Any, Hashable, Iterable
 from dataclasses import dataclass
-import inspect
-import time
-
-if TYPE_CHECKING:
-    from .abstract_module_rt import AbstractOperator, OperatorRef
-
-from .local_module import LocalModuleRT
 
 from qtpy.QtCore import (
     QObject, 
     Signal
 )
 
-from types import MappingProxyType
-from typing import Literal, Any, Callable, Hashable, Mapping
-from qtpy.QtCore import Signal, QObject
+from pytools import UniqueNameGenerator
 
+from myutils.profiler import Profiler
 
-from myutils.source_diff import ast_functions_diff
+if TYPE_CHECKING:
+    from .abstract_module_rt import AbstractOperator, OperatorRef
 
-from .abstract_module_rt import (
-    MissingOperatorError,
-)
-
+from .local_module import LocalModuleRT
 from .abstract_module_rt import OperatorRef
-
-from dataclasses import dataclass
-
-class MissingNodeError(Exception):
-    pass
+from .abstract_module_rt import AbstractOperator
+from .abstract_module_rt import MissingOperatorError
 
 
 @dataclass(frozen=True)
@@ -114,9 +96,6 @@ class DummyCache:
     def clear(self) -> None:
         pass
 
-from .abstract_module_rt import AbstractOperator
-
-
 
 @dataclass
 class NodeRef:
@@ -182,7 +161,12 @@ class NodeData:
         raise NotImplementedError("__call__ is not implemented for NodeRef")
     
 
-from myutils.profiler import Profiler
+
+
+
+class MissingNodeError(Exception):
+    pass
+
 
 def freeze(value, active=None) -> tuple:
     """Preserve built-in types and values; identify opaque objects by identity.

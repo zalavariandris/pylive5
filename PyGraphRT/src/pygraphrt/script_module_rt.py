@@ -1,4 +1,4 @@
-from types import MappingProxyType
+from types import ModuleType
 from typing import Iterable, Literal, Any, Callable, Hashable, Mapping
 from qtpy.QtCore import Signal, QObject
 
@@ -15,15 +15,33 @@ from .local_module import FunctionOperator
 from .abstract_module_rt import AbstractModule
 
 
-def _get_all_functions_from_script(
-    script: str, *, name: str
+def _get_all_callables_from_script(
+    script: str, *, name: str, defined_only: bool = True
 ) -> dict[str, Callable]:
-    """Return exported functions and the script validity state."""
+    """Collect callable exports using Python's ``from module import *`` rules.
 
-    namespace: dict[str, Any] = {"__name__": name, "__package__": ""}
+    When __all__ is present, it selects the exported names. Otherwise, names
+    starting with an underscore are excluded. Non-callable exports are ignored.
+    With defined_only=True, also require the callable's __module__ to match
+    the script's name, excluding imported callables.
+    """
+
+    module = ModuleType(name)
+    module.__package__ = ""
+    namespace: dict[str, Any] = module.__dict__
     code = compile(script, f"<script:{name}>", "exec")
     exec(code, namespace)
-    return {key: value for key, value in namespace.items() if callable(value)}
+    export_names = getattr(module, "__all__", [
+        key for key in namespace if not key.startswith("_")
+    ])
+    functions = {}
+    for key in export_names:
+        value = getattr(module, key)
+        if callable(value) and (
+            not defined_only or getattr(value, "__module__", None) == name
+        ):
+            functions[key] = value
+    return functions
 
 
 class ScriptModuleRT(AbstractModule):
@@ -51,7 +69,7 @@ class ScriptModuleRT(AbstractModule):
         # collect functions from the initial script
         self._state: str|BaseException = "VALID" # consider introducing an enum for states. also a not initialized state
         try:
-            new_functions = _get_all_functions_from_script(script, name=name)
+            new_functions = _get_all_callables_from_script(script, name=name)
 
             self._state: str|BaseException = "VALID" # todo: refine typehint
         except BaseException as error:
@@ -100,7 +118,7 @@ class ScriptModuleRT(AbstractModule):
 
 
         try:
-            new_functions = _get_all_functions_from_script(script, name=self.name())
+            new_functions = _get_all_callables_from_script(script, name=self.get_name())
 
             functions_diff = ast_functions_diff(self._script, script)
             

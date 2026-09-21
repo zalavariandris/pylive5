@@ -55,6 +55,15 @@ class TextEditNumberEditor(QObject):
 
 
     def eventFilter(self, obj, event): #type: ignore
+        # The viewport receives teardown events after the editor is deleted.
+        # Only mouse events need to access the editor.
+        if event.type() not in (
+            QEvent.Type.MouseMove,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+        ):
+            return False
+
         # Disable numeric drag editing in read-only mode.
         if self.textedit.isReadOnly():
             if self.dragging:

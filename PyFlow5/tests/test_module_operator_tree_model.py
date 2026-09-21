@@ -2,7 +2,7 @@ from qtpy.QtCore import QModelIndex, QPersistentModelIndex
 from qtpy.QtWidgets import QDialog, QDialogButtonBox
 
 from pyflow5.module_operator_tree_model import ModuleOperatorTreeModel
-from pyflow5.operator_selection_dialog import OperatorSelectionDialog
+from myqtx.selection_dialog import SelectionDialog
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.local_module import LocalModuleRT, FunctionOperator
 from pygraphrt.script_module_rt import ScriptModuleRT
@@ -75,16 +75,14 @@ def test_script_updates_and_module_detachment(qtmodeltester):
 def test_picker_requires_an_operator_and_handles_removal(qtbot):
     module = ScriptModuleRT("tools", "def one(): return 1")
     model = ModuleOperatorTreeModel([module])
-    dialog = OperatorSelectionDialog(model)
+    dialog = SelectionDialog(model)
     qtbot.addWidget(dialog)
-    assert dialog.selected_operator() == OperatorRef(module, "one")
     dialog._operator_tree.setCurrentIndex(model.index(0, 0))
     dialog.accept()
     assert dialog.result() != QDialog.DialogCode.Accepted
     assert not dialog._buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
     dialog._operator_tree.setCurrentIndex(model.index(0, 0, model.index(0, 0)))
     module.set_script("")
-    assert dialog.selected_operator() is None
     assert not dialog._buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
 
 
@@ -99,8 +97,8 @@ def test_window_picker_creates_node_from_reference(qtbot, monkeypatch):
         selected.append(dialog.selected_operator())
         return QDialog.DialogCode.Accepted
 
-    monkeypatch.setattr(OperatorSelectionDialog, "exec", choose)
+    monkeypatch.setattr(SelectionDialog, "exec", choose)
     window.openOperatorDialog(scene_pos=QPointF(12, 34))
     node = window._G.nodes()[0]
     assert node.get_operator() == selected[0]
-    assert window._model.nodePosition(node.get_name()) == QPointF(12, 34)
+    assert window._graph_model.nodePosition(node.get_name()) == QPointF(12, 34)

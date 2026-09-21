@@ -1,6 +1,6 @@
 import unittest
 from typing import *
-from pylive.QtScriptEditor.cell_support import Cell, cell_at_line, split_cells
+from QtScriptEditorAdvanced.cell_support import Cell, cell_at_line, split_cells
 from textwrap import dedent
 
 

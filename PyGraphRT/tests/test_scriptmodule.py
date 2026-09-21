@@ -1,9 +1,92 @@
 from pygraphrt.abstract_module_rt import OperatorRef
 import pytest
+import sys
 import traceback
 from textwrap import dedent
+from types import ModuleType
 from pygraphrt.script_module_rt import ScriptModuleRT
 from pygraphrt.abstract_module_rt import ParameterData
+
+
+@pytest.mark.parametrize("exports", [
+    "",
+    "__all__ = ['public', '_private', 'sqrt', 'Factory', 'instance', 'value', 'math']",
+    "__all__ = ('alias',)",
+    "__all__ = []",
+], ids=["public-default", "explicit-exports", "tuple", "empty"])
+def test_callable_exports_match_python_star_import(monkeypatch, exports):
+    source = dedent("""\
+        import math
+        from math import sqrt
+
+        def public():
+            return 1
+
+        def _private():
+            return 2
+
+        class Factory:
+            def __call__(self):
+                return 3
+
+        instance = Factory()
+        alias = public
+        value = 42
+    """) + exports
+    native_module = ModuleType("_test_script_exports")
+    exec(source, native_module.__dict__)
+    monkeypatch.setitem(sys.modules, native_module.__name__, native_module)
+    imported = {}
+    exec("from _test_script_exports import *", imported)
+    expected = {name for name, value in imported.items() if callable(value)}
+
+    for module in (ScriptModuleRT("tools", source), ScriptModuleRT("tools")):
+        module.set_script(source)
+        assert module.get_state() == "VALID"
+        assert {ref.name for ref in module.operators()} == expected
+
+
+def test_changing_all_updates_exports_and_signals():
+    source = "def public(): return 1\ndef _private(): return 2\n"
+    module = ScriptModuleRT("tools", source)
+    added, removed = [], []
+    module.operators_added.connect(added.append)
+    module.operators_removed.connect(removed.append)
+
+    module.set_script(source + "__all__ = ['_private']")
+    assert [ref.name for ref in module.operators()] == ["_private"]
+    assert added == [[OperatorRef(module, "_private")]]
+    assert removed == [[OperatorRef(module, "public")]]
+    assert OperatorRef(module, "_private").get_value()() == 2
+
+    added.clear()
+    removed.clear()
+    module.set_script(source)
+    assert [ref.name for ref in module.operators()] == ["public"]
+    assert added == [[OperatorRef(module, "public")]]
+    assert removed == [[OperatorRef(module, "_private")]]
+
+
+@pytest.mark.parametrize("exports, error_type", [
+    ("['missing']", AttributeError),
+    ("[1]", TypeError),
+    ("None", TypeError),
+])
+def test_invalid_all_records_failure_and_removes_operators(exports, error_type):
+    source = "def public(): return 1\n"
+    invalid_source = source + f"__all__ = {exports}"
+    initial = ScriptModuleRT("tools", invalid_source)
+    assert isinstance(initial.get_state(), error_type)
+    assert list(initial.operators()) == []
+
+    module = ScriptModuleRT("tools", source)
+    removed = []
+    module.operators_removed.connect(removed.append)
+    module.set_script(invalid_source)
+    assert isinstance(module.get_state(), error_type)
+    assert list(module.operators()) == []
+    assert removed == [[OperatorRef(module, "public")]]
+
 
 def test_initialization():
     sm = ScriptModuleRT("mathy", dedent("""\

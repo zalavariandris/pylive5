@@ -79,8 +79,12 @@ class AbstractModule(QObject, metaclass=_AbstractQObjectMeta):
         super().__init__(parent=parent)
         self._name = name
 
-    def name(self) -> str:
+    def get_name(self) -> str:
         return self._name
+
+    def set_name(self, name: str)->bool:
+        self._name = name
+        return True
     
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self._name!r})"

@@ -66,11 +66,27 @@ class DisplayWidget(QWidget):
 
             case np.ndarray():
                 self.label.setStyleSheet("color: black")
-                # Convert numpy array to QImage and display it
-                # Assuming the numpy array is in HWC format and dtype is uint8 or float32
+                # Accept grayscale (H, W) or channel-last (H, W, C) images.
+                if data.ndim == 2:
+                    channels = 1
+                elif data.ndim == 3 and data.shape[2] in (1, 3, 4):
+                    channels = data.shape[2]
+                else:
+                    raise ValueError("Expected an image with shape (H, W), (H, W, 1), (H, W, 3), or (H, W, 4)")
+
+                # Floating-point images use the normalized range [0, 1].
                 if data.dtype == np.float32 or data.dtype == np.float64:
                     data = (np.clip(data, 0.0, 1.0) * 255).astype(np.uint8)
-                qimg = QImage(data.data, data.shape[1], data.shape[0], data.strides[0], QImage.Format.Format_RGB888)
+                elif data.dtype != np.uint8:
+                    raise TypeError("Image dtype must be uint8, float32, or float64")
+
+                data = np.ascontiguousarray(data)
+                image_format = {
+                    1: QImage.Format.Format_Grayscale8,
+                    3: QImage.Format.Format_RGB888,
+                    4: QImage.Format.Format_RGBA8888,
+                }[channels]
+                qimg = QImage(data.data, data.shape[1], data.shape[0], data.strides[0], image_format)
                 self.label.setPixmap(QPixmap(qimg))
                 self._update_label_font_size()
 

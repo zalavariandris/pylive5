@@ -109,18 +109,32 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
             return None
         item = index.internalPointer()
         module = item.module if isinstance(item, _ModuleItem) else item.ref.module
+
         if role == Qt.ItemDataRole.DisplayRole:
-            return module.name() if isinstance(item, _ModuleItem) else item.ref.name
+            return module.get_name() if isinstance(item, _ModuleItem) else item.ref.name
+        
         if role == self.ModuleRole:
             return module
+        
         if role == self.OperatorRole and isinstance(item, _OperatorItem):
             return item.ref
+        
         return None
 
-    def flags(self, index):
+    def flags(self, index:QModelIndex):
         if not index.isValid() or index.model() is not self:
             return Qt.ItemFlag.NoItemFlags
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+
+        item = index.internalPointer()
+        match item:
+            case _OperatorItem(ref=ref) if ref is not None:
+                return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            
+            case _ModuleItem():
+                return Qt.ItemFlag.NoItemFlags
+            
+            case _:
+                return Qt.ItemFlag.NoItemFlags
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if section == 0 and orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
