@@ -4,6 +4,7 @@ from typing import Iterable, Mapping
 import traceback
 import warnings
 
+from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKeywordsCompleter
 from pyflow5.operator_selection_dialog import OperatorSelectionDialog
 from pyflow5.module_operator_tree_model import ModuleOperatorTreeModel
 from pygraphrt.abstract_module_rt import OperatorRef
@@ -100,7 +101,10 @@ class PyFlow5Window(QMainWindow):
         toolbar.addAction(self._restart_kernel_action)
         
         # self._code_editor = ScriptEdit2(self)
-        self._code_editor = ScriptEditAdvanced(parent=self)
+        self._code_editor = ScriptEditAdvanced(
+            completer=PythonKeywordsCompleter,
+            parent=self
+        )
         self._code_editor.setPlainText(self._script_module.get_script())
         self._code_editor.textChanged.connect(lambda: self._script_module.set_script(self._code_editor.toPlainText()))
         self._script_module.script_changed.connect(self._on_script_changed)
@@ -139,16 +143,16 @@ class PyFlow5Window(QMainWindow):
                 state = self._script_module.get_state()
                 match state:
                     case SyntaxError() as e:
-                        self._code_editor.linter.clear()
-                        self._code_editor.linter.lintException(e, 'underline')
+                        self._code_editor._linter.clear()
+                        self._code_editor._linter.lintException(e, 'underline')
                     case Exception() as e:
-                        self._code_editor.linter.clear()
-                        self._code_editor.linter.lintException(e, 'label')
+                        self._code_editor._linter.clear()
+                        self._code_editor._linter.lintException(e, 'label')
                     case "VALID":
-                        self._code_editor.linter.clear()
+                        self._code_editor._linter.clear()
                     case _:
                         print(f"Unknown script module state: {state}")
-                        self._code_editor.linter.clear()
+                        self._code_editor._linter.clear()
 
             case ScriptEdit2():
                 match self._script_module.get_state():

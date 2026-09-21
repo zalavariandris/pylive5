@@ -17,7 +17,7 @@ from rope.contrib import codeassist
 
 from .components.jedi_completer import JediCompleter
 from .components.async_jedi_completer import AsyncJediCompleter
-from .components.textedit_completer import PythonKeywordsCompleter
+from .components.python_keywords_completer import PythonKeywordsCompleter
 from .components.linter_widget import TextEditLinterWidget
 from .components.line_number_area import LineNumberArea
 from .cell_support import Cell, split_cells, cell_at_line
@@ -25,7 +25,11 @@ from .cell_support import Cell, split_cells, cell_at_line
 
 
 class ScriptEditAdvanced(QPlainTextEdit):
-    def __init__(self, parent=None):
+    def __init__(self, 
+                 highlighter=PygmentsSyntaxHighlighter, 
+                 completer=AsyncJediCompleter, 
+                 parent=None
+                ):
         super().__init__(parent)
         ### Font###
         font = self.font()
@@ -61,13 +65,14 @@ class ScriptEditAdvanced(QPlainTextEdit):
         self.lineNumberArea = LineNumberArea(self)
 
         ### Syntax Highlighter ###
-        self.highlighter = PygmentsSyntaxHighlighter(self.document())
+        
+        self._highlighter = highlighter(self.document())
 
         # ### Autocomplete ###
-        self.completer = AsyncJediCompleter(self)
+        self._completer = completer(self)
 
         ### Linter ###
-        self.linter = TextEditLinterWidget(self)
+        self._linter = TextEditLinterWidget(self)
 
         ### Edit Numbers ###
         self.number_editor = TextEditNumberEditor(self)
@@ -209,12 +214,12 @@ def main():
     def validate_script(script:str):
         import ast
         try:
-            editor.linter.clear()
+            editor._linter.clear()
             ast.parse(script)
         except SyntaxError as e:
-            editor.linter.lintException(e, 'underline')
+            editor._linter.lintException(e, 'underline')
         except Exception as e:
-            editor.linter.lintException(e, 'label')
+            editor._linter.lintException(e, 'label')
 
     editor.textChanged.connect(lambda: 
         validate_script(editor.toPlainText()))

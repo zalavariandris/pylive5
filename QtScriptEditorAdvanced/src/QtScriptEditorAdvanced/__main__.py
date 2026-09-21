@@ -1,5 +1,6 @@
 
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
+from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKeywordsCompleter
 
 
 
@@ -8,7 +9,7 @@ if __name__ == "__main__":
     from textwrap import dedent
 
     app = QApplication([])
-    editor = ScriptEditAdvanced()
+    editor = ScriptEditAdvanced(completer=PythonKeywordsCompleter)
     editor.setReadOnly(False)
     
     editor.setPlainText(dedent("""\
@@ -23,14 +24,14 @@ if __name__ == "__main__":
         print("Validating script...")
         import ast
         try:
-            editor.linter.clear()
+            editor._linter.clear()
             ast.parse(script)
         except SyntaxError as e:
             print("lint error:", e)
-            editor.linter.lintException(e, 'underline')
+            editor._linter.lintException(e, 'underline')
         except Exception as e:
             print("lint error:", e)
-            editor.linter.lintException(e, 'label')
+            editor._linter.lintException(e, 'label')
 
     editor.textChanged.connect(lambda: 
         validate_script(editor.toPlainText()))
