@@ -102,7 +102,7 @@ class PyFlow5Window(QMainWindow):
         
         # self._code_editor = ScriptEdit2(self)
         self._code_editor = ScriptEditAdvanced(
-            completer=PythonKeywordsCompleter,
+            completer=None,
             parent=self
         )
         self._code_editor.setPlainText(self._script_module.get_script())

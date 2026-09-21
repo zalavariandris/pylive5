@@ -27,7 +27,7 @@ from .cell_support import Cell, split_cells, cell_at_line
 class ScriptEditAdvanced(QPlainTextEdit):
     def __init__(self, 
                  highlighter=PygmentsSyntaxHighlighter, 
-                 completer=AsyncJediCompleter, 
+                 completer:Type[AsyncJediCompleter]|Type[PythonKeywordsCompleter]|None=AsyncJediCompleter, 
                  parent=None
                 ):
         super().__init__(parent)
@@ -69,7 +69,10 @@ class ScriptEditAdvanced(QPlainTextEdit):
         self._highlighter = highlighter(self.document())
 
         # ### Autocomplete ###
-        self._completer = completer(self)
+        if completer is not None:
+            self._completer = completer(self)
+        else:
+            self._completer = None
 
         ### Linter ###
         self._linter = TextEditLinterWidget(self)
