@@ -12,6 +12,8 @@ from qtpy.QtCore import (
 
 from qtpy.QtWidgets import (
     QComboBox,
+    QCheckBox,
+    QLabel,
     QDialog,
     QHBoxLayout,
     QListView, 
@@ -34,6 +36,7 @@ if TYPE_CHECKING:
         DirectionalLinkId
     )
 
+from myqtx.color_editor_widget import ColorEdit
 from myqtx.selection_dialog import SelectionDialog
 import myqtx
 
@@ -41,8 +44,27 @@ from QScriptEdit2.script_edit import ScriptEdit2
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKeywordsCompleter
 
+from pygraphrt.abstract_module_rt import OperatorRef
+
 from .pyflow5_document import ImportsListModel, PyFlowDocument
 from .module_operator_tree_model import ModuleOperatorTreeModel
+
+
+def _color_editor(index, parent):
+    widget = ColorEdit(parent)
+    color_type = type(index.data(Qt.ItemDataRole.EditRole))
+
+    def write(color):
+        nonlocal color_type
+        color_type = type(color)
+        widget.setColor(color.r, color.g, color.b, color.a)
+
+    return myqtx.InspectorEditor(
+        widget,
+        lambda: color_type(*widget.color()),
+        write,
+        widget.valueChanged,
+    )
 
 
 class PyFlow5Window(QMainWindow):
@@ -113,17 +135,38 @@ class PyFlow5Window(QMainWindow):
 
         
 
+        # - Setup inspector -
+        self._inspector_view = myqtx.InspectorView(self)
+        self._register_color_editor()
+        self._document._imagi_module.script_changed.connect(self._register_color_editor)
+        self._inspector_view.setModel(self._document.inspectormodel())
+
         # - Setup display widget -
-        self._display_widget = myqtx.DisplayWidget(self)
+        viewer = QWidget(self)
+        viewer_layout = QVBoxLayout(viewer)
+        viewer_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_header = QHBoxLayout()
+        viewer_header.addWidget(QLabel("Viewer", viewer))
+        viewer_header.addStretch()
+        self._viewer_lock_switch = QCheckBox("Lock", viewer)
+        self._viewer_lock_switch.setToolTip("Keep viewing this output when the selection changes.")
+        self._viewer_lock_switch.setChecked(self._document.is_output_locked())
+        self._viewer_lock_switch.toggled.connect(self._document.set_output_locked)
+        self._document.output_lock_changed.connect(self._viewer_lock_switch.setChecked)
+        viewer_header.addWidget(self._viewer_lock_switch)
+        viewer_layout.addLayout(viewer_header)
+        self._display_widget = myqtx.DisplayWidget(viewer)
+        viewer_layout.addWidget(self._display_widget)
 
         # - Add widgets to splitter -
         splitter = QSplitter(self)
         splitter.addWidget(self._imports_view)
         splitter.addWidget(self._code_editor)
         splitter.addWidget(self._graph_view)
-        splitter.addWidget(self._display_widget)
-        splitter.setSizes([100, 400, 400, 400])
-        self.resize(100+3*400, 600)
+        splitter.addWidget(self._inspector_view)
+        splitter.addWidget(viewer)
+        splitter.setSizes([100, 350, 400, 260, 350])
+        self.resize(1460, 600)
 
 
         self.setCentralWidget(splitter)
@@ -134,6 +177,15 @@ class PyFlow5Window(QMainWindow):
         self._document.execute()
 
         self._document.output_value_got_dirty.connect(self._on_output_value_got_dirty)
+
+    def _register_color_editor(self):
+        # Script reloads can create a new ColorData class object.
+        operator = OperatorRef(self._document._imagi_module, "constant")
+        parameter = operator.get_parameters().get("color")
+        if parameter is not None:
+            color_type = parameter.annotation
+            if isinstance(color_type, type) and color_type.__name__ == "ColorData":
+                self._inspector_view.registerEditor(color_type, _color_editor)
 
     def setupActions(self)->None:
         self._restart_kernel_action:QAction = QAction("Reset Graph View", self)

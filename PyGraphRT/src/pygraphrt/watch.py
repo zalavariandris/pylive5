@@ -65,8 +65,9 @@ class Watcher:
 
 			self._callback()
 
-	def _on_nodes_removed(self, node_name: str):
-		self.stop()
+	def _on_nodes_removed(self, nodes: Iterable[NodeRef]):
+		if self._node() in nodes:
+			self.stop()
 
 	def _on_operators_changed(self, changed_operators: list[OperatorRef]):
 		ancestor_operators = set()

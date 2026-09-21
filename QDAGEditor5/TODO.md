@@ -1,3 +1,9 @@
+- [ ] consider adding Roles (same as QT uses for models) to the Graphmodel.
+      NodeTitleRole
+      NodeMessageRole
+      NodeInletsRole?
+      ... NodeBody Role
+
 - [ ] add option, to show broken links. links are broken, when points to nodes that are not in the model.
       a link can be broken in multiple ways:
       - link has source, but no target, or has target node but no source

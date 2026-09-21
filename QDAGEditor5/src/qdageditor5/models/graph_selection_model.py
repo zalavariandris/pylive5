@@ -1,39 +1,28 @@
-import warnings
-from typing import (
-    Any, 
-    Hashable, 
-    Iterable, 
-    Literal, 
-    Tuple
-)
+from enum import IntFlag
+from typing import Hashable, Iterable
 
-from qtpy.QtCore import (
-    QAbstractItemModel,
-    QItemSelectionModel, 
-    QObject,
-    Qt,
-    Signal
-)
+from qtpy.QtCore import QObject, Signal
 
 from qdageditor5.models.abstract_dag_model import (
-    AbstractDAGModel, 
-    NodeName, 
-    InletName, 
-    OutletName, 
-    DirectionalLinkId
+    AbstractDAGModel,
+    NodeName,
+    DirectionalLinkId,
 )
-
-from enum import IntEnum
 
 
 class GraphSelectionModel(QObject):
+    """Track selected items and an explicitly chosen current node/link.
+
+    Current applies to a single item. Bulk selection preserves the current item
+    if it remains selected, but never chooses an arbitrary replacement.
+    """
     currentNodeChanged = Signal(object, object) # current, previous
     nodesSelectionChanged = Signal(set, set) # selected, deselected
     currentLinkChanged = Signal(object, object) # current, previous
     linksSelectionChanged = Signal(set, set) # selected, deselected
     modelChanged = Signal()
 
-    class SelectionFlag(IntEnum):
+    class SelectionFlag(IntFlag):
         Clear = 0x01
         Select = 0x02
         Deselect = 0x04
@@ -54,29 +43,56 @@ class GraphSelectionModel(QObject):
         self.setModel(model)
 
     def setModel(self, model: AbstractDAGModel):
-        if self._model == model:
-            return # Prevent unnecessary resets
-        
-        # Clear existing selections safely
-        self.selectNodes(set(), GraphSelectionModel.SelectionFlag.Clear)
-        self.selectLinks(set(), GraphSelectionModel.SelectionFlag.Clear)
-        self.setCurrentNode(None)
-        self.setCurrentLink(None)
+        if self._model is model:
+            return
 
         for signal, slot in self._connections:
             signal.disconnect(slot)
 
-        connections = [
-            (model.modelReset, self.clearSelection)
-        ]
-        for signal, slot in connections:
-            signal.connect(slot)
-        self._connections = connections
-
-
         self._model = model
+        self.clearSelection()
+        self._connections = [
+            (model.modelAboutToBeReset, self.clearSelection),
+            (model.modelReset, self.clearSelection),
+            (model.nodesAboutToBeRemoved, self._on_nodes_removed),
+            (model.nodesRemoved, self._prune_links),
+            (model.linksAboutToBeRemoved, self._on_links_removed),
+            (model.linksReset, self._prune_links),
+            (model.inletsChanged, self._prune_links),
+            (model.outletsChanged, self._prune_links),
+        ]
+        for signal, slot in self._connections:
+            signal.connect(slot)
         self.modelChanged.emit()
-    
+
+    def model(self) -> AbstractDAGModel:
+        return self._model
+
+    def _on_nodes_removed(self, nodes):
+        removed = set(nodes)
+        # Some models remove incident links without separate link notifications.
+        links = set(self._selected_links)
+        if self._current_link is not None:
+            links.add(self._current_link)
+        self._on_links_removed({
+            link for link in links if link[0] in removed or link[2] in removed
+        })
+        if removed & self._selected_nodes or self._current_node in removed:
+            self.selectNodes(removed, self.SelectionFlag.Deselect)
+
+    def _on_links_removed(self, links):
+        removed = set(links)
+        if removed & self._selected_links or self._current_link in removed:
+            self.selectLinks(removed, self.SelectionFlag.Deselect)
+
+    def _prune_links(self, *args):
+        if not self._selected_links and self._current_link is None:
+            return
+        tracked = set(self._selected_links)
+        if self._current_link is not None:
+            tracked.add(self._current_link)
+        self._on_links_removed(tracked - set(self._model.links()))
+
     def selectedNodes(self) -> tuple[NodeName, ...]:
         return tuple(self._selected_nodes)
 
@@ -89,19 +105,25 @@ class GraphSelectionModel(QObject):
         self.selectNodes({node}, mode=mode)
 
     def clearSelection(self):
-        """Clears all selections and current node/link."""
-        self.selectNodes(set(), GraphSelectionModel.SelectionFlag.Clear)
-        self.selectLinks(set(), GraphSelectionModel.SelectionFlag.Clear)
-        self.setCurrentNode(None)
-        self.setCurrentLink(None)
-    
+        """Clear all selections and current items before notifying observers."""
+        old_nodes, old_links = self._selected_nodes, self._selected_links
+        old_node, old_link = self._current_node, self._current_link
+        self._selected_nodes, self._selected_links = set(), set()
+        self._current_node, self._current_link = None, None
+        if old_node is not None:
+            self.currentNodeChanged.emit(None, old_node)
+        if old_link is not None:
+            self.currentLinkChanged.emit(None, old_link)
+        self.emitNodesSelectionChanged(set(), old_nodes)
+        self.emitLinksSelectionChanged(set(), old_links)
+
     def __applySelection(
-        self, 
-        items: set[Hashable], 
-        mode: SelectionFlag, 
+        self,
+        items: set[Hashable],
+        mode: SelectionFlag,
         current_selection: set[Hashable]
     ) -> set[Hashable]:
-        """Generic helper to apply Qt selection flags to a set of items."""
+        """Apply selection flags to a copy of the selected items."""
         new_selection = set(current_selection)
 
         if mode & self.SelectionFlag.Clear:
@@ -113,7 +135,7 @@ class GraphSelectionModel(QObject):
             new_selection.difference_update(items)
         elif mode & self.SelectionFlag.Toggle:
             new_selection.symmetric_difference_update(items)
-            
+
         return new_selection
 
     def selectNodes(self, nodes: Iterable[NodeName], mode: SelectionFlag = SelectionFlag.ClearAndSelect):
@@ -121,18 +143,17 @@ class GraphSelectionModel(QObject):
         nodes = set(nodes)
         old_selection = set(self._selected_nodes)
         new_selection = self.__applySelection(nodes, mode, old_selection)
+        new_selection.intersection_update(self._model.nodes())
 
         # Apply the new selection state
         self._selected_nodes = new_selection
 
-        # 3. Handle Current flag if requested and nodes are provided
-        if mode & self.SelectionFlag.Current and nodes:
-            # Sets are unordered, so we grab an arbitrary element from the input nodes to become current
-            new_current = next(iter(nodes))
-            if new_current != self._current_node:
-                self.setCurrentNode(new_current)
+        if mode & self.SelectionFlag.Current and len(nodes) == 1:
+            node = next(iter(nodes))
+            self.setCurrentNode(node if node in new_selection else None)
+        elif self._current_node not in new_selection:
+            self.setCurrentNode(None)
 
-        # 4. Compare changes and emit the signal
         self.emitNodesSelectionChanged(new_selection, old_selection)
 
     def emitNodesSelectionChanged(self, newSelection: set[NodeName], oldSelection: set[NodeName]):
@@ -147,17 +168,20 @@ class GraphSelectionModel(QObject):
         # Only emit if an actual state change occurred
         if selected or deselected:
             self.nodesSelectionChanged.emit(selected, deselected)
-            
+
     def currentNode(self) -> NodeName | None:
         return self._current_node
 
     def setCurrentNode(self, node: NodeName | None):
+        """Set focus without changing selection; the node must exist."""
+        if node is not None and node not in self._model.nodes():
+            raise ValueError(f"Node {node!r} does not exist in the model")
         if node == self._current_node:
             return  # No change, do nothing
         previous = self._current_node
         self._current_node = node
         self.currentNodeChanged.emit(node, previous)
-    
+
     def selectedLinks(self) -> tuple[DirectionalLinkId, ...]:
         return tuple(self._selected_links)
 
@@ -169,18 +193,17 @@ class GraphSelectionModel(QObject):
         links = set(links)
         old_selection = set(self._selected_links)
         new_selection = self.__applySelection(links, mode, old_selection)
+        new_selection.intersection_update(self._model.links())
 
         # Apply the new selection state
         self._selected_links = new_selection
 
-        # 3. Handle Current flag if requested and links are provided
-        if mode & self.SelectionFlag.Current and links:
-            # Sets are unordered, so we grab an arbitrary element from the input links to become current
-            new_current = next(iter(links))
-            if new_current != self._current_link:
-                self.setCurrentLink(new_current)
+        if mode & self.SelectionFlag.Current and len(links) == 1:
+            link = next(iter(links))
+            self.setCurrentLink(link if link in new_selection else None)
+        elif self._current_link not in new_selection:
+            self.setCurrentLink(None)
 
-        # 4. Compare changes and emit the signal
         self.emitLinksSelectionChanged(new_selection, old_selection)
 
     def emitLinksSelectionChanged(self, newSelection: set[DirectionalLinkId], oldSelection: set[DirectionalLinkId]):
@@ -198,11 +221,14 @@ class GraphSelectionModel(QObject):
 
     def currentLink(self) -> DirectionalLinkId | None:
         return self._current_link
-    
+
     def setCurrentLink(self, link: DirectionalLinkId | None):
+        """Set focus without changing selection; the link must exist."""
+        if link is not None and link not in self._model.links():
+            raise ValueError(f"Link {link!r} does not exist in the model")
         if link == self._current_link:
             return  # No change, do nothing
         previous = self._current_link
         self._current_link = link
         self.currentLinkChanged.emit(link, previous)
-    
+

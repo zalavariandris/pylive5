@@ -68,8 +68,6 @@ def make_glyph_icon(glyph, size: int = 32, color: QColor|None = None, font:QFont
     return QIcon(pixmap)
 
 if __name__ == "__main__":
-    
-
     app = QApplication([])
     glyphs = {
         "package": make_glyph_icon("⛶"),

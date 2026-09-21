@@ -848,7 +848,10 @@ class DirectionalGraphView5(QFrame):
             match item_under_mouse:
                 case ('node', _):
                     kind, node_name = item_under_mouse
-                    self._selection_model.selectNodes([node_name])
+                    flags = GraphSelectionModel.SelectionFlag
+                    self._selection_model.selectNode(node_name, flags.ClearAndSelect | flags.Current)
+                case None:
+                    self._selection_model.clearSelection()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton and self._pressed:

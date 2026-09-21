@@ -25,6 +25,7 @@ from qdageditor5.models.abstract_dag_model import (
 
 import pygraphrt as rt
 from pyflow5.pygraphrt_model import PyFlowRTModel
+from pyflow5.node_inspector_model import NodeInspectorModel
 
 
 from qtpy.QtCore import QAbstractTableModel, QModelIndex
@@ -84,6 +85,7 @@ class ImportsListModel(QAbstractTableModel):
 
 class PyFlowDocument(QObject):
     output_value_got_dirty = Signal()
+    output_lock_changed = Signal(bool)
     def __init__(self, parent:QObject=None):
         super().__init__(parent=parent)
         self._mathy_module = ScriptModuleRT("mathy", dedent("""\
@@ -102,12 +104,19 @@ class PyFlowDocument(QObject):
             import pathlib
             from dataclasses import dataclass
 
+            @dataclass(frozen=True)
+            class ColorData:
+                r: float = 0.0
+                g: float = 0.0
+                b: float = 0.0
+                a: float = 1.0
+
             @dataclass
             class ImageRGBA:
                 data: np.ndarray
 
-            def constant(width: int=512, height: int=512, r: float=0.5, g: float=0.5, b: float=0.5, a:float=1.0)->ImageRGBA:
-                return ImageRGBA(np.full((height, width, 4), [r, g, b, a], dtype=np.float32))
+            def constant(width: int=512, height: int=512, color: ColorData=ColorData(0.5, 0.5, 0.5))->ImageRGBA:
+                return ImageRGBA(np.full((height, width, 4), [color.r, color.g, color.b, color.a], dtype=np.float32))
 
             def read(path: pathlib.Path)->ImageRGBA:
                 return ImageRGBA(np.zeros((1, 1, 4), dtype=np.float32))
@@ -151,13 +160,17 @@ class PyFlowDocument(QObject):
         self._graph_model = PyFlowRTModel(self._G)
 
         self._graph_selection_model = GraphSelectionModel(self._graph_model)
-        self._graph_selection_model.nodesSelectionChanged.connect(
-            lambda selected, deselected: 
-            self._on_nodes_selection_changed(selected, deselected)
+        self._inspector_model = NodeInspectorModel(self._graph_model, self)
+        self._graph_selection_model.currentNodeChanged.connect(
+            lambda current, previous: self._inspector_model.setNode(current)
         )
+        self._graph_selection_model.nodesSelectionChanged.connect(self._sync_output_to_selection)
+        self._graph_selection_model.currentNodeChanged.connect(self._sync_output_to_selection)
 
         self._watcher:rt.Watcher|None = None
         self._output_node: NodeRef|None = None
+        self._output_locked = False
+        self._G.nodes_removed.connect(self._on_output_nodes_removed)
 
     # def scriptmodule(self)->ScriptModuleRT:
     #     return self._mathy_module
@@ -167,6 +180,9 @@ class PyFlowDocument(QObject):
 
     def graphselectionmodel(self)->GraphSelectionModel:
         return self._graph_selection_model
+
+    def inspectormodel(self) -> NodeInspectorModel:
+        return self._inspector_model
 
     def operatormodel(self)->ModuleOperatorTreeModel:
         return self._operator_model
@@ -181,11 +197,29 @@ class PyFlowDocument(QObject):
         selected_nodes = self.graphselectionmodel().selectedNodes()
         self._graph_model.removeNodes(selected_nodes)
 
+    def is_output_locked(self) -> bool:
+        return self._output_locked
+
+    def set_output_locked(self, locked: bool) -> None:
+        if self._output_locked == locked:
+            return
+        self._output_locked = locked
+        self.output_lock_changed.emit(locked)
+        if not locked:
+            self._sync_output_to_selection()
+
+    def _on_output_nodes_removed(self, nodes):
+        if self._output_node in nodes:
+            self.set_output_node(None)
+            self.set_output_locked(False)
+
     def get_output_node(self) -> NodeRef|None:
         return self._output_node
 
     def set_output_node(self, node_ref: NodeRef|None) -> None:
         assert isinstance(node_ref, (NodeRef, type(None))), f"Expected NodeRef or None, got {type(node_ref)}"
+        if self._output_node == node_ref:
+            return
         self._output_node = node_ref
 
         if self._watcher:
@@ -221,17 +255,20 @@ class PyFlowDocument(QObject):
         """Recover the model/view while preserving the current runtime and script."""
         self.set_output_node(None)
         self._graph_model.reset()
+        self.set_output_locked(False)
 
-    @Slot()
-    def _on_nodes_selection_changed(self, selected:set[NodeName], deselected:set[NodeName]):
-        print("Selected nodes changed:", selected, "Deselected nodes:", deselected)
-
-        first_selected_node = self.graphselectionmodel().selectedNodes()[0] if self.graphselectionmodel().selectedNodes() else None
-        last_selected_node = self.graphselectionmodel().selectedNodes()[-1] if self.graphselectionmodel().selectedNodes() else None
-        if last_selected_node is not None:
-            node_ref = self._graph_model.getNode(last_selected_node)
-            self.set_output_node(node_ref)
-            print(f"Output node changed to: {node_ref}")
+    def _sync_output_to_selection(self, *args):
+        if self._output_locked:
+            return
+        selection = self.graphselectionmodel()
+        selected = selection.selectedNodes()
+        current = selection.currentNode()
+        if current in selected:
+            node = current
+        elif len(selected) == 1:
+            node = selected[0]
+        elif self._output_node is not None and self._output_node.get_name() in selected:
+            node = self._output_node.get_name()
         else:
-            self.set_output_node(None)
-            print("Output node cleared")
+            node = None
+        self.set_output_node(self._graph_model.getNode(node) if node is not None else None)

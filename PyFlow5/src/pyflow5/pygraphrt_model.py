@@ -292,13 +292,16 @@ class PyFlowRTModel(AbstractDAGModel):
             print(f"Inlet '{inlet}' not found in operator parameters")
             return
         inlet_idx = inlets.index(inlet)
-        if inlet_idx < len(args):
-            args[inlet_idx] = source_ref
-        else:
-            kwargs[inlet] = source_ref
 
-            target_ref.set_inputs(*args, **kwargs)
-            print(f"Updated inputs for target node '{target}': args={args}, kwargs={kwargs}")
+        new_args = list(args)
+        new_kwargs = dict(kwargs)
+        if inlet_idx < len(args):
+            new_args[inlet_idx] = source_ref
+        else:
+            new_kwargs[inlet] = source_ref
+
+        target_ref.set_inputs(*new_args, **new_kwargs)
+        print(f"Updated inputs for target node '{target}': args={new_args}, kwargs={new_kwargs}")
         self._endAddLinks()
 
     def addNode(self, operator:OperatorRef, position:QPointF|None=None)->bool:
