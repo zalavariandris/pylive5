@@ -2,7 +2,7 @@ from typing import *
 
 from qtpy.QtCore import Qt, QEvent
 from qtpy.QtGui import QColor, QContextMenuEvent, QKeyEvent, QPalette, QFont, QTextOption
-from qtpy.QtWidgets import QPlainTextEdit
+from qtpy.QtWidgets import QMenu, QPlainTextEdit, QAction
 import re
 
 # components
@@ -41,31 +41,33 @@ class ScriptEditAdvanced(QPlainTextEdit):
         self._indent_using_spaces = True
         self._tabsize = 4
         self.setTabSize(4)
+
+        ### Setup Textedit ###
+        self.setWindowTitle("ScriptTextEdit")
         
         ### script typing behaviour ###
         self.installEventFilter(self)
 
-        """ line numbers """
-        self.lineNumberArea = LineNumberArea(self)
-
-        """ Syntax Highlighter """
+        ### TextEdit Options ###
         options = self.document().defaultTextOption() 
         options.setFlags(QTextOption.Flag.ShowTabsAndSpaces)
         self.document().setDefaultTextOption(options)
-        self.highlighter = PygmentsSyntaxHighlighter(self.document())
         blue3 = QColor.fromHsl(210, 15*255//100, 22*255//100)
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Base, blue3)  # Light yellow color
         self.setPalette(palette)
 
+        ### line numbers ###
+        self.lineNumberArea = LineNumberArea(self)
+
+        ### Syntax Highlighter ###
+        self.highlighter = PygmentsSyntaxHighlighter(self.document())
+
         # ### Autocomplete ###
-        self.completer = PythonKeywordsCompleter(self)
+        self.completer = AsyncJediCompleter(self)
 
-        # ### Linter ###e
+        ### Linter ###
         self.linter = TextEditLinterWidget(self)
-
-        ### Setup Textedit ###
-        self.setWindowTitle("ScriptTextEdit")
 
         ### Edit Numbers ###
         self.number_editor = TextEditNumberEditor(self)
@@ -75,22 +77,12 @@ class ScriptEditAdvanced(QPlainTextEdit):
     #     return QSize(width, int(width*8/7))
 
     def contextMenuEvent(self, e: QContextMenuEvent|None):
-        print("Context menu event triggered")
-        from pylive.declerative_qt import (
-            createWidget, createAction, createMenu, createSeparator
-        )
-        edit_menu = createMenu("Line", [
-            createAction(
-                "Toggle Comment", lambda: self.toggleComment()
-            ),
-            createSeparator(),
-            createAction(
-                "Indent", lambda: self.indent()
-            ),
-            createAction(
-                "Unindent", lambda: self.unindent()
-            ),
-        ])
+
+        edit_menu = QMenu("Edit", self)
+        edit_menu.addAction("Toggle Comment", lambda: self.toggleComment())
+        edit_menu.addSeparator()
+        edit_menu.addAction("Indent", lambda: self.indent())
+        edit_menu.addAction("Unindent", lambda: self.unindent())
 
         indent_using_spaces_action = QAction("Indent Using Spaces")
         indent_using_spaces_action.setCheckable(True)
@@ -98,28 +90,16 @@ class ScriptEditAdvanced(QPlainTextEdit):
         indent_using_spaces_action.toggled.connect(
             lambda: self.setIndentUsingSpaces(indent_using_spaces_action.isChecked())
         )
-        indentation_menu = createMenu("Indentation", 
-            [
-                createAction(
-                    "Convert Indentation to Tabs", 
-                    lambda: self.convertIndentationToTabs()
-                ),
-                createAction(
-                    "Convert Indentation to Spaces", 
-                    lambda: self.convertIndentationToSpaces()
-                ),
-                createAction("Guess from text (not implemented yet)")
-            ]
-            +[createSeparator()]+
-            [
-                createAction(
-                    f"TabWidth: {i}",
-                    lambda i=i: self.setTabSize(i)
-                ) for i in range(1,9)
-            ]
-            +[createSeparator()]+
-            [indent_using_spaces_action]
-        )
+        
+        indentation_menu = QMenu("Indentation", self)
+        indentation_menu.addAction("Convert Indentation to Tabs", lambda: self.convertIndentationToTabs())
+        indentation_menu.addAction("Convert Indentation to Spaces", lambda: self.convertIndentationToSpaces())
+        indentation_menu.addAction("Guess from text (not implemented yet)")
+        indentation_menu.addSeparator()
+        for i in range(1, 9):
+            indentation_menu.addAction(f"TabWidth: {i}", lambda i=i: self.setTabSize(i))
+        indentation_menu.addSeparator()
+        indentation_menu.addAction(indent_using_spaces_action)
 
         if menu := self.createStandardContextMenu():
             menu.addMenu(edit_menu)
@@ -226,18 +206,18 @@ def main():
         return x
     """))
 
-    # def validate_script(script:str):
-    #     import ast
-    #     try:
-    #         editor.linter.clear()
-    #         ast.parse(script)
-    #     except SyntaxError as e:
-    #         editor.linter.lintException(e, 'underline')
-    #     except Exception as e:
-    #         editor.linter.lintException(e, 'label')
+    def validate_script(script:str):
+        import ast
+        try:
+            editor.linter.clear()
+            ast.parse(script)
+        except SyntaxError as e:
+            editor.linter.lintException(e, 'underline')
+        except Exception as e:
+            editor.linter.lintException(e, 'label')
 
-    # editor.textChanged.connect(lambda: 
-    #     validate_script(editor.toPlainText()))
+    editor.textChanged.connect(lambda: 
+        validate_script(editor.toPlainText()))
 
 
     editor.show()

@@ -1,8 +1,18 @@
-from typing import Any, cast
+from typing import Any, Literal, cast
 from qtpy.QtCore import QRectF, QSizeF, Qt, QObject
 from qtpy.QtGui import QColor, QTextCharFormat, QTextCursor
 from qtpy.QtWidgets import QLabel, QPlainTextEdit
 
+from enum import StrEnum
+
+class LinterLevel(StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+class LinterMode(StrEnum):
+    UNDERLINE = "underline"
+    LABEL = "label"
 
 class LinterLabelItem(QLabel):
     def __init__(self, parent=None):
@@ -124,14 +134,14 @@ class TextEditLinterWidget(QObject):
             label.deleteLater()
         self.labels = []
 
-    def lint(self, lineno:int, message:str, mode:Literal['underline', 'label']='underline'):
+    def lint(self, lineno:int, message:str, mode:LinterMode=LinterMode.UNDERLINE):
         match mode:
-            case 'underline':
+            case LinterMode.UNDERLINE:
                 self.underline(lineno, message)
-            case 'label':
+            case LinterMode.LABEL:
                 self.label(lineno, message)
 
-    def lintException(self, e:Exception, mode:Literal['underline', 'label']):
+    def lintException(self, e:Exception, mode:LinterMode):
         import traceback
         if isinstance(e, SyntaxError):
             text = str(e.msg)
