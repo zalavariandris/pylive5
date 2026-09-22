@@ -50,7 +50,7 @@ class FunctionOperator(AbstractOperator):
 
     
 
-class LocalModuleRT(AbstractModule):
+class InlineModuleRT(AbstractModule):
     """An editable script runtime exporting callable module-level bindings.
 
     Updates execute in a fresh shared namespace and commit before emitting signals.
@@ -60,7 +60,7 @@ class LocalModuleRT(AbstractModule):
     """
 
     def __init__(self, parent:QObject | None = None):
-        super().__init__("_local_", parent=parent)
+        super().__init__("_inline_", parent=parent)
 
         self._operators:dict[str, FunctionOperator] = dict()
 

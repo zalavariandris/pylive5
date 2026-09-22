@@ -12,14 +12,14 @@ def graph_and_operator(request):
     graph = GraphRT()
 
     if request.param == "local":
-        @graph.local().op()
+        @graph.inline().op()
         def mult(a, b):
             return a * b
 
         operator = mult
     else:
         if request.param == "script_with_local_name_collision":
-            @graph.local().op()
+            @graph.inline().op()
             def mult(unrelated):
                 return unrelated
 

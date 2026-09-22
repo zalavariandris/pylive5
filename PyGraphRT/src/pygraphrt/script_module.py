@@ -10,7 +10,7 @@ from .abstract_module_rt import (
     OperatorRef
 )
 
-from .local_module import FunctionOperator
+from .inline_module import FunctionOperator
 
 from .abstract_module_rt import AbstractModule
 

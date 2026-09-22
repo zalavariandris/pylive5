@@ -11,11 +11,11 @@ from .abstract_module_rt import (
     OperatorRef
 )
 
-from .local_module import LocalModuleRT, FunctionOperator
+from .inline_module import InlineModuleRT, FunctionOperator
 from .script_module import ScriptModuleRT
 from .import_module import ImportModuleRT
 from .watch import watch
-from .serialization import serialize, deserialize
+
 
 __all__ = [
     "NodeRef",
@@ -24,11 +24,8 @@ __all__ = [
     "MemoryCache",
     "HistoryMemoryCache",
     "DummyCache",
-    "LocalModuleRT",
+    "InlineModuleRT",
     "ScriptModuleRT",
     "ImportModuleRT",
-    "watch",
-    "serialization",
-    "serialize",
-    "deserialize"
+    "watch"
 ]

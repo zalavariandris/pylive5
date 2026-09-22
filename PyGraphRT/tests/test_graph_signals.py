@@ -1,4 +1,4 @@
-from pygraphrt.local_module import FunctionOperator
+from pygraphrt.inline_module import FunctionOperator
 import pytest
 import pygraphrt as rt
 from qtpy.QtCore import (
@@ -47,7 +47,7 @@ class TestNodeCollectionSignals():
 class TestOperatorCollectionSignals():
     def test_operator_added_signal(self):
         G = rt.GraphRT()
-        spy = QSignalSpy(G._local_module.operators_added)
+        spy = QSignalSpy(G._inline_module.operators_added)
 
         @G.op()
         def my_operator(x):
@@ -58,19 +58,19 @@ class TestOperatorCollectionSignals():
 
     def test_operator_removed_signal(self):
         G = rt.GraphRT()
-        spy = QSignalSpy(G._local_module.operators_removed)
+        spy = QSignalSpy(G._inline_module.operators_removed)
 
         @G.op()
         def my_operator(x):
             return x * 2
 
-        G._local_module.remove_operator(my_operator)
+        G._inline_module.remove_operator(my_operator)
         assert len(spy) == 1, "operators_removed signal should have been emitted once"
         assert my_operator in spy[0][0], "operators_removed signal should contain the name of the removed operator"
 
     def test_operator_changed_signal(self):
         G = rt.GraphRT()
-        spy = QSignalSpy(G._local_module.operators_changed)
+        spy = QSignalSpy(G._inline_module.operators_changed)
 
         @G.node()
         def my_node(x):
@@ -79,7 +79,7 @@ class TestOperatorCollectionSignals():
         def new_function(x):
             return x + 1
         
-        G._local_module.update_operator(my_node.get_operator(), FunctionOperator(new_function))
+        G._inline_module.update_operator(my_node.get_operator(), FunctionOperator(new_function))
 
         assert len(spy) == 1, "operators_changed signal should have been emitted once"
         assert my_node.get_operator() in spy[0][0], "operators_changed signal should contain the name of the changed operator"

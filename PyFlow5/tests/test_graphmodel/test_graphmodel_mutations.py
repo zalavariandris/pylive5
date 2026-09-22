@@ -2,7 +2,7 @@ import pytest
 
 from pyflow5.pygraphrt_model import PyFlowRTModel
 from pygraphrt.graph_rt import GraphRT
-from pygraphrt.local_module import LocalModuleRT
+from pygraphrt.inline_module import InlineModuleRT
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def test_add_node(hello_world_model):
     model = hello_world_model
     original_count = len(model.nodes())
 
-    module = LocalModuleRT()
+    module = InlineModuleRT()
 
     @module.op()
     def new_operator():

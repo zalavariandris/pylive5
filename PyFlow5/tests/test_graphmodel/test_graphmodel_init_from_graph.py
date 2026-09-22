@@ -1,6 +1,6 @@
 from textwrap import dedent
 
-from pygraphrt.local_module import FunctionOperator
+from pygraphrt.inline_module import FunctionOperator
 import pytest
 
 from pyflow5.pygraphrt_model import PyFlowRTModel

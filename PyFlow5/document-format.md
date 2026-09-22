@@ -1,60 +1,65 @@
-# Document format, version 1
+# Graph and document format
 
-`PyFlowDocument.todict()` and `fromdict()` use the same JSON-compatible format:
+`GraphRT.todict()` writes runtime data. `GraphRT.fromdict(data)` is a class method
+that reconstructs a new graph. `PyFlowDocument` calls these methods and adds or
+restores each node's `position`; positions are not part of the runtime.
 
 ```json
 {
   "version": 1,
-  "modules": {
-    "module_0": {
-      "type": "script",
-      "name": "tools",
-      "source": "def identity(value): return value"
-    }
+  "imports": {
+    "tools": "./tools.py"
   },
-  "nodes": {
-    "first": {
-      "operator": {"module": "module_0", "name": "identity"},
-      "args": [42],
-      "kwargs": {},
-      "position": [0, 0]
-    },
-    "second": {
-      "operator": {"module": "module_0", "name": "identity"},
-      "args": [{"type": "node", "name": "first"}],
-      "kwargs": {},
-      "position": [200, 0]
+  "definitions": "def identity(value): return value",
+  "graph": {
+    "nodes": {
+      "first": {
+        "operator": {"module": "definitions", "name": "identity"},
+        "args": [42],
+        "position": [0, 0]
+      },
+      "second": {
+        "operator": {"module": "tools", "name": "identity"},
+        "args": [{"type": "node", "name": "first"}],
+        "position": [200, 0]
+      }
     }
   }
 }
 ```
 
-Module IDs identify records independently of their editable names. Duplicate
-module names and operator names are allowed. Module order is preserved.
+`definitions` is the graph's single embedded Python script. `imports` maps unique
+module names to file paths. The name `definitions` is reserved for the embedded
+script. Operator references include their module so equally named functions in
+different modules are unambiguous. Unused imports are retained.
 
-Imported modules use `"type": "import"` and add a `"path"`. Their saved source
-includes unsaved edits and is restored without reading the external file.
-An explicit reload reads that file. Relative paths retain their existing meaning:
-relative to the application's working directory.
+Imported source is read from its file when loading. Editor changes write through
+to that Python file immediately, including incomplete code while typing. Saving a
+graph stores only the import paths. Reloading reads without rewriting the file;
+failed writes leave the runtime unchanged and are reported in the editor's status
+bar. Source files use UTF-8. Relative paths remain relative to the working directory.
+The module list observes `GraphRT.modules()` and import changes through the
+runtime's `modules_changed` signal.
 
-Inputs support null, booleans, integers, floats, strings, lists, tuples,
-dictionaries, paths, and node references. Tuples use
-`{"type": "tuple", "items": [...]}`. Dictionaries use
-`{"type": "dict", "items": [[key, value], ...]}` so literal dictionaries cannot
-be confused with reference records. Container contents are encoded recursively.
-Paths use `{"type": "path", "value": "..."}`. Non-finite floats use
-`{"type": "float", "value": "inf"}` (or `"-inf"` / `"nan"`).
+Inputs preserve null, booleans, integers, floats, strings, lists, tuples,
+dictionaries, paths, and node references. Container contents are encoded
+recursively:
 
-Opaque Python objects, including custom class instances, and operators from local
-Python functions cannot be saved. Saving raises an error rather than converting
-them to strings. Move local functions into a script module to make them portable.
+- Node reference: `{"type": "node", "name": "first"}`.
+- Tuple: `{"type": "tuple", "items": [1, 2]}`.
+- Dictionary: `{"type": "dict", "items": [["key", "value"]]}`.
+- Path: `{"type": "path", "value": "images/example.png"}`.
+- Non-finite float: `{"type": "float", "value": "inf"}` (also `-inf` and `nan`).
 
-Loading builds modules, then all nodes, then their inputs. Malformed data is
-rejected before replacing the document's runtime. Invalid script source and
-unavailable operators remain editable, as they do during live editing. Loading
-retains the document and models, resets their contents and selection, stops the
-output watcher, and restores node positions. Selection and output locks are not
-saved.
+Literal dictionaries are tagged, so they cannot be mistaken for node references.
+Empty `args` and `kwargs` are omitted unless `todict(explicit=True)` is used.
+Opaque Python values and operators created by inline decorators cannot be saved;
+use the definitions script or an imported module for portable operators.
 
-Unversioned files from the previous writer are rejected: their stringified values
-and unqualified operator names cannot be restored unambiguously.
+Loading creates all nodes before connecting inputs, so forward references work.
+Invalid definition source and unavailable operators remain editable. Invalid data
+or positions are rejected before changing the document. The existing document and
+models are retained; their contents and selections reset, the output watcher stops,
+and positions are restored. Selection and output locks are not saved.
+
+The older `modules` format and unversioned stringified input format are rejected.

@@ -11,11 +11,13 @@ from pygraphrt.import_module import ImportModuleRT
 from pygraphrt.script_module import ScriptModuleRT
 
 
-def make_document():
+def make_document(tmp_path):
     document = PyFlowDocument()
-    first = ScriptModuleRT("same_name", "def op(*args, **kwargs): return args, kwargs")
-    second = ScriptModuleRT("same_name", "def op(): return 42")
-    document.operatormodel().setModules([document._G.local(), first, second])
+    document.fromdict({"version": 1, "imports": {}, "definitions": "def op(*args, **kwargs): return args, kwargs", "graph": {"nodes": {}}})
+    first = document._G.definitions()
+    path = tmp_path / "tools.py"
+    path.write_text("def op(): return 42", encoding="utf-8")
+    second = document._G.add_import(str(path))
     source = document._G.node()(OperatorRef(second, "op"), name="source")
     target = document._G.node(
         source, "source", 42, "42", True, None, 1.5,
@@ -26,11 +28,11 @@ def make_document():
     return document, source, target
 
 
-def test_round_trip_types_modules_forward_references_and_positions(qapp):
-    document, source, target = make_document()
+def test_round_trip_types_modules_forward_references_and_positions(qapp, tmp_path):
+    document, source, target = make_document(tmp_path)
     expected = document._G.execute(target)
     data = json.loads(document.serialize())
-    data["nodes"] = dict(reversed(list(data["nodes"].items())))
+    data["graph"]["nodes"] = dict(reversed(list(data["graph"]["nodes"].items())))
     loaded = PyFlowDocument()
     loaded.fromdict(data)
     restored = loaded.graphmodel().getNode("target")
@@ -47,8 +49,8 @@ def test_round_trip_types_modules_forward_references_and_positions(qapp):
     assert loaded.todict() == data
 
 
-def test_load_retains_models_resets_selection_and_disconnects_old_runtime(qapp):
-    document, source, target = make_document()
+def test_load_retains_models_resets_selection_and_disconnects_old_runtime(qapp, tmp_path):
+    document, source, target = make_document(tmp_path)
     old_graph = document._G
     models = (document.graphmodel(), document.operatormodel(), document.modulesmodel(), document.inspectormodel())
     document.graphselectionmodel().selectNode("target")
@@ -74,8 +76,8 @@ def test_load_retains_models_resets_selection_and_disconnects_old_runtime(qapp):
 
 
 @pytest.mark.parametrize("damage", ["version", "module", "reference", "position", "value"])
-def test_failed_load_leaves_document_untouched(qapp, damage):
-    document, source, target = make_document()
+def test_failed_load_leaves_document_untouched(qapp, tmp_path, damage):
+    document, source, target = make_document(tmp_path)
     original = document.todict()
     graph = document._G
     document.graphselectionmodel().selectNode("target")
@@ -85,13 +87,13 @@ def test_failed_load_leaves_document_untouched(qapp, damage):
     if damage == "version":
         del data["version"]
     elif damage == "module":
-        data["nodes"]["target"]["operator"]["module"] = "missing"
+        data["graph"]["nodes"]["target"]["operator"]["module"] = "missing"
     elif damage == "reference":
-        data["nodes"]["target"]["args"][0]["name"] = "missing"
+        data["graph"]["nodes"]["target"]["args"][0]["name"] = "missing"
     elif damage == "position":
-        data["nodes"]["target"]["position"] = ["bad", 0]
+        data["graph"]["nodes"]["target"]["position"] = ["bad", 0]
     else:
-        data["nodes"]["target"]["args"] = [{"type": "unknown"}]
+        data["graph"]["nodes"]["target"]["args"] = [{"type": "unknown"}]
     events = []
     document.graphmodel().modelReset.connect(lambda: events.append(True))
     with pytest.raises(ValueError):
@@ -104,37 +106,66 @@ def test_failed_load_leaves_document_untouched(qapp, damage):
     assert events == []
 
 
-def test_imported_source_and_name_survive_without_external_file(qapp, tmp_path):
+def test_import_paths_and_aliases_reload_source(qapp, tmp_path):
     path = tmp_path / "tools.py"
     path.write_text("def op(): return 1", encoding="utf-8")
     document = PyFlowDocument()
     document.importModule(str(path))
-    module = document.modulesmodel().index(2, 0).data(document.modulesmodel().ModuleRole)
+    module = document._G.imports()[-1]
     module.set_name("renamed")
-    module.set_script("def op(): return 'edited'")
     text = document.serialize()
-    path.unlink()
+    assert json.loads(text)["imports"]["renamed"] == str(path)
+    path.write_text("def op(): return 'updated'", encoding="utf-8")
     document.deserialize(text)
-    restored = document.modulesmodel().index(2, 0).data(document.modulesmodel().ModuleRole)
+    restored = document._G.imports()[-1]
     assert isinstance(restored, ImportModuleRT)
-    assert restored.path() == path
+    assert Path(restored.path()) == path
     assert restored.get_name() == "renamed"
-    assert OperatorRef(restored, "op").get_value()() == "edited"
+    assert OperatorRef(restored, "op").get_value()() == "updated"
 
 
-def test_invalid_script_and_missing_operator_remain_editable(qapp):
-    document, source, target = make_document()
-    source.get_operator().module.set_script("def op(:")
+def test_editor_writes_imported_source_and_reports_failed_writes(qtbot, tmp_path, monkeypatch):
+    from pyflow5.pyflow5_window import PyFlow5Window
+
+    path = tmp_path / "tools.py"
+    path.write_text("def op(): return 1", encoding="utf-8")
+    window = PyFlow5Window()
+    qtbot.addWidget(window)
+    document = window._document
+    document.importModule(str(path))
+    model = document.modulesmodel()
+    window._module_list_view.setCurrentIndex(model.index(model.rowCount() - 1, 0))
+    source = "def op(): return 'edited'"
+    window._code_editor.setPlainText(source)
+    assert path.read_text(encoding="utf-8") == source
+    assert document._G.imports()[-1].get_script() == source
+    assert document.todict()["imports"]["tools"] == str(path)
+
+    def denied(*args, **kwargs):
+        raise PermissionError("read-only file")
+
+    monkeypatch.setattr(Path, "write_text", denied)
+    window._code_editor.setPlainText("def op(): return 3")
+    assert document._G.imports()[-1].get_script() == source
+    assert path.read_text(encoding="utf-8") == source
+    assert "Cannot save source" in window.statusBar().currentMessage()
+
+
+def test_invalid_script_and_missing_operator_remain_editable(qapp, tmp_path):
+    document, source, target = make_document(tmp_path)
+    document._G.definitions().set_script("def op(:")
     document.deserialize(document.serialize())
-    ref = document.graphmodel().getNode("source").get_operator()
+    ref = document.graphmodel().getNode("target").get_operator()
     assert ref.get_value() is None
     assert ref.module.get_script() == "def op(:"
     ref.module.set_script("def op(): return 7")
-    assert document._G.execute(document.graphmodel().getNode("source")) == 7
+    target = document.graphmodel().getNode("target")
+    target.set_inputs()
+    assert document._G.execute(target) == 7
 
 
 def test_save_rejects_opaque_values_without_overwriting_file(qapp, tmp_path):
-    document, source, target = make_document()
+    document, source, target = make_document(tmp_path)
     target.set_inputs(object())
     path = tmp_path / "document.pgraph"
     path.write_text("previous save", encoding="utf-8")
@@ -144,7 +175,7 @@ def test_save_rejects_opaque_values_without_overwriting_file(qapp, tmp_path):
 
 
 def test_save_and_open_file_preserve_unicode(qapp, tmp_path):
-    document, source, target = make_document()
+    document, source, target = make_document(tmp_path)
     target.set_inputs("Mása", greeting="こんにちは")
     path = tmp_path / "document.pgraph"
     document.saveGraph(str(path))
@@ -153,7 +184,7 @@ def test_save_and_open_file_preserve_unicode(qapp, tmp_path):
     assert loaded.todict() == document.todict()
 
 
-def test_local_operator_is_rejected_explicitly(qapp):
+def test_local_operator_is_rejected_explicitly(qapp, tmp_path):
     document = PyFlowDocument()
 
     @document._G.node()
@@ -164,15 +195,15 @@ def test_local_operator_is_rejected_explicitly(qapp):
         document.serialize()
 
 
-def test_window_load_and_empty_document_clear_editor(qtbot):
+def test_window_load_and_empty_document_clear_editor(qtbot, tmp_path):
     from pyflow5.pyflow5_window import PyFlow5Window
 
     window = PyFlow5Window()
     qtbot.addWidget(window)
-    document, _, _ = make_document()
+    document, _, _ = make_document(tmp_path)
     window._document.fromdict(document.todict())
     assert window._code_editor.toPlainText().startswith("def op")
     assert len(window._document.graphmodel().nodes()) == 2
-    window._document.fromdict({"version": 1, "modules": {}, "nodes": {}})
+    window._document.fromdict({"version": 1, "imports": {}, "definitions": "", "graph": {"nodes": {}}})
     assert window._code_editor.toPlainText() == ""
     assert list(window._document.graphmodel().nodes()) == []

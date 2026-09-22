@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from qtpy.QtCore import QAbstractItemModel, QModelIndex, Qt, Slot
+from pygraphrt.graph_rt import GraphRT
+from qtpy.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal, Slot
 from pygraphrt.abstract_module_rt import AbstractModule, OperatorRef
 from pygraphrt.script_module import ScriptModuleRT
 
@@ -26,6 +27,8 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
     Modules and this model must be used on the same Qt thread.
     """
 
+    scriptSaveFailed = Signal(str)
+
     ModuleRole = int(Qt.ItemDataRole.UserRole) + 1
     OperatorRole = ModuleRole + 1
     NameRole = OperatorRole + 1
@@ -34,7 +37,20 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
     def __init__(self, modules: Iterable[AbstractModule] = (), parent=None):
         super().__init__(parent)
         self._items: list[_ModuleItem] = []
+        self._graph = None
         self.setModules(modules)
+
+    def setGraph(self, graph:GraphRT):
+        """Observe the runtime's module collection instead of maintaining our own."""
+        if self._graph is not None:
+            self._graph.modules_changed.disconnect(self._sync_modules)
+        self._graph = graph
+        graph.modules_changed.connect(self._sync_modules)
+        self._sync_modules()
+
+    @Slot()
+    def _sync_modules(self):
+        self._replace_modules(self._graph.modules())
 
     def _connect(self, module):
         for signal in (module.operators_added, module.operators_removed,
@@ -57,6 +73,11 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
         return item
 
     def setModules(self, modules: Iterable[AbstractModule]):
+        if self._graph is not None:
+            raise ValueError("Change modules through the bound graph")
+        self._replace_modules(modules)
+
+    def _replace_modules(self, modules):
         modules = list(dict.fromkeys(modules))
         items = [self._make_item(module) for module in modules]
         self.beginResetModel()
@@ -68,6 +89,9 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
         self.endResetModel()
 
     def addModule(self, module: AbstractModule):
+        if self._graph is not None:
+            self._graph.add_import_module(module)
+            return
         if any(item.module is module for item in self._items):
             return
         item = self._make_item(module)
@@ -78,6 +102,9 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
         self.endInsertRows()
 
     def removeModule(self, module: AbstractModule):
+        if self._graph is not None:
+            self._graph.remove_import(module)
+            return
         for row, item in enumerate(self._items):
             if item.module is module:
                 self.beginRemoveRows(QModelIndex(), row, row)
@@ -143,7 +170,11 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
                                                int(Qt.ItemDataRole.EditRole), self.NameRole])
             return True
         if role == self.CodeRole:
-            item.module.set_script(value)
+            try:
+                item.module.set_script(value)
+            except OSError as error:
+                self.scriptSaveFailed.emit(str(error))
+                return False
             return True
         return False
 

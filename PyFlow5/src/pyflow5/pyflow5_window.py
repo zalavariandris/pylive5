@@ -2,7 +2,6 @@ import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
-from pygraphrt.serialization import serialize
 from qtpy.QtCore import (
     QObject,
     QPoint,
@@ -16,7 +15,6 @@ from qtpy.QtWidgets import (
     QComboBox,
     QCheckBox,
     QFileDialog,
-    QInputDialog,
     QLabel,
     QDialog,
     QHBoxLayout,
@@ -121,8 +119,12 @@ class PyFlow5Window(QMainWindow):
                 return
 
             new_text = self._code_editor.toPlainText()
-            self._document.modulesmodel().setData(selected_import_idx, new_text, ModulesListModel.CodeRole)
+            if self._document.modulesmodel().setData(selected_import_idx, new_text, ModulesListModel.CodeRole):
+                self.statusBar().clearMessage()
 
+        self._document.operatormodel().scriptSaveFailed.connect(
+            lambda error: self.statusBar().showMessage(f"Cannot save source: {error}")
+        )
         self._code_editor.textChanged.connect(update_script_module)
         # self._document.scriptmodule().state_changed.connect(self._on_script_module_state_changed)
         
@@ -237,7 +239,7 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Duplicate Nodes", lambda: None)
         edit_menu.addSeparator()
 
-        edit_menu.addAction("Add New Script Module", lambda: self.addNewScriptModule())
+        edit_menu.addAction("Edit Definitions", self.editDefinitions)
         edit_menu.addAction("Remove Module", lambda: None)
 
         view_menu = QMenu("View", self)
@@ -254,10 +256,11 @@ class PyFlow5Window(QMainWindow):
             lambda _: serialization_action.setChecked(False)
         )
 
-    def addNewScriptModule(self):
-        name, ok = QInputDialog.getText(self, "New Script Module", "Enter module name:")
-        if ok and name:
-            self._document.addNewScriptModule(name)
+    def editDefinitions(self):
+        model = self._document.modulesmodel()
+        # Definitions are the first editable module in every graph.
+        self._module_list_view.setCurrentIndex(model.index(0, 0))
+        self._code_editor.setFocus()
 
     def importModule(self):
         # open file browser dialog

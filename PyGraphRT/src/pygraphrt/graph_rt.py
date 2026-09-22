@@ -14,7 +14,9 @@ from myutils.profiler import Profiler
 if TYPE_CHECKING:
     from .abstract_module_rt import AbstractOperator, OperatorRef
 
-from .local_module import LocalModuleRT
+from .inline_module import InlineModuleRT
+from .import_module import ImportModuleRT
+from .script_module import ScriptModuleRT
 from .abstract_module_rt import OperatorRef
 from .abstract_module_rt import AbstractOperator
 from .abstract_module_rt import MissingOperatorError
@@ -161,6 +163,7 @@ class NodeData:
         raise NotImplementedError("__call__ is not implemented for NodeRef")
     
 
+
 class MissingNodeError(Exception):
     pass
 
@@ -204,33 +207,124 @@ def freeze(value, active=None) -> tuple:
             
     return kind, id(value)
 
+"""JSON helpers for GraphRT. The runtime owns the graph format."""
+
+import math
+from pathlib import Path
+
+
+
+
+def _encode_value(value, nodes):
+    from .graph_rt import NodeRef
+
+    if type(value) in (type(None), bool, int, str):
+        return value
+    if type(value) is float:
+        return value if math.isfinite(value) else {"type": "float", "value": value.hex()}
+    if isinstance(value, NodeRef):
+        if value not in nodes:
+            raise ValueError(f"Input references a node outside this graph: {value}")
+        return {"type": "node", "name": value.get_name()}
+    if type(value) is list:
+        return [_encode_value(item, nodes) for item in value]
+    if type(value) is tuple:
+        return {"type": "tuple", "items": [_encode_value(item, nodes) for item in value]}
+    if type(value) is dict:
+        return {"type": "dict", "items": [
+            [_encode_value(key, nodes), _encode_value(item, nodes)]
+            for key, item in value.items()
+        ]}
+    if isinstance(value, Path):
+        return {"type": "path", "value": str(value)}
+    raise TypeError(f"Cannot save input of type {type(value).__name__}")
+
+
+def _decode_value(value, nodes):
+    if type(value) in (type(None), bool, int, float, str):
+        return value
+    if isinstance(value, list):
+        return [_decode_value(item, nodes) for item in value]
+    if not isinstance(value, dict):
+        raise ValueError("Invalid input value")
+    match value:
+        case {"type": "node", "name": str(name)}:
+            if name not in nodes:
+                raise ValueError(f"Unknown node reference: {name}")
+            return nodes[name]
+        case {"type": "tuple", "items": list(items)}:
+            return tuple(_decode_value(item, nodes) for item in items)
+        case {"type": "dict", "items": list(items)}:
+            return {_decode_value(key, nodes): _decode_value(item, nodes) for key, item in items}
+        case {"type": "path", "value": str(path)}:
+            return Path(path)
+        case {"type": "float", "value": str(number)}:
+            return float.fromhex(number)
+    raise ValueError(f"Invalid tagged input: {value!r}")
 
 class GraphRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
     nodes_changed = Signal(list) # list[NodeRef]
     nodes_removed = Signal(list) # list[NodeRef]
     executed = Signal(dict) # dict[NodeRef, Any]
+    modules_changed = Signal()
 
-    def __init__(self):
+    def __init__(self, definitions:str=""):
         super().__init__()
+
+        self._imports: list[ImportModuleRT] = [] # List of imported modules
+        self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
+        self._definitions = ScriptModuleRT("local", definitions, parent=self)
         self._nodes: dict[NodeRef, NodeData] = dict()
-        self._local_module: LocalModuleRT = LocalModuleRT(parent=self)
         self._profiler = Profiler()
         self.cache = DummyCache()
 
-    def local(self) -> LocalModuleRT:
-        return self._local_module
+    def inline(self) -> InlineModuleRT:
+        """Return the inline module containing runtime functions.
+        Created with the node decorators."""
+        return self._inline_module
+
+    def definitions(self) -> ScriptModuleRT:
+        """Return the local script module containing user-defined functions."""
+        return self._definitions
+
+    def imports(self) -> list[ImportModuleRT]:
+        return list(self._imports)
+
+    def modules(self):
+        """Modules available to the editor, including unused imports."""
+        return [self._definitions, *self._imports]
+
+    def add_import(self, path: str, *, source: str | None = None) -> ImportModuleRT:
+        module = ImportModuleRT(path, source=source)
+        self.add_import_module(module)
+        return module
+
+    def add_import_module(self, module: ImportModuleRT) -> None:
+        if not isinstance(module, ImportModuleRT):
+            raise TypeError("Only imported modules can be added; edit definitions for embedded code")
+        if module not in self._imports:
+            self._imports.append(module)
+            self.modules_changed.emit()
+
+    def remove_import(self, module: ImportModuleRT | str) -> None:
+        if isinstance(module, str):
+            module = next((item for item in self._imports if item.path() == module), None)
+        if module not in self._imports:
+            raise KeyError("Import module is not in this graph")
+        self._imports.remove(module)
+        self.modules_changed.emit()
 
     def op(self) -> Callable[[Callable], OperatorRef]:
-        return self._local_module.op()
+        return self._inline_module.op()
 
     def operators(self) -> list[OperatorRef]:
-        return list(self._local_module._operators.keys())
+        return list(self._inline_module._operators.keys())
 
     def get_operator(self, op_ref: OperatorRef) -> AbstractOperator:
-        if op_ref not in self._local_module._operators:
+        if op_ref not in self._inline_module._operators:
             raise MissingOperatorError(f"Operator {op_ref} does not exist in the graph.")
-        return self._local_module._operators[op_ref]
+        return self._inline_module._operators[op_ref]
 
     def _validate_inputs(self, *args: Value, **kwargs: Value) -> None:
         """Validate that all NodeRef inputs exist in the graph.
@@ -255,7 +349,7 @@ class GraphRT(QObject):
             if isinstance(func, OperatorRef):
                 operator = func
             else:
-                operator = self._local_module.op()(func)
+                operator = self._inline_module.op()(func)
 
             assert isinstance(operator, OperatorRef), f"operator must be an instance of OperatorRef, got: {operator}"
 
@@ -459,7 +553,82 @@ class GraphRT(QObject):
         self.executed.emit({node_ref: ancestors_output[node_ref] for node_ref in ancestors})
         return ancestors_output[root]
 
-        
+    def todict(self, explicit: bool = False) -> dict:
+        """Save definitions, import paths, and typed node inputs, without layout."""
+
+        module_ids = {self.definitions(): "definitions"}
+        imports = {}
+        for module in self._imports:
+            module_id = module.get_name()
+            if module_id == "definitions" or module_id in imports:
+                raise ValueError(f"Import name {module_id!r} must be unique and cannot be 'definitions'")
+            module_ids[module] = module_id
+            imports[module_id] = module.path()
+        nodes = {}
+        node_refs = set(self.nodes())
+        for node in self.nodes():
+            name = node.get_name()
+            if not isinstance(name, str):
+                raise TypeError("Saved node names must be strings")
+            operator = node.get_operator()
+            if operator.module not in module_ids:
+                raise ValueError(f"Node {name!r} must use the definitions script module or a registered import")
+            args, kwargs = node.get_inputs()
+            record = {"operator": {"module": module_ids[operator.module], "name": operator.name}}
+            if args or explicit:
+                record["args"] = [_encode_value(value, node_refs) for value in args]
+            if kwargs or explicit:
+                record["kwargs"] = {key: _encode_value(value, node_refs) for key, value in kwargs.items()}
+            nodes[name] = record
+        return {
+            "version": 1,
+            "imports": imports,
+            "definitions": self.definitions().get_script(),
+            "graph": {"nodes": nodes},
+        }
+
+    @classmethod
+    def fromdict(cls, data: dict) -> "GraphRT":
+        """Build a new runtime. Unknown operators and invalid scripts stay editable."""
+
+        if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:
+            raise ValueError("Unsupported graph format; expected version 1")
+        if not isinstance(data.get("definitions"), str):
+            raise ValueError("Graph definitions must be a source string")
+        if (not isinstance(data.get("imports"), dict) or not isinstance(data.get("graph"), dict)
+                or not isinstance(data["graph"].get("nodes"), dict)):
+            raise ValueError("Graph imports and nodes must be objects")
+        graph = cls(definitions=data["definitions"])
+        modules = {"definitions": graph.definitions()}
+        for module_id, path in data["imports"].items():
+            if not isinstance(module_id, str) or module_id == "definitions" or not isinstance(path, str):
+                raise ValueError("Imports must map module names to paths; 'definitions' is reserved")
+            module = graph.add_import(path)
+            module.set_name(module_id)
+            modules[module_id] = module
+
+        nodes = {}
+        for name, record in data["graph"]["nodes"].items():
+            if not isinstance(name, str) or not isinstance(record, dict):
+                raise ValueError("Invalid node record")
+            operator = record.get("operator")
+            if (not isinstance(operator, dict) or not isinstance(operator.get("module"), str)
+                    or operator["module"] not in modules or not isinstance(operator.get("name"), str)):
+                raise ValueError(f"Invalid operator reference for node {name!r}")
+            ref = OperatorRef(modules[operator["module"]], operator["name"])
+            nodes[name] = graph.node()(ref, name=name)
+
+        # Create every node before restoring inputs, allowing forward references.
+        for name, record in data["graph"]["nodes"].items():
+            args, kwargs = record.get("args", []), record.get("kwargs", {})
+            if not isinstance(args, list) or not isinstance(kwargs, dict) or any(not isinstance(k, str) for k in kwargs):
+                raise ValueError(f"Invalid inputs for node {name!r}")
+            nodes[name].set_inputs(
+                *[_decode_value(value, nodes) for value in args],
+                **{key: _decode_value(value, nodes) for key, value in kwargs.items()},
+            )
+        return graph
+
 if __name__ == "__main__":
     G = GraphRT()
 

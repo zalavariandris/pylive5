@@ -4,12 +4,12 @@ from qtpy.QtWidgets import QDialog, QDialogButtonBox
 from pyflow5.module_operator_tree_model import ModuleOperatorTreeModel
 from myqtx.selection_dialog import SelectionDialog
 from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.local_module import LocalModuleRT, FunctionOperator
+from pygraphrt.inline_module import InlineModuleRT, FunctionOperator
 from pygraphrt.script_module import ScriptModuleRT
 
 
 def test_tree_structure_and_local_updates(qtmodeltester):
-    local = LocalModuleRT()
+    local = InlineModuleRT()
     script = ScriptModuleRT("tools", "def one(): return 1")
     model = ModuleOperatorTreeModel([local, script])
     qtmodeltester.check(model)

@@ -434,7 +434,7 @@ def test_app_color_editor_updates_graph(qtbot):
     editor._color_wheel.hide()
 
 
-def test_inline_color_editor_registration_survives_script_reload(qtbot):
+def test_inline_color_editor_registration_survives_script_reload(qtbot, tmp_path, monkeypatch):
     from myqtx.color_editor_widget import ColorEdit
     from pyflow5.pyflow5_window import PyFlow5Window
 
@@ -442,6 +442,9 @@ def test_inline_color_editor_registration_survives_script_reload(qtbot):
     qtbot.addWidget(window)
     document = window._document
     module = document._imagi_module
+    path = tmp_path / "imagi.py"
+    path.write_text(module.get_script(), encoding="utf-8")
+    monkeypatch.setattr(module, "_path", str(path))
     operator = OperatorRef(module, "constant")
     old_type = operator.get_parameters()["color"].annotation
     document.graphmodel().addNode(operator)

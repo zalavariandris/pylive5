@@ -138,7 +138,7 @@ def test_remove_operator_from_graph_throws_missing_operator_error():
     assert result == 9, "Node should compute (1 + 2) * 3 = 9"
 
     # now remove the node
-    G._local_module.remove_operator(add_op)
+    G._inline_module.remove_operator(add_op)
     with pytest.raises(MissingOperatorError):
         result = G.execute(mult)
 
@@ -172,7 +172,7 @@ class TestUpdatingOperatorFunction:
         def add(a:int, b:int) -> int:
             return a + b + 1
 
-        G._local_module.update_operator(the_node.get_operator(), rt.FunctionOperator(add))
+        G._inline_module.update_operator(the_node.get_operator(), rt.FunctionOperator(add))
 
         result = G.execute(the_node)
         assert result == 4, "Node should compute 1 + 2 + 1 = 4 after updating operator body"
@@ -191,7 +191,7 @@ class TestUpdatingOperatorFunction:
         def add_three(a:int, b:int, c:int) -> int:
             return a + b + c
 
-        G._local_module.update_operator(the_node.get_operator(), rt.FunctionOperator(add_three))
+        G._inline_module.update_operator(the_node.get_operator(), rt.FunctionOperator(add_three))
 
         with pytest.raises(TypeError):
             result = G.execute(the_node)
@@ -217,7 +217,7 @@ class TestUpdatingOperatorFunction:
         def divide(a:int, b:int) -> int:
             return a / b
 
-        G._local_module.update_operator(mult_op, rt.FunctionOperator(divide))
+        G._inline_module.update_operator(mult_op, rt.FunctionOperator(divide))
 
         result = G.execute(mult_node)
         assert result == 1, "Node should compute (1 + 2) / 3 = 1 after changing add to divide"

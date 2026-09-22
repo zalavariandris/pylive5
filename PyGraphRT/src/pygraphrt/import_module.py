@@ -1,45 +1,35 @@
-from types import ModuleType
-from typing import Iterable, Literal, Any, Callable, Hashable, Mapping
-from qtpy.QtCore import Signal, QObject
+from pathlib import Path
 
-
-from myutils.source_diff import ast_functions_diff
-
-from .abstract_module_rt import (
-    AbstractOperator,
-    OperatorRef
-)
+from qtpy.QtCore import QObject
 
 from .script_module import ScriptModuleRT
 
 
-from pathlib import Path
-
-
 class ImportModuleRT(ScriptModuleRT):
-    """An editable script runtime exporting callable module-level bindings.
+    """A script module whose edits are written back to its source file."""
 
-    Updates execute in a fresh shared namespace and commit before emitting signals.
-    All operator signals carry lists of OperatorRef, including removed exports.
-    Operator change notifications use structural function differences; changes to
-    globals and dependencies are not tracked by this analysis.
-    Tracebacks identify the script by its module name as <script:name>.
-    """
-    state_changed = Signal()
-    script_changed = Signal()
-
-    def __init__(self, path: str, parent:QObject | None = None, *, source: str | None = None):
-        # Saved documents retain edits even when the external file has changed.
+    def __init__(self, path: str, parent: QObject | None = None, *, source: str | None = None):
         super().__init__(Path(path).stem, source if source is not None else "", parent=parent)
-        self._path = Path(path)
-
+        self._path = path
         if source is None:
             self.reload()
 
-    def path(self) -> Path:
+    def path(self) -> str:
         return self._path
 
+    def set_script(self, script: str) -> None:
+        if not isinstance(script, str):
+            raise TypeError("script must be a string")
+        if script == self.get_script():
+            return
+        # Persist first: observers should only see edits that were saved.
+        Path(self._path).write_text(script, encoding="utf-8")
+        super().set_script(script)
+
     def reload(self):
-        text = self._path.read_text()
-        self.set_script(text)
-        return text
+        try:
+            text = Path(self._path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            print(f"File not found: {self._path}")
+            return
+        super().set_script(text)

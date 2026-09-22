@@ -60,7 +60,7 @@ def test_nodes_sharing_operator_have_unique_names():
 def test_generated_node_names_avoid_explicit_names():
     graph = rt.GraphRT()
 
-    @graph._local_module.op()
+    @graph._inline_module.op()
     def identity(value):
         return value
 

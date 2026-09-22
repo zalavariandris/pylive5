@@ -3,7 +3,7 @@ import pygraphrt as rt
 from textwrap import dedent
 import sys
 
-from pygraphrt.local_module import FunctionOperator
+from pygraphrt.inline_module import FunctionOperator
 
 
 @pytest.mark.skipif(sys.version_info < (3, 14), reason="Deferred annotations require Python 3.14")
@@ -36,11 +36,11 @@ def test_incomplete_annotations_preserve_signature(annotation_position):
 def test_operator_decorator():
     graph = rt.GraphRT()
     
-    @graph._local_module.op()
+    @graph._inline_module.op()
     def add(a:int, b:int) -> int:
         return a + b
 
-    @graph._local_module.op()
+    @graph._inline_module.op()
     def mult(a:int, b:int) -> int:
         return a * b
 
