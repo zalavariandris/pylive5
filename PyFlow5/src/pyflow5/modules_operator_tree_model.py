@@ -219,8 +219,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         else:
             return False
 
-            
-    # SYNC
+    # SYNC Data on change
     def getModule(self, index):
         if not index.isValid() or index.model() is not self:
             return None
