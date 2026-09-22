@@ -176,25 +176,27 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         self.endInsertRows()
 
     # UPDATE
-    def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
+    def setData(self, index:QModelIndex, value, role=Qt.ItemDataRole.EditRole):
         if not index.isValid() or index.model() is not self:
             return False
-        item = index.internalPointer()
-        if not isinstance(item, _ModuleItem) or not isinstance(item.module, ScriptModuleRT):
-            return False
-        if role in (Qt.ItemDataRole.EditRole, self.NameRole):
-            item.module.set_name(value)
-            self.dataChanged.emit(index, index, [int(Qt.ItemDataRole.DisplayRole),
-                                               int(Qt.ItemDataRole.EditRole), self.NameRole])
-            return True
-        if role == self.SourceRole:
-            try:
-                item.module.set_script(value)
-            except OSError as error:
-                self.scriptSaveFailed.emit(str(error))
+        data = index.internalPointer()
+
+        match data:
+            case AbstractModule() as module:
+                match role:
+                    case Qt.ItemDataRole.EditRole:
+                        print("cant set non-definitions modul name")
+                        return False
+                    case self.SourceRole:
+                        module.set_script(value)
+                        return True
+                    case _:
+                        return False
+                    
+            case OperatorRef() as operator_ref:
                 return False
-            return True
-        return False
+            case _:
+                return False
     
     # DELETE
     def removeModule(self, index:QModelIndex)->bool:

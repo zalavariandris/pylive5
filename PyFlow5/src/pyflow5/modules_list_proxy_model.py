@@ -1,4 +1,5 @@
-from qtpy.QtCore import QSortFilterProxyModel, Qt
+from typing import cast
+from qtpy.QtCore import QModelIndex, QSortFilterProxyModel, Qt
 
 from pygraphrt.script_module import ScriptModuleRT
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
@@ -27,10 +28,11 @@ class ModulesListModel(QSortFilterProxyModel):
         return (Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
                 | Qt.ItemFlag.ItemIsEditable)
 
-    def addModule(self, module: ScriptModuleRT):
-        self.sourceModel().addModule(module)
+    def importModule(self, path: str):
+        source_model = cast(ModulesOperatorsTreeModel, self.sourceModel())
+        source_model.importModule(path)
 
-    def removeModule(self, row: int):
-        index = self.index(row, 0)
+    def removeModule(self, index:QModelIndex):
         if index.isValid():
-            self.sourceModel().removeModule(index.data(self.ModuleRole))
+            source_model = cast(ModulesOperatorsTreeModel, self.sourceModel())
+            source_model.removeModule(index)
