@@ -9,7 +9,7 @@ from pyflow5.node_inspector_model import NodeInspectorModel
 from pyflow5.pygraphrt_model import PyFlowRTModel
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.graph_rt import GraphRT
-from pygraphrt.script_module_rt import ScriptModuleRT
+from pygraphrt.script_module import ScriptModuleRT
 
 
 def field(model, name, role):

@@ -39,14 +39,14 @@ def test_update_operator_triggers_watcher():
         tracker.append("change")
     watcher = rt.watch(G, output, callback)
 
-    G.module().update_operator(output.get_operator(), lambda: 2)
+    G.local().update_operator(output.get_operator(), lambda: 2)
     assert len(tracker) == 1, "Watcher callback should be triggered when output operator is updated"
 
-    G.module().update_operator(output.get_operator(), lambda: 3)
+    G.local().update_operator(output.get_operator(), lambda: 3)
     assert len(tracker) == 2, "Watcher callback should be triggered when output operator is updated"
 
     watcher.stop()
-    G.module().update_operator(output.get_operator(), lambda: 4)
+    G.local().update_operator(output.get_operator(), lambda: 4)
     assert len(tracker) == 2, "Watcher callback should not be triggered after watcher is stopped"
 
 # def test_watch_node_changes():
@@ -131,7 +131,7 @@ def test_operator_removal_keeps_watcher_for_restoration():
     node = graph.node()(lambda: 1)
     changes = []
     watcher = rt.watch(graph, node, lambda: changes.append(True))
-    graph.module().remove_operator(node.get_operator())
+    graph.local().remove_operator(node.get_operator())
     assert watcher._running
     assert changes == [True]
     watcher.stop()
@@ -148,12 +148,12 @@ def test_unrelated_operator_update_and_watcher_restart():
     changes = []
     watcher = rt.watch(graph, node, lambda: changes.append(True))
     try:
-        graph.module().update_operator(other.get_operator(), lambda: 2)
+        graph.local().update_operator(other.get_operator(), lambda: 2)
         assert changes == []
         watcher.stop()
         watcher.start()
         watcher.start()
-        graph.module().update_operator(node.get_operator(), lambda: 3)
+        graph.local().update_operator(node.get_operator(), lambda: 3)
         assert changes == [True]
     finally:
         watcher.stop()
@@ -161,7 +161,7 @@ def test_unrelated_operator_update_and_watcher_restart():
 
 def test_script_operator_notifications():
     from pygraphrt.abstract_module_rt import OperatorRef
-    from pygraphrt.script_module_rt import ScriptModuleRT
+    from pygraphrt.script_module import ScriptModuleRT
 
     module = ScriptModuleRT("example", "def output(): return 1")
     graph = rt.GraphRT()

@@ -5,7 +5,7 @@ import pytest
 
 from pyflow5.pygraphrt_model import PyFlowRTModel
 from pygraphrt.graph_rt import GraphRT
-from pygraphrt.script_module_rt import ScriptModuleRT
+from pygraphrt.script_module import ScriptModuleRT
 
 
 def test_initialize_model_without_graph():

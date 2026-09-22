@@ -4,7 +4,7 @@ import sys
 import traceback
 from textwrap import dedent
 from types import ModuleType
-from pygraphrt.script_module_rt import ScriptModuleRT
+from pygraphrt.script_module import ScriptModuleRT
 from pygraphrt.abstract_module_rt import ParameterData
 
 

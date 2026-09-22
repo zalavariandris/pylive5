@@ -12,8 +12,8 @@ from pygraphrt.graph_rt import NodeRef
 from qtpy.QtCore import QAbstractTableModel, QItemSelectionModel, QObject, QPoint, QPointF, Qt, Signal, Slot
 from qtpy.QtWidgets import QAction, QToolBar
 
-from pygraphrt.script_module_rt import ScriptModuleRT
-
+from pygraphrt.script_module import ScriptModuleRT
+from pygraphrt.import_module import ImportModuleRT
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 from qdageditor5.models.abstract_dag_model import (
@@ -29,29 +29,29 @@ from pyflow5.node_inspector_model import NodeInspectorModel
 
 
 from qtpy.QtCore import QAbstractTableModel, QModelIndex
-class ImportsListModel(QAbstractTableModel):
+class ModulesListModel(QAbstractTableModel):
     NameRole = int(Qt.ItemDataRole.UserRole) + 1
     CodeRole = NameRole + 1
 
-    def __init__(self, imports:list[ScriptModuleRT], parent:QObject=None):
+    def __init__(self, imports:list[ScriptModuleRT|ImportModuleRT], parent:QObject=None):
         super().__init__(parent)
-        self._imports: list[ScriptModuleRT] = imports
+        self._modules: list[ScriptModuleRT|ImportModuleRT] = imports
 
     def columnCount(self, parent=QModelIndex()) -> int:
         return 1
 
     def rowCount(self, parent=QModelIndex()) -> int:
-        return len(self._imports)
+        return len(self._modules)
 
     def data(self, index:QModelIndex, role:int=Qt.DisplayRole):
         if not index.isValid():
             return None
 
         match role:
-            case Qt.DisplayRole | Qt.EditRole | ImportsListModel.NameRole:
-                return self._imports[index.row()].get_name()
-            case ImportsListModel.CodeRole:
-                return self._imports[index.row()].get_script()
+            case Qt.DisplayRole | Qt.EditRole | ModulesListModel.NameRole:
+                return self._modules[index.row()].get_name()
+            case ModulesListModel.CodeRole:
+                return self._modules[index.row()].get_script()
         return None
 
     def setData(self, index:QModelIndex, value, role:int=Qt.EditRole)->bool:
@@ -59,27 +59,27 @@ class ImportsListModel(QAbstractTableModel):
             return False
 
         match role:
-            case Qt.EditRole | ImportsListModel.NameRole:
-                self._imports[index.row()].set_name(value)
+            case Qt.EditRole | ModulesListModel.NameRole:
+                self._modules[index.row()].set_name(value)
                 self.dataChanged.emit(index, index, [role])
                 return True
             
-            case ImportsListModel.CodeRole:
-                self._imports[index.row()].set_script(value)
+            case ModulesListModel.CodeRole:
+                self._modules[index.row()].set_script(value)
                 self.dataChanged.emit(index, index, [role])
                 return True
             
         return False
 
-    def addImport(self, script_module:ScriptModuleRT):
-        self.beginInsertRows(QModelIndex(), len(self._imports), len(self._imports))
-        self._imports.append(script_module)
+    def addModule(self, module:ImportModuleRT|ScriptModuleRT):
+        self.beginInsertRows(QModelIndex(), len(self._modules), len(self._modules))
+        self._modules.append(module)
         self.endInsertRows()
 
-    def removeImport(self, row:int):
-        if 0 <= row < len(self._imports):
+    def removeModule(self, row:int):
+        if 0 <= row < len(self._modules):
             self.beginRemoveRows(QModelIndex(), row, row)
-            self._imports.pop(row)
+            self._modules.pop(row)
             self.endRemoveRows()
 
 
@@ -148,12 +148,12 @@ class PyFlowDocument(QObject):
             self._imagi_module
         ]
 
-        self._imports_model = ImportsListModel(self._imports, self)
-        self._import_selection_model = QItemSelectionModel(self._imports_model)
+        self._modules_model = ModulesListModel(self._imports, self)
+        self._module_selection_model = QItemSelectionModel(self._modules_model)
 
         self._G = rt.GraphRT()
         self._operator_model = ModuleOperatorTreeModel([
-            self._G.module(), 
+            self._G.local(), 
             *self._imports], 
             self
         )
@@ -187,11 +187,11 @@ class PyFlowDocument(QObject):
     def operatormodel(self)->ModuleOperatorTreeModel:
         return self._operator_model
 
-    def importsmodel(self) -> ImportsListModel:
-        return self._imports_model
+    def modulesmodel(self) -> ModulesListModel:
+        return self._modules_model
 
-    def importselectionmodel(self) -> QItemSelectionModel:
-        return self._import_selection_model
+    def moduleselectionmodel(self) -> QItemSelectionModel:
+        return self._module_selection_model
 
     def deleteSelectedNodes(self):
         selected_nodes = self.graphselectionmodel().selectedNodes()
@@ -242,6 +242,11 @@ class PyFlowDocument(QObject):
         except Exception as e:
             traceback.print_exc()
             return e
+
+    def importModule(self, file_path: str) -> None:
+
+        module = ImportModuleRT(file_path)
+        self._modules_model.addModule(module)
             
     @Slot()
     def _on_watcher_triggered(self):
@@ -272,3 +277,38 @@ class PyFlowDocument(QObject):
         else:
             node = None
         self.set_output_node(self._graph_model.getNode(node) if node is not None else None)
+
+    def todict(self)->dict:
+        from pygraphrt.serialization import _todict
+        data = dict()
+
+        data['imports'] = dict()
+        data["definitions"] = dict()
+        modules:list[ScriptModuleRT|ImportModuleRT] = self._modules_model._modules
+
+        for module in modules:
+            match module:
+                case ScriptModuleRT():
+                    data["definitions"][module.get_name()] = _todict(module)
+                case ImportModuleRT():
+                    data["imports"][module.path()] = _todict(module)
+
+        data['nodes'] = dict()
+        for node_ref in self._graph_model._rt.nodes():
+            node_value = node_ref.get_value()
+            data['nodes'][node_ref.get_name()] = _todict(node_value)
+
+        return data
+
+    def serialize(self)->str:
+        import json
+        return json.dumps(self.todict(), indent=4)
+
+    def saveGraph(self, file_path: str) -> None:
+        """Save the current graph to the specified file path."""
+        G = self._graph_model._rt
+        G.todict()
+
+    def openGraph(self, file_path: str) -> None:
+        """Load a graph from the specified file path."""
+        ...

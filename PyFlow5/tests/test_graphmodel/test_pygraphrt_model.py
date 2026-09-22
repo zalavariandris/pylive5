@@ -4,7 +4,7 @@ import pytest
 
 from pyflow5.pygraphrt_model import PyFlowRTModel
 from pygraphrt.graph_rt import GraphRT
-from pygraphrt.script_module_rt import ScriptModuleRT
+from pygraphrt.script_module import ScriptModuleRT
 
 
 @pytest.fixture(params=["local", "script", "script_with_local_name_collision"])
@@ -12,14 +12,14 @@ def graph_and_operator(request):
     graph = GraphRT()
 
     if request.param == "local":
-        @graph.module().op()
+        @graph.local().op()
         def mult(a, b):
             return a * b
 
         operator = mult
     else:
         if request.param == "script_with_local_name_collision":
-            @graph.module().op()
+            @graph.local().op()
             def mult(unrelated):
                 return unrelated
 

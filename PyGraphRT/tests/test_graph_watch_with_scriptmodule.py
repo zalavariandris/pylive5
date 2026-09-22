@@ -3,7 +3,7 @@ import pygraphrt as rt
 from textwrap import dedent
 
 from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.script_module_rt import ScriptModuleRT
+from pygraphrt.script_module import ScriptModuleRT
 
 
 @pytest.mark.parametrize(
@@ -12,7 +12,7 @@ from pygraphrt.script_module_rt import ScriptModuleRT
     ids=["one-function", "multiple-functions", "unrelated-function"],
 )
 def test_script_module_function_changed(a_value, b_value, unused_value, expected_changes):
-    from pygraphrt.script_module_rt import ScriptModuleRT
+    from pygraphrt.script_module import ScriptModuleRT
     sm = ScriptModuleRT("mathy", dedent("""
     def A():
         return 1

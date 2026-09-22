@@ -1,6 +1,8 @@
+import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
+from pygraphrt.serialization import serialize
 from qtpy.QtCore import (
     QObject,
     QPoint,
@@ -13,12 +15,15 @@ from qtpy.QtCore import (
 from qtpy.QtWidgets import (
     QComboBox,
     QCheckBox,
+    QFileDialog,
     QLabel,
     QDialog,
     QHBoxLayout,
     QListView,
     QMenu,
-    QMenuBar, 
+    QMenuBar,
+    QMessageBox,
+    QPlainTextEdit, 
     QSplitter,
     QTableView, 
     QVBoxLayout, 
@@ -48,7 +53,7 @@ from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKe
 
 from pygraphrt.abstract_module_rt import OperatorRef
 
-from .pyflow5_document import ImportsListModel, PyFlowDocument
+from .pyflow5_document import ModulesListModel, PyFlowDocument
 from .module_operator_tree_model import ModuleOperatorTreeModel
 
 
@@ -96,6 +101,8 @@ class PyFlow5Window(QMainWindow):
         file_menu.addAction("Open",    lambda: self.openFile())
         file_menu.addAction("Save",    lambda: self.saveFile())
         file_menu.addAction("Save As", lambda: self.saveFileAs())
+        file_menu.addSeparator()
+        file_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
 
         edit_menu = QMenu("Edit", self)
         menubar.addMenu(edit_menu)
@@ -127,6 +134,38 @@ class PyFlow5Window(QMainWindow):
         view_menu.addSeparator()
         menubar.addMenu(view_menu)
 
+        window_menu = menubar.addMenu("Window")
+        serialization_action = window_menu.addAction("Serialization")
+        serialization_action.setCheckable(True)
+        serialization_action.toggled.connect(self._serialization_window.setVisible)
+        self._serialization_window.finished.connect(
+            lambda _: serialization_action.setChecked(False)
+        )
+
+    def importModule(self):
+        # open file browser dialog
+        file_dialog = QFileDialog(self)
+        file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        relative_path_option = QCheckBox("Import with relative path", file_dialog)
+        relative_path_option.setToolTip("Relative to the current working directory.")
+        layout = file_dialog.layout()
+        layout.addWidget(relative_path_option, layout.rowCount(), 0, 1, layout.columnCount())
+        if file_dialog.exec_():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                file_path = selected_files[0]
+                if relative_path_option.isChecked():
+                    try:
+                        file_path = os.path.relpath(file_path)
+                    except ValueError:
+                        QMessageBox.warning(
+                            self,
+                            "Cannot import with relative path",
+                            "The file must be on the same drive as the current working directory.",
+                        )
+                        return
+                self._document.importModule(file_path)
 
     def __init__(self, parent=None)->None:
         super().__init__(parent)
@@ -138,12 +177,10 @@ class PyFlow5Window(QMainWindow):
         # Setup UI
         # self.setupActions()
 
-        self.setupMenubar()
-
         # - Setup imports view -
-        self._imports_view = QListView(self)
-        self._imports_view.setModel(self._document.importsmodel())
-        self._imports_view.setSelectionModel(self._document.importselectionmodel())
+        self._module_list_view = QListView(self)
+        self._module_list_view.setModel(self._document.modulesmodel())
+        self._module_list_view.setSelectionModel(self._document.moduleselectionmodel())
         
         # self._code_editor = ScriptEdit2(self)
         self._code_editor = ScriptEditAdvanced(
@@ -153,11 +190,11 @@ class PyFlow5Window(QMainWindow):
         # two-way binding between code editor and script module
         def update_code_editor():
             
-            selected_import_idx = self._document.importselectionmodel().currentIndex()
+            selected_import_idx = self._document.moduleselectionmodel().currentIndex()
             if not selected_import_idx.isValid():
                 return
             
-            next_script = self._document.importsmodel().data(selected_import_idx, ImportsListModel.CodeRole) 
+            next_script = self._document.modulesmodel().data(selected_import_idx, ModulesListModel.CodeRole) 
             # todo: consider moving change guard to the code editor itself
             current_script = self._code_editor.toPlainText()
             if current_script != next_script:
@@ -166,17 +203,17 @@ class PyFlow5Window(QMainWindow):
                 self._code_editor.blockSignals(False)
 
         update_code_editor()
-        self._document.importsmodel().modelReset.connect(update_code_editor)
-        self._document.importsmodel().dataChanged.connect(update_code_editor)
-        self._document.importselectionmodel().selectionChanged.connect(update_code_editor)
+        self._document.modulesmodel().modelReset.connect(update_code_editor)
+        self._document.modulesmodel().dataChanged.connect(update_code_editor)
+        self._document.moduleselectionmodel().selectionChanged.connect(update_code_editor)
 
         def update_script_module():
-            selected_import_idx = self._document.importselectionmodel().currentIndex()
+            selected_import_idx = self._document.moduleselectionmodel().currentIndex()
             if not selected_import_idx.isValid():
                 return
 
             new_text = self._code_editor.toPlainText()
-            self._document.importsmodel().setData(selected_import_idx, new_text, ImportsListModel.CodeRole)
+            self._document.modulesmodel().setData(selected_import_idx, new_text, ModulesListModel.CodeRole)
 
         self._code_editor.textChanged.connect(update_script_module)
         # self._document.scriptmodule().state_changed.connect(self._on_script_module_state_changed)
@@ -189,8 +226,6 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.requestNode.connect(lambda pos, source: self._on_request_node(pos, source))
         self._graph_view.layout_nodes()
         self._graph_view.fitNodes()
-
-        
 
         # - Setup inspector -
         self._inspector_view = myqtx.InspectorView(self)
@@ -215,9 +250,19 @@ class PyFlow5Window(QMainWindow):
         self._display_widget = myqtx.DisplayWidget(viewer)
         viewer_layout.addWidget(self._display_widget)
 
+        # - Serialization widget -
+        self._serialization_window = QDialog(self)
+        self._serialization_window.setWindowTitle("Serialization")
+        self._serialization_window.resize(400, 600)
+        serialization_layout = QVBoxLayout(self._serialization_window)
+        self._serialization_widget = QPlainTextEdit(self._serialization_window)
+        serialization_layout.addWidget(self._serialization_widget)
+
+        self.setupMenubar()
+
         # - Add widgets to splitter -
         splitter = QSplitter(self)
-        splitter.addWidget(self._imports_view)
+        splitter.addWidget(self._module_list_view)
         splitter.addWidget(self._code_editor)
         splitter.addWidget(self._graph_view)
         splitter.addWidget(self._inspector_view)
@@ -259,6 +304,7 @@ class PyFlow5Window(QMainWindow):
     @Slot()
     def _on_output_value_got_dirty(self):
         self._display_widget.display(self._document.execute())
+        self._serialization_widget.setPlainText(self._document.serialize())
 
     @Slot()
     def _on_script_module_state_changed(self):

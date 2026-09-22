@@ -3,7 +3,7 @@ import pytest
 from pyflow5.pyflow5_document import PyFlowDocument
 from pyflow5.pyflow5_window import PyFlow5Window
 from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.script_module_rt import ScriptModuleRT
+from pygraphrt.script_module import ScriptModuleRT
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 

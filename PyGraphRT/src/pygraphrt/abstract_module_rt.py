@@ -57,6 +57,9 @@ class OperatorRef:
     def __hash__(self):
         return hash((self.module, self.name))
 
+    def get_name(self) -> str:
+        return self.name
+
     def get_value(self) -> AbstractOperator | None:
         return self.module.get_value(self)
     

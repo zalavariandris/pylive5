@@ -161,9 +161,6 @@ class NodeData:
         raise NotImplementedError("__call__ is not implemented for NodeRef")
     
 
-
-
-
 class MissingNodeError(Exception):
     pass
 
@@ -221,7 +218,7 @@ class GraphRT(QObject):
         self._profiler = Profiler()
         self.cache = DummyCache()
 
-    def module(self) -> LocalModuleRT:
+    def local(self) -> LocalModuleRT:
         return self._local_module
 
     def op(self) -> Callable[[Callable], OperatorRef]:
@@ -462,6 +459,7 @@ class GraphRT(QObject):
         self.executed.emit({node_ref: ancestors_output[node_ref] for node_ref in ancestors})
         return ancestors_output[root]
 
+        
 if __name__ == "__main__":
     G = GraphRT()
 

@@ -4,7 +4,7 @@ from qtpy.QtGui import QColor
 from pyflow5.pygraphrt_model import PyFlowRTModel
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.graph_rt import GraphRT
-from pygraphrt.script_module_rt import ScriptModuleRT
+from pygraphrt.script_module import ScriptModuleRT
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 

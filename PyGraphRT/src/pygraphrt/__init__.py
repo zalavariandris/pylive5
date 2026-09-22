@@ -13,6 +13,7 @@ from .abstract_module_rt import (
 
 from .local_module import LocalModuleRT, FunctionOperator
 from .watch import watch
+from .serialization import serialize, deserialize
 
 __all__ = [
     "NodeRef",
@@ -22,5 +23,8 @@ __all__ = [
     "HistoryMemoryCache",
     "DummyCache",
     "LocalModuleRT",
-    "watch"
+    "watch",
+    "serialization",
+    "serialize",
+    "deserialize"
 ]
