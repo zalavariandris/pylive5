@@ -1,3 +1,4 @@
+import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
@@ -50,12 +51,12 @@ from QScriptEdit2.script_edit import ScriptEdit2
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKeywordsCompleter
 
-from pygraphrt.abstract_module_rt import OperatorRef
-
 from .pyflow5_document import PyFlowDocument
-from .modules_list_model import ModulesListModel
-from .module_operator_tree_model import ModuleOperatorTreeModel
+from .modules_list_proxy_model import ModulesListModel
+from .modules_operator_tree_model import ModulesOperatorsTreeModel
 
+
+from .inspector_view import InspectorEditor, InspectorView
 
 def _color_editor(index, parent):
     widget = ColorEdit(parent)
@@ -66,7 +67,7 @@ def _color_editor(index, parent):
         color_type = type(color)
         widget.setColor(color.r, color.g, color.b, color.a)
 
-    return myqtx.InspectorEditor(
+    return InspectorEditor(
         widget,
         lambda: color_type(*widget.color()),
         write,
@@ -75,8 +76,6 @@ def _color_editor(index, parent):
 
 
 class PyFlow5Window(QMainWindow):
-    output_node_changed = Signal()
-
     def __init__(self, parent=None)->None:
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
@@ -97,6 +96,7 @@ class PyFlow5Window(QMainWindow):
             completer=None,
             parent=self
         )
+
         # two-way binding between code editor and script module
         def update_code_editor():
             selected_import_idx = self._document.moduleselectionmodel().currentIndex()
@@ -138,11 +138,8 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.fitNodes()
 
         # - Setup inspector -
-        self._inspector_view = myqtx.InspectorView(self)
-        self._register_color_editor()
-        self._document.operatormodel().modelReset.connect(self._register_color_editor)
-        self._document.modulesmodel().dataChanged.connect(self._register_color_editor)
-        self._inspector_view.setModel(self._document.inspectormodel())
+        self._inspector_view = InspectorView(self)
+        self._inspector_view.setModel(self._document.graphdetailsmodel())
 
         # - Setup display widget -
         viewer = QWidget(self)
@@ -287,23 +284,14 @@ class PyFlow5Window(QMainWindow):
                         return
                 self._document.importModule(file_path)
 
-    def _register_color_editor(self):
-        # Script reloads can create a new ColorData class object.
-        if self._document._imagi_module is None:
-            return
-        operator = OperatorRef(self._document._imagi_module, "constant")
-        parameter = operator.get_parameters().get("color")
-        if parameter is not None:
-            color_type = parameter.annotation
-            if isinstance(color_type, type) and color_type.__name__ == "ColorData":
-                self._inspector_view.registerEditor(color_type, _color_editor)
+
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
         dialog = SelectionDialog(self._document.operatormodel(), self)
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
-                selected_op = selected_index.data(ModuleOperatorTreeModel.OperatorRole)
+                selected_op = selected_index.data(ModulesOperatorsTreeModel.OperatorRole)
                 if selected_op:
                     self._document.graphmodel().addNode(selected_op, scene_pos or QPointF(0, 0))
         finally:
@@ -320,7 +308,7 @@ class PyFlow5Window(QMainWindow):
             if selected_files:
                 file_path = selected_files[0]
                 try:
-                    self._document.openGraph(file_path)
+                    self._document.open(file_path)
                 except Exception as error:
                     QMessageBox.warning(self, "Cannot open graph", str(error))
 
@@ -335,7 +323,7 @@ class PyFlow5Window(QMainWindow):
             if selected_files:
                 file_path = selected_files[0]
                 try:
-                    self._document.saveGraph(file_path)
+                    self._document.save(file_path)
                 except Exception as error:
                     QMessageBox.warning(self, "Cannot save graph", str(error))
 
@@ -343,7 +331,11 @@ class PyFlow5Window(QMainWindow):
     def _on_output_value_got_dirty(self):
         self._display_widget.display(self._document.execute())
         try:
-            text = self._document.serialize()
+            data = self._document._G.todict()
+            for name, record in data.get("graph", {}).get("nodes", {}).items():
+                position = self._document.graphmodel().nodePosition(name)
+                record["position"] = [position.x(), position.y()]
+            text = json.dumps(data, indent=4)
         except (TypeError, ValueError, RecursionError) as error:
             text = f"Cannot serialize document: {error}"
         self._serialization_widget.setPlainText(text)

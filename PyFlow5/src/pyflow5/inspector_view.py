@@ -23,6 +23,9 @@ class InspectorEditor:
     committed: Any = None
 
 
+
+
+
 def _text_editor(value_type):
     def create(index, parent):
         widget = QLineEdit(parent)

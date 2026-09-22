@@ -1,7 +1,7 @@
 from qtpy.QtCore import QModelIndex, QPersistentModelIndex
 from qtpy.QtWidgets import QDialog, QDialogButtonBox
 
-from pyflow5.module_operator_tree_model import ModuleOperatorTreeModel
+from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
 from myqtx.selection_dialog import SelectionDialog
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.inline_module import InlineModuleRT, FunctionOperator
@@ -11,7 +11,7 @@ from pygraphrt.script_module import ScriptModuleRT
 def test_tree_structure_and_local_updates(qtmodeltester):
     local = InlineModuleRT()
     script = ScriptModuleRT("tools", "def one(): return 1")
-    model = ModuleOperatorTreeModel([local, script])
+    model = ModulesOperatorsTreeModel([local, script])
     qtmodeltester.check(model)
     parent = model.index(0, 0)
     assert model.rowCount() == 2
@@ -46,7 +46,7 @@ def test_tree_structure_and_local_updates(qtmodeltester):
 
 def test_script_updates_and_module_detachment(qtmodeltester):
     module = ScriptModuleRT("tools", "def one(): return 1")
-    model = ModuleOperatorTreeModel([module])
+    model = ModulesOperatorsTreeModel([module])
     qtmodeltester.check(model)
     parent = model.index(0, 0)
     persistent = QPersistentModelIndex(model.index(0, 0, parent))
@@ -74,7 +74,7 @@ def test_script_updates_and_module_detachment(qtmodeltester):
 
 def test_picker_requires_an_operator_and_handles_removal(qtbot):
     module = ScriptModuleRT("tools", "def one(): return 1")
-    model = ModuleOperatorTreeModel([module])
+    model = ModulesOperatorsTreeModel([module])
     dialog = SelectionDialog(model)
     qtbot.addWidget(dialog)
     dialog._operator_tree.setCurrentIndex(model.index(0, 0))

@@ -1,7 +1,9 @@
+import json
+
 from qtpy.QtCore import QPersistentModelIndex, Qt
 
-from pyflow5.module_operator_tree_model import ModuleOperatorTreeModel
-from pyflow5.modules_list_model import ModulesListModel
+from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.modules_list_proxy_model import ModulesListModel
 from pygraphrt.inline_module import InlineModuleRT
 from pygraphrt.script_module import ScriptModuleRT
 
@@ -9,7 +11,7 @@ from pygraphrt.script_module import ScriptModuleRT
 def test_shared_modules_and_flat_proxy(qtmodeltester):
     local = InlineModuleRT()
     script = ScriptModuleRT("tools", "def one(): return 1")
-    source = ModuleOperatorTreeModel([local, script])
+    source = ModulesOperatorsTreeModel([local, script])
     proxy = ModulesListModel(source)
     qtmodeltester.check(source)
     qtmodeltester.check(proxy)
@@ -36,7 +38,7 @@ def test_shared_modules_and_flat_proxy(qtmodeltester):
 
 def test_edits_and_runtime_notifications(qtmodeltester):
     script = ScriptModuleRT("tools", "def one(): return 1")
-    source = ModuleOperatorTreeModel([script])
+    source = ModulesOperatorsTreeModel([script])
     proxy = ModulesListModel(source)
     qtmodeltester.check(source)
     qtmodeltester.check(proxy)
@@ -52,7 +54,7 @@ def test_edits_and_runtime_notifications(qtmodeltester):
     assert index.data(proxy.CodeRole) == "# no operators"
     assert [proxy.CodeRole] in changes
     child = source.index(0, 0, source.index(0, 0))
-    assert not source.setData(child, "ignored", source.CodeRole)
+    assert not source.setData(child, "ignored", source.SourceRole)
 
 
 def test_document_additions_use_shared_source(qapp, tmp_path):
@@ -69,7 +71,9 @@ def test_document_additions_use_shared_source(qapp, tmp_path):
     parent = source.index(source.rowCount() - 1, 0)
     assert source.index(0, 0, parent).data() == "added"
     assert module in document._G.imports()
-    assert document.todict()["imports"]["new_script"] == path
+    document_path = tmp_path / "document.json"
+    document.save(document_path)
+    assert json.loads(document_path.read_text(encoding="utf-8"))["imports"]["new_script"] == path
     proxy.removeModule(index.row())
     assert module not in document._G.imports()
     assert module not in [source.index(row, 0).data(source.ModuleRole) for row in range(source.rowCount())]

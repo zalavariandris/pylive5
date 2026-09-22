@@ -1,17 +1,17 @@
 from qtpy.QtCore import QSortFilterProxyModel, Qt
 
 from pygraphrt.script_module import ScriptModuleRT
-from .module_operator_tree_model import ModuleOperatorTreeModel
+from .modules_operator_tree_model import ModulesOperatorsTreeModel
 
 
 class ModulesListModel(QSortFilterProxyModel):
     """Flat view of editable modules in the shared module/operator model."""
 
-    NameRole = ModuleOperatorTreeModel.NameRole
-    CodeRole = ModuleOperatorTreeModel.CodeRole
-    ModuleRole = ModuleOperatorTreeModel.ModuleRole
+    NameRole = ModulesOperatorsTreeModel.NameRole
+    CodeRole = ModulesOperatorsTreeModel.SourceRole
+    ModuleRole = ModulesOperatorsTreeModel.ModuleRole
 
-    def __init__(self, source: ModuleOperatorTreeModel, parent=None):
+    def __init__(self, source: ModulesOperatorsTreeModel, parent=None):
         super().__init__(parent)
         self.setSourceModel(source)
 

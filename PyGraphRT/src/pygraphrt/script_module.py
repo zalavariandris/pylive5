@@ -76,6 +76,8 @@ class ScriptModuleRT(AbstractModule):
             new_functions = {}
             if self._state != error:
                 self._state = error
+            import traceback
+            traceback.print_exc()
         
         self._operators_cache = {
             key: FunctionOperator(func) 
@@ -96,6 +98,7 @@ class ScriptModuleRT(AbstractModule):
         """Store source, clearing operators and recording the exception on failure."""
 
         self._apply_script(script)
+        self.script_changed.emit()
 
     def _apply_script(self, script: str) -> None:
         if not isinstance(script, str):
@@ -170,7 +173,7 @@ class ScriptModuleRT(AbstractModule):
             if removed:
                 self.operators_removed.emit([OperatorRef(self, name) for name in removed])
 
-        self.script_changed.emit()
+        
 
     def operators(self) -> Iterable[OperatorRef]:
         return [

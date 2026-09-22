@@ -1,0 +1,41 @@
+{
+    "version": 1,
+    "modules": {
+        "module_2": {
+            "type": "script",
+            "name": "utils",
+            "source": "def the_name():\n    return \"Masa\"\n    \ndef hello_world(name:str, greeting:str='Hello'):\n    return f\"{greeting} {name}!\""
+        }
+    },
+    "nodes": {
+        "hello_world": {
+            "operator": {
+                "module": "module_2",
+                "name": "hello_world"
+            },
+            "args": [],
+            "kwargs": {
+                "name": {
+                    "type": "node",
+                    "name": "the_name"
+                }
+            },
+            "position": [
+                143.0,
+                181.0
+            ]
+        },
+        "the_name": {
+            "operator": {
+                "module": "module_2",
+                "name": "the_name"
+            },
+            "args": [],
+            "kwargs": {},
+            "position": [
+                126.0,
+                115.0
+            ]
+        }
+    }
+}

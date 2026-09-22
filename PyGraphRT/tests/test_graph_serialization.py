@@ -7,6 +7,131 @@ import pytest
 
 from pygraphrt import GraphRT, OperatorRef
 
+from textwrap import dedent
+
+def test_strictly_the_hello_world_graph_serialization() -> None:
+    definitions = dedent("""\
+        def the_name():
+            return "Masa"
+
+        def the_greeting():
+            return "Hey"
+        
+        def hello_world(name:str, greeting:str='Hello'):
+            return f"{greeting} {name}!"
+        """)
+    G = GraphRT(definitions=definitions)
+
+    operators_by_name = {
+        op.get_name(): op 
+        for op in G.definitions().operators()
+    }
+
+    assert set(operators_by_name.keys()) == {"the_name", "the_greeting", "hello_world"}
+
+    
+    the_name = G.node()(operators_by_name["the_name"], name="the_name")
+    the_greeting = G.node()(operators_by_name["the_greeting"], name="the_greeting")
+    hello_world = G.node(the_name, the_greeting)(operators_by_name["hello_world"], name="hello_world")
+
+    data = G.todict(explicit=False)
+    assert set(data.keys()) == {"version", "definitions", "graph"}
+
+    assert data["definitions"] == definitions
+    assert data["graph"] == {
+        "nodes": {
+            "the_name": {
+                "operator": "the_name"
+            },
+            "the_greeting": {
+                "operator": "the_greeting"
+            },
+            "hello_world": {
+                "operator": "hello_world",
+                "args": [
+                    {"type": "node", "name": "the_name"},
+                    {"type": "node", "name": "the_greeting"}
+                ]
+            }
+        }
+    }
+
+    loaded = GraphRT.fromdict(data)
+    assert loaded.todict() == data
+    assert loaded.execute(loaded.nodes()[-1]) == G.execute(hello_world) == "Hey Masa!"
+
+
+def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Path) -> None:
+    # create the hello_world_operator.py file in pytest temp folder
+    source = dedent("""\
+        def the_name() -> str:
+            return "Masa"
+
+        def the_greeting() -> str:
+            return "Hey"
+
+        def hello_world(name: str, greeting: str = "Hello") -> str:
+            return f"{greeting} {name}!"
+        """)
+    module_path = tmp_path / "hello_world_operators.py"
+    module_path.write_text(source, encoding="utf-8")
+
+    # create the runtime graph and add the imported module
+    graph = GraphRT()
+    module = graph.add_import(str(module_path))
+
+    # collect operators from the imported module
+    operators_by_name = {op.get_name(): op for op in module.operators()}
+    assert set(operators_by_name) == {"the_name", "the_greeting", "hello_world"}
+
+    # create the nodes using the imported module
+    the_name = graph.node()(operators_by_name["the_name"], name="the_name")
+    the_greeting = graph.node()(operators_by_name["the_greeting"], name="the_greeting")
+    hello_world = graph.node(the_name, the_greeting)(
+        operators_by_name["hello_world"], name="hello_world"
+    )
+
+    # serialize the graph to a dictionary
+    data = graph.todict(explicit=False)
+    assert data == {
+        "version": 1,
+        "imports": {"hello_world_operators": str(module_path)},
+        "graph": {
+            "nodes": {
+                "the_name": {
+                    "operator": {"module": "hello_world_operators", "name": "the_name"}
+                },
+                "the_greeting": {
+                    "operator": {"module": "hello_world_operators", "name": "the_greeting"}
+                },
+                "hello_world": {
+                    "operator": {"module": "hello_world_operators", "name": "hello_world"},
+                    "args": [
+                        {"type": "node", "name": "the_name"},
+                        {"type": "node", "name": "the_greeting"}
+                    ]
+                }
+            }
+        }
+    }
+
+    loaded = GraphRT.fromdict(json.loads(json.dumps(data)))
+    assert loaded.todict() == data
+    assert loaded.definitions().get_script() == ""
+    assert all(node.get_operator().module is loaded.imports()[0] for node in loaded.nodes())
+    loaded_nodes = {node.get_name(): node for node in loaded.nodes()}
+    assert loaded.execute(loaded_nodes["hello_world"]) == graph.execute(hello_world) == "Hey Masa!"
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_empty_graph_round_trip(explicit: bool) -> None:
+    graph = GraphRT()
+    data = graph.todict(explicit=explicit)
+    expected: dict[str, object] = {"version": 1}
+    if explicit:
+        expected.update(imports={}, definitions="", graph={"nodes": {}})
+    assert data == expected
+    assert GraphRT.fromdict(data).todict(explicit=explicit) == data
 
 
 @pytest.fixture
@@ -48,6 +173,9 @@ def test_explicit_empty_inputs():
     assert "args" not in compact and "kwargs" not in compact
     explicit = graph.todict(explicit=True)["graph"]["nodes"]["one"]
     assert explicit["args"] == [] and explicit["kwargs"] == {}
+    assert compact["operator"] == "one"
+    assert explicit["operator"] == {"module": "definitions", "name": "one"}
+    assert GraphRT.fromdict(graph.todict(explicit=True)).todict() == graph.todict()
 
 
 def test_runtime_ignores_presentation_metadata(graph):
@@ -64,6 +192,9 @@ def test_imports_and_definitions_disambiguate_operator_names(tmp_path):
     source = graph.node()(OperatorRef(module, "op"), name="source")
     graph.node(source)(OperatorRef(graph.definitions(), "op"), name="target")
     assert graph.todict()["imports"] == {"tools": str(path)}
+    records = graph.todict()["graph"]["nodes"]
+    assert records["source"]["operator"] == {"module": "tools", "name": "op"}
+    assert records["target"]["operator"] == "op"
     loaded = GraphRT.fromdict(graph.todict())
     assert loaded.execute(loaded.nodes()[1]) == 84
     assert loaded.nodes()[0].get_operator().module is loaded.imports()[0]
@@ -104,7 +235,7 @@ def test_malformed_runtime_data_is_rejected(graph, damage):
     elif damage == "node":
         data["graph"]["nodes"]["target"] = None
     elif damage == "module":
-        record["operator"]["module"] = "unknown"
+        record["operator"] = {"module": "unknown", "name": "op"}
     elif damage == "reference":
         record["args"][0]["name"] = "unknown"
     elif damage == "args":

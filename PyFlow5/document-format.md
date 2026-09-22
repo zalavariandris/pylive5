@@ -4,6 +4,10 @@
 that reconstructs a new graph. `PyFlowDocument` calls these methods and adds or
 restores each node's `position`; positions are not part of the runtime.
 
+The document's persistence API is `open(path)` and `save(path)`. Both accept a
+string or `Path` and read or write UTF-8 JSON files. Dictionary conversion belongs
+to `GraphRT`.
+
 ```json
 {
   "version": 1,

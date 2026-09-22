@@ -207,12 +207,10 @@ def freeze(value, active=None) -> tuple:
             
     return kind, id(value)
 
-"""JSON helpers for GraphRT. The runtime owns the graph format."""
+
 
 import math
 from pathlib import Path
-
-
 
 
 def _encode_value(value, nodes):
@@ -220,47 +218,66 @@ def _encode_value(value, nodes):
 
     if type(value) in (type(None), bool, int, str):
         return value
+
     if type(value) is float:
         return value if math.isfinite(value) else {"type": "float", "value": value.hex()}
+
     if isinstance(value, NodeRef):
         if value not in nodes:
             raise ValueError(f"Input references a node outside this graph: {value}")
-        return {"type": "node", "name": value.get_name()}
+        return {
+            "type": "node", 
+            "name": value.get_name()
+        }
+
     if type(value) is list:
         return [_encode_value(item, nodes) for item in value]
+
     if type(value) is tuple:
         return {"type": "tuple", "items": [_encode_value(item, nodes) for item in value]}
+
     if type(value) is dict:
         return {"type": "dict", "items": [
             [_encode_value(key, nodes), _encode_value(item, nodes)]
             for key, item in value.items()
         ]}
+
     if isinstance(value, Path):
         return {"type": "path", "value": str(value)}
-    raise TypeError(f"Cannot save input of type {type(value).__name__}")
+    
+    raise TypeError(f"Cannot save input of type: {type(value).__name__!r}")
 
 
 def _decode_value(value, nodes):
     if type(value) in (type(None), bool, int, float, str):
         return value
+    
     if isinstance(value, list):
         return [_decode_value(item, nodes) for item in value]
+    
     if not isinstance(value, dict):
         raise ValueError("Invalid input value")
+    
     match value:
         case {"type": "node", "name": str(name)}:
             if name not in nodes:
                 raise ValueError(f"Unknown node reference: {name}")
             return nodes[name]
+
         case {"type": "tuple", "items": list(items)}:
             return tuple(_decode_value(item, nodes) for item in items)
+
         case {"type": "dict", "items": list(items)}:
             return {_decode_value(key, nodes): _decode_value(item, nodes) for key, item in items}
+
         case {"type": "path", "value": str(path)}:
             return Path(path)
+
         case {"type": "float", "value": str(number)}:
             return float.fromhex(number)
+        
     raise ValueError(f"Invalid tagged input: {value!r}")
+
 
 class GraphRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
@@ -295,17 +312,13 @@ class GraphRT(QObject):
         """Modules available to the editor, including unused imports."""
         return [self._definitions, *self._imports]
 
-    def add_import(self, path: str, *, source: str | None = None) -> ImportModuleRT:
+    def add_import(self, path: str, *, source: str | None = None) -> None:
         module = ImportModuleRT(path, source=source)
-        self.add_import_module(module)
-        return module
-
-    def add_import_module(self, module: ImportModuleRT) -> None:
         if not isinstance(module, ImportModuleRT):
             raise TypeError("Only imported modules can be added; edit definitions for embedded code")
         if module not in self._imports:
             self._imports.append(module)
-            self.modules_changed.emit()
+            self.modules_changed.emit()        
 
     def remove_import(self, module: ImportModuleRT | str) -> None:
         if isinstance(module, str):
@@ -336,6 +349,7 @@ class GraphRT(QObject):
             if isinstance(arg, NodeRef):
                 if arg not in self._nodes:
                     raise ValueError(f"Node {arg} does not exist in the graph.")
+            
         for key, value in kwargs.items():
             if isinstance(value, NodeRef):
                 if value not in self._nodes:
@@ -553,8 +567,8 @@ class GraphRT(QObject):
         self.executed.emit({node_ref: ancestors_output[node_ref] for node_ref in ancestors})
         return ancestors_output[root]
 
-    def todict(self, explicit: bool = False) -> dict:
-        """Save definitions, import paths, and typed node inputs, without layout."""
+    def todict(self, explicit: bool = False) -> dict[str, Any]:
+        """Save the graph, using short local operator names unless explicit."""
 
         module_ids = {self.definitions(): "definitions"}
         imports = {}
@@ -574,44 +588,61 @@ class GraphRT(QObject):
             if operator.module not in module_ids:
                 raise ValueError(f"Node {name!r} must use the definitions script module or a registered import")
             args, kwargs = node.get_inputs()
-            record = {"operator": {"module": module_ids[operator.module], "name": operator.name}}
+            record: dict[str, Any] = {
+                "operator": operator.name
+                if operator.module is self.definitions() and not explicit
+                else {"module": module_ids[operator.module], "name": operator.name}
+            }
             if args or explicit:
                 record["args"] = [_encode_value(value, node_refs) for value in args]
             if kwargs or explicit:
                 record["kwargs"] = {key: _encode_value(value, node_refs) for key, value in kwargs.items()}
             nodes[name] = record
-        return {
-            "version": 1,
-            "imports": imports,
-            "definitions": self.definitions().get_script(),
-            "graph": {"nodes": nodes},
+
+
+        data: dict[str, Any] = {
+            "version": 1
         }
 
+        if imports or explicit:
+            data["imports"] = imports
+        if self.definitions().get_script() or explicit:
+            data["definitions"] = self.definitions().get_script()
+        if nodes or explicit:
+            data["graph"] = {"nodes": nodes}
+
+        return data
+
     @classmethod
-    def fromdict(cls, data: dict) -> "GraphRT":
+    def fromdict(cls, data: dict[str, Any]) -> "GraphRT":
         """Build a new runtime. Unknown operators and invalid scripts stay editable."""
 
         if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:
             raise ValueError("Unsupported graph format; expected version 1")
-        if not isinstance(data.get("definitions"), str):
+        definitions = data.get("definitions", "")
+        imports = data.get("imports", {})
+        graph_data = data.get("graph", {"nodes": {}})
+        if not isinstance(definitions, str):
             raise ValueError("Graph definitions must be a source string")
-        if (not isinstance(data.get("imports"), dict) or not isinstance(data.get("graph"), dict)
-                or not isinstance(data["graph"].get("nodes"), dict)):
+        if (not isinstance(imports, dict) or not isinstance(graph_data, dict)
+                or not isinstance(graph_data.get("nodes"), dict)):
             raise ValueError("Graph imports and nodes must be objects")
-        graph = cls(definitions=data["definitions"])
+        graph = cls(definitions=definitions)
         modules = {"definitions": graph.definitions()}
-        for module_id, path in data["imports"].items():
+        for module_id, path in imports.items():
             if not isinstance(module_id, str) or module_id == "definitions" or not isinstance(path, str):
                 raise ValueError("Imports must map module names to paths; 'definitions' is reserved")
             module = graph.add_import(path)
             module.set_name(module_id)
             modules[module_id] = module
 
-        nodes = {}
-        for name, record in data["graph"]["nodes"].items():
+        nodes: dict[str, NodeRef] = {}
+        for name, record in graph_data["nodes"].items():
             if not isinstance(name, str) or not isinstance(record, dict):
                 raise ValueError("Invalid node record")
             operator = record.get("operator")
+            if isinstance(operator, str):
+                operator = {"module": "definitions", "name": operator}
             if (not isinstance(operator, dict) or not isinstance(operator.get("module"), str)
                     or operator["module"] not in modules or not isinstance(operator.get("name"), str)):
                 raise ValueError(f"Invalid operator reference for node {name!r}")
@@ -619,7 +650,7 @@ class GraphRT(QObject):
             nodes[name] = graph.node()(ref, name=name)
 
         # Create every node before restoring inputs, allowing forward references.
-        for name, record in data["graph"]["nodes"].items():
+        for name, record in graph_data["nodes"].items():
             args, kwargs = record.get("args", []), record.get("kwargs", {})
             if not isinstance(args, list) or not isinstance(kwargs, dict) or any(not isinstance(k, str) for k in kwargs):
                 raise ValueError(f"Invalid inputs for node {name!r}")

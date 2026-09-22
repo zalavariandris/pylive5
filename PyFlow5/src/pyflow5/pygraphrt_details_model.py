@@ -5,7 +5,7 @@ from typing import Any
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QAbstractListModel, QModelIndex, Qt
 
-from myqtx.inspector_roles import InspectorRole, UNSET
+from pyflow5.inspector_roles import InspectorRole, UNSET
 from pygraphrt.abstract_module_rt import ParameterData
 from pygraphrt.graph_rt import NodeRef
 
@@ -14,17 +14,17 @@ from .pygraphrt_model import PyFlowRTModel
 
 @dataclass
 class _Input:
-    key: tuple
+    key: tuple[str, str | int]
     name: str
     value: Any = UNSET
     annotation: Any = None
     default: Any = UNSET
     binding: str = "missing"
-    connection: tuple | None = None
+    connection: tuple[str, str] | None = None
     error: str = ""
 
 
-class NodeInspectorModel(QAbstractListModel):
+class GraphDetailsModel(QAbstractListModel):
     """Expose parameter metadata and bindings without evaluating the graph.
 
     Valid literal and default parameter values can be edited in place.

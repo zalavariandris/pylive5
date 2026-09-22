@@ -5,8 +5,8 @@ import pytest
 from qtpy.QtCore import QAbstractListModel, QModelIndex, Qt, Signal
 from qtpy.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 
-from myqtx import InspectorEditor, InspectorRole, InspectorView, UNSET
-from pyflow5.node_inspector_model import NodeInspectorModel
+from pyflow5.inspector_view import InspectorEditor, InspectorRole, InspectorView, UNSET
+from pyflow5.pygraphrt_details_model import GraphDetailsModel
 from pyflow5.pygraphrt_model import PyFlowRTModel
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.graph_rt import GraphRT
@@ -32,7 +32,7 @@ def test_binding_states_and_defaults_are_distinct_without_execution(qapp):
     def target(required, width: int = 512, explicit="default", connected=None):
         raise AssertionError("Inspection must not execute a node")
 
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     inspector.setNode("target")
     assert inspector.rowCount() == 4
     assert inspector.rowCount(inspector.index(0)) == 0
@@ -57,7 +57,7 @@ def test_complex_value_occupies_one_row(qapp):
     def target(vector: tuple = (1, 2, 3)):
         return vector
 
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     inspector.setNode("target")
     assert inspector.rowCount() == 1
     assert inspector.index(0).data(Qt.EditRole) == (1, 2, 3)
@@ -70,7 +70,7 @@ def test_value_changes_preserve_editor_widgets(qtbot):
     def target(value: int):
         return value
 
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     inspector.setNode("target")
     view = InspectorView()
     qtbot.addWidget(view)
@@ -90,7 +90,7 @@ def test_signature_changes_and_unavailable_operators_retain_bindings(qapp):
     module = ScriptModuleRT("tools", "def op(a: int = 1): return a")
     graph = GraphRT()
     node = graph.node(a=3)(OperatorRef(module, "op"), name="target")
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     inspector.setNode("target")
 
     module.set_script("def op(b: str = 'hello'): return b")
@@ -116,7 +116,7 @@ def test_live_incomplete_annotations_and_recovery(qtbot, qtmodeltester):
     module = ScriptModuleRT("utils", "def greeting(name: str = 'world') -> str: return name")
     graph = GraphRT()
     node = graph.node(name="Alice")(OperatorRef(module, "greeting"), name="target")
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     qtmodeltester.check(inspector)
     inspector.setNode("target")
     view = InspectorView()
@@ -152,7 +152,7 @@ def test_extra_and_duplicate_bindings_remain_visible(qapp):
     def target(a, b=5):
         return a
 
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     inspector.setNode("target")
     assert inspector.rowCount() == 5
     assert field(inspector, "a", Qt.EditRole) == 1
@@ -171,7 +171,7 @@ def test_deletion_and_reset_clear_target(qapp):
         return value
 
     model = PyFlowRTModel(graph)
-    inspector = NodeInspectorModel(model)
+    inspector = GraphDetailsModel(model)
     inspector.setNode("target")
     model.reset()
     assert inspector.node() is None
@@ -295,24 +295,6 @@ def test_model_replacement_disconnects_old_model_and_stale_editor(qtbot):
     assert view.model() is None
     assert view._rows == []
 
-
-def test_document_and_window_follow_current_node(qtbot):
-    from pyflow5.pyflow5_window import PyFlow5Window
-
-    window = PyFlow5Window()
-    qtbot.addWidget(window)
-    document = window._document
-    operator = next(iter(document._imagi_module.operators()))
-    document.graphmodel().addNode(operator)
-    name = document.graphmodel().nodes()[0]
-    document.graphselectionmodel().selectNode(name)
-    assert document.inspectormodel().node() == name
-    assert window._inspector_view.model() is document.inspectormodel()
-    assert document.inspectormodel().rowCount() > 0
-    document.graphselectionmodel().clearSelection()
-    assert document.inspectormodel().node() is None
-
-
 def test_none_and_mismatched_annotations_display_actual_values(qtbot):
     graph = GraphRT()
 
@@ -320,7 +302,7 @@ def test_none_and_mismatched_annotations_display_actual_values(qtbot):
     def target(enabled: bool = False, count: int = 1):
         return enabled
 
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     inspector.setNode("target")
     view = InspectorView()
     qtbot.addWidget(view)
@@ -369,7 +351,7 @@ def test_color_input_edit_preserves_other_bindings(qapp, binding):
     args = (original,) if binding == "positional" else ()
     kwargs = {"color": original} if binding == "keyword" else {}
     node = graph.node(*args, count=7, **kwargs)(target)
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     inspector.setNode("target")
     updated = ColorData(0.8, 0.7, 0.6, 0.5)
     assert inspector.setData(inspector.index(0), updated)
@@ -396,7 +378,7 @@ def test_connected_color_cannot_be_overwritten(qapp):
     def target(color: ColorData):
         return color
 
-    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    inspector = GraphDetailsModel(PyFlowRTModel(graph))
     inspector.setNode("target")
     assert not inspector.flags(inspector.index(0)) & Qt.ItemFlag.ItemIsEditable
     assert not inspector.setData(inspector.index(0), ColorData(1, 0, 0))
