@@ -3,6 +3,7 @@ from typing import Iterable
 
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, Qt, Slot
 from pygraphrt.abstract_module_rt import AbstractModule, OperatorRef
+from pygraphrt.script_module import ScriptModuleRT
 
 
 @dataclass(eq=False)
@@ -27,6 +28,8 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
 
     ModuleRole = int(Qt.ItemDataRole.UserRole) + 1
     OperatorRole = ModuleRole + 1
+    NameRole = OperatorRole + 1
+    CodeRole = NameRole + 1
 
     def __init__(self, modules: Iterable[AbstractModule] = (), parent=None):
         super().__init__(parent)
@@ -37,11 +40,15 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
         for signal in (module.operators_added, module.operators_removed,
                        module.operators_changed):
             signal.connect(self._on_operators_changed)
+        if isinstance(module, ScriptModuleRT):
+            module.script_changed.connect(self._on_script_changed)
 
     def _disconnect(self, module):
         for signal in (module.operators_added, module.operators_removed,
                        module.operators_changed):
             signal.disconnect(self._on_operators_changed)
+        if isinstance(module, ScriptModuleRT):
+            module.script_changed.disconnect(self._on_script_changed)
 
     @staticmethod
     def _make_item(module):
@@ -110,8 +117,11 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
         item = index.internalPointer()
         module = item.module if isinstance(item, _ModuleItem) else item.ref.module
 
-        if role == Qt.ItemDataRole.DisplayRole:
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole, self.NameRole):
             return module.get_name() if isinstance(item, _ModuleItem) else item.ref.name
+
+        if role == self.CodeRole and isinstance(item, _ModuleItem) and isinstance(module, ScriptModuleRT):
+            return module.get_script()
         
         if role == self.ModuleRole:
             return module
@@ -120,6 +130,31 @@ class ModuleOperatorTreeModel(QAbstractItemModel):
             return item.ref
         
         return None
+
+    def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
+        if not index.isValid() or index.model() is not self:
+            return False
+        item = index.internalPointer()
+        if not isinstance(item, _ModuleItem) or not isinstance(item.module, ScriptModuleRT):
+            return False
+        if role in (Qt.ItemDataRole.EditRole, self.NameRole):
+            item.module.set_name(value)
+            self.dataChanged.emit(index, index, [int(Qt.ItemDataRole.DisplayRole),
+                                               int(Qt.ItemDataRole.EditRole), self.NameRole])
+            return True
+        if role == self.CodeRole:
+            item.module.set_script(value)
+            return True
+        return False
+
+    @Slot()
+    def _on_script_changed(self):
+        module = self.sender()
+        for row, item in enumerate(self._items):
+            if item.module is module:
+                index = self.index(row, 0)
+                self.dataChanged.emit(index, index, [self.CodeRole])
+                break
 
     def flags(self, index:QModelIndex):
         if not index.isValid() or index.model() is not self:

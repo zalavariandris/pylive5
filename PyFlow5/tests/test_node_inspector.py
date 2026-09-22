@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import sys
 
 import pytest
 from qtpy.QtCore import QAbstractListModel, QModelIndex, Qt, Signal
@@ -106,6 +107,42 @@ def test_signature_changes_and_unavailable_operators_retain_bindings(qapp):
     module.set_script("def op(a: int = 1): return a")
     assert inspector.rowCount() == 1
     assert field(inspector, "a", InspectorRole.ErrorRole) == ""
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="Deferred annotations require Python 3.14")
+def test_live_incomplete_annotations_and_recovery(qtbot, qtmodeltester):
+    from annotationlib import ForwardRef
+
+    module = ScriptModuleRT("utils", "def greeting(name: str = 'world') -> str: return name")
+    graph = GraphRT()
+    node = graph.node(name="Alice")(OperatorRef(module, "greeting"), name="target")
+    inspector = NodeInspectorModel(PyFlowRTModel(graph))
+    qtmodeltester.check(inspector)
+    inspector.setNode("target")
+    view = InspectorView()
+    qtbot.addWidget(view)
+    view.setModel(inspector)
+
+    for source in (
+        "def greeting(name: s = 'world') -> str: return name",
+        "def greeting(name: str = 'world') -> s: return name",
+        "def greeting(name: s = 'world') -> s: return name",
+    ):
+        module.set_script(source)
+        assert inspector.rowCount() == 1
+        assert field(inspector, "name", Qt.EditRole) == "Alice"
+        assert field(inspector, "name", InspectorRole.BindingRole) == "literal"
+        assert view._rows[0].editor.widget.text() == "Alice"
+        assert graph.execute(node) == "Alice"
+
+    assert isinstance(field(inspector, "name", InspectorRole.TypeRole), ForwardRef)
+    module.set_script("def greeting(name:")
+    assert "unavailable" in inspector.headerData(0, Qt.Horizontal, Qt.ToolTipRole)
+    module.set_script("def greeting(name: str = 'world') -> str: return name")
+    assert inspector.rowCount() == 1
+    assert field(inspector, "name", InspectorRole.TypeRole) is str
+    assert inspector.setData(inspector.index(0), "Bob")
+    assert graph.execute(node) == "Bob"
 
 
 def test_extra_and_duplicate_bindings_remain_visible(qapp):

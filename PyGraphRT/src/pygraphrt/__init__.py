@@ -12,6 +12,8 @@ from .abstract_module_rt import (
 )
 
 from .local_module import LocalModuleRT, FunctionOperator
+from .script_module import ScriptModuleRT
+from .import_module import ImportModuleRT
 from .watch import watch
 from .serialization import serialize, deserialize
 
@@ -23,6 +25,8 @@ __all__ = [
     "HistoryMemoryCache",
     "DummyCache",
     "LocalModuleRT",
+    "ScriptModuleRT",
+    "ImportModuleRT",
     "watch",
     "serialization",
     "serialize",

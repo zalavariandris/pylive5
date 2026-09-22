@@ -28,11 +28,16 @@ class ImportModuleRT(ScriptModuleRT):
     state_changed = Signal()
     script_changed = Signal()
 
-    def __init__(self, path: str, parent:QObject | None = None):
-        super().__init__(Path(path).stem, parent=parent)
+    def __init__(self, path: str, parent:QObject | None = None, *, source: str | None = None):
+        # Saved documents retain edits even when the external file has changed.
+        super().__init__(Path(path).stem, source if source is not None else "", parent=parent)
         self._path = Path(path)
 
-        self.reload()
+        if source is None:
+            self.reload()
+
+    def path(self) -> Path:
+        return self._path
 
     def reload(self):
         text = self._path.read_text()

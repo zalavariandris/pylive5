@@ -11,3 +11,5 @@
     - [ ] temperature, tint
     - [ ] blur
 
+- [ ] Image CornerPin
+

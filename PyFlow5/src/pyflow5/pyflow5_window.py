@@ -16,6 +16,7 @@ from qtpy.QtWidgets import (
     QComboBox,
     QCheckBox,
     QFileDialog,
+    QInputDialog,
     QLabel,
     QDialog,
     QHBoxLayout,
@@ -53,7 +54,8 @@ from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKe
 
 from pygraphrt.abstract_module_rt import OperatorRef
 
-from .pyflow5_document import ModulesListModel, PyFlowDocument
+from .pyflow5_document import PyFlowDocument
+from .modules_list_model import ModulesListModel
 from .module_operator_tree_model import ModuleOperatorTreeModel
 
 
@@ -77,96 +79,6 @@ def _color_editor(index, parent):
 class PyFlow5Window(QMainWindow):
     output_node_changed = Signal()
 
-    def setupMenubar(self):
-        # self._restart_kernel_action:QAction = QAction("Reset Graph View", self)
-        # self._restart_kernel_action.triggered.connect(self._document.reset_graph)
-        # open_operator_dialog_action = QAction("Open Operator Dialog", self)
-        # self.addAction(open_operator_dialog_action)
-        # open_operator_dialog_action.setShortcut("Ctrl+P")
-        # open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
-
-        # delete_selected_nodes_action = QAction("Delete Selected Nodes", self)
-        # self.addAction(delete_selected_nodes_action)
-        # delete_selected_nodes_action.setShortcut("Del")
-        # delete_selected_nodes_action.triggered.connect(self._document.deleteSelectedNodes)
-
-
-    
-        menubar: QMenuBar = self.menuBar()
-        menubar.addAction("Restart Graph", self._document.reset_graph)
-
-        file_menu = QMenu("File", self)
-        menubar.addMenu(file_menu)
-        file_menu.addAction("New",     lambda: self.newFile())
-        file_menu.addAction("Open",    lambda: self.openFile())
-        file_menu.addAction("Save",    lambda: self.saveFile())
-        file_menu.addAction("Save As", lambda: self.saveFileAs())
-        file_menu.addSeparator()
-        file_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
-
-        edit_menu = QMenu("Edit", self)
-        menubar.addMenu(edit_menu)
-        edit_menu.addAction("Undo",  lambda: None)
-        edit_menu.addAction("Redo",  lambda: None)
-        edit_menu.addAction("Cut",   lambda: None)
-        edit_menu.addAction("Copy",  lambda: None)
-        edit_menu.addAction("Paste", lambda: None)
-        edit_menu.addSeparator()
-
-        edit_menu.addAction("Select All", lambda: None)
-        edit_menu.addAction("Select None", lambda: None)
-        edit_menu.addSeparator()
-
-        edit_menu.addAction("Restart Graph", self._document.reset_graph)
-        edit_menu.addSeparator()
-
-        edit_menu.addAction("New Node", self.openOperatorDialog).setShortcut("Ctrl+P")
-        edit_menu.addAction("Delete Nodes", self._document.deleteSelectedNodes).setShortcut("Del")
-        edit_menu.addAction("Duplicate Nodes", lambda: None)
-        edit_menu.addSeparator()
-
-        edit_menu.addAction("Add Module", lambda: None)
-        edit_menu.addAction("Remove Module", lambda: None)
-
-        view_menu = QMenu("View", self)
-        view_menu.addAction("fit nodes",  lambda: None)
-        view_menu.addAction("layout nodes",  lambda: None)
-        view_menu.addSeparator()
-        menubar.addMenu(view_menu)
-
-        window_menu = menubar.addMenu("Window")
-        serialization_action = window_menu.addAction("Serialization")
-        serialization_action.setCheckable(True)
-        serialization_action.toggled.connect(self._serialization_window.setVisible)
-        self._serialization_window.finished.connect(
-            lambda _: serialization_action.setChecked(False)
-        )
-
-    def importModule(self):
-        # open file browser dialog
-        file_dialog = QFileDialog(self)
-        file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
-        file_dialog.setFileMode(QFileDialog.ExistingFile)
-        relative_path_option = QCheckBox("Import with relative path", file_dialog)
-        relative_path_option.setToolTip("Relative to the current working directory.")
-        layout = file_dialog.layout()
-        layout.addWidget(relative_path_option, layout.rowCount(), 0, 1, layout.columnCount())
-        if file_dialog.exec_():
-            selected_files = file_dialog.selectedFiles()
-            if selected_files:
-                file_path = selected_files[0]
-                if relative_path_option.isChecked():
-                    try:
-                        file_path = os.path.relpath(file_path)
-                    except ValueError:
-                        QMessageBox.warning(
-                            self,
-                            "Cannot import with relative path",
-                            "The file must be on the same drive as the current working directory.",
-                        )
-                        return
-                self._document.importModule(file_path)
-
     def __init__(self, parent=None)->None:
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
@@ -189,12 +101,8 @@ class PyFlow5Window(QMainWindow):
         )
         # two-way binding between code editor and script module
         def update_code_editor():
-            
             selected_import_idx = self._document.moduleselectionmodel().currentIndex()
-            if not selected_import_idx.isValid():
-                return
-            
-            next_script = self._document.modulesmodel().data(selected_import_idx, ModulesListModel.CodeRole) 
+            next_script = selected_import_idx.data(ModulesListModel.CodeRole) if selected_import_idx.isValid() else "" 
             # todo: consider moving change guard to the code editor itself
             current_script = self._code_editor.toPlainText()
             if current_script != next_script:
@@ -205,7 +113,7 @@ class PyFlow5Window(QMainWindow):
         update_code_editor()
         self._document.modulesmodel().modelReset.connect(update_code_editor)
         self._document.modulesmodel().dataChanged.connect(update_code_editor)
-        self._document.moduleselectionmodel().selectionChanged.connect(update_code_editor)
+        self._document.moduleselectionmodel().currentChanged.connect(update_code_editor)
 
         def update_script_module():
             selected_import_idx = self._document.moduleselectionmodel().currentIndex()
@@ -230,7 +138,8 @@ class PyFlow5Window(QMainWindow):
         # - Setup inspector -
         self._inspector_view = myqtx.InspectorView(self)
         self._register_color_editor()
-        self._document._imagi_module.script_changed.connect(self._register_color_editor)
+        self._document.operatormodel().modelReset.connect(self._register_color_editor)
+        self._document.modulesmodel().dataChanged.connect(self._register_color_editor)
         self._inspector_view.setModel(self._document.inspectormodel())
 
         # - Setup display widget -
@@ -280,15 +189,111 @@ class PyFlow5Window(QMainWindow):
 
         self._document.output_value_got_dirty.connect(self._on_output_value_got_dirty)
 
+    def setupMenubar(self):
+        # self._restart_kernel_action:QAction = QAction("Reset Graph View", self)
+        # self._restart_kernel_action.triggered.connect(self._document.reset_graph)
+        # open_operator_dialog_action = QAction("Open Operator Dialog", self)
+        # self.addAction(open_operator_dialog_action)
+        # open_operator_dialog_action.setShortcut("Ctrl+P")
+        # open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
+
+        # delete_selected_nodes_action = QAction("Delete Selected Nodes", self)
+        # self.addAction(delete_selected_nodes_action)
+        # delete_selected_nodes_action.setShortcut("Del")
+        # delete_selected_nodes_action.triggered.connect(self._document.deleteSelectedNodes)
+
+
+    
+        menubar: QMenuBar = self.menuBar()
+        menubar.addAction("Restart Graph", self._document.reset_graph)
+
+        file_menu = QMenu("File", self)
+        menubar.addMenu(file_menu)
+        file_menu.addAction("New",     lambda: None)
+        file_menu.addAction("Open Graph",    lambda: self.openGraph())
+        file_menu.addAction("Save Graph",    lambda: self.saveGraph())
+        file_menu.addAction("Save Graph As", lambda: None)
+        file_menu.addSeparator()
+        file_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
+
+        edit_menu = QMenu("Edit", self)
+        menubar.addMenu(edit_menu)
+        edit_menu.addAction("Undo",  lambda: None)
+        edit_menu.addAction("Redo",  lambda: None)
+        edit_menu.addAction("Cut",   lambda: None)
+        edit_menu.addAction("Copy",  lambda: None)
+        edit_menu.addAction("Paste", lambda: None)
+        edit_menu.addSeparator()
+
+        edit_menu.addAction("Select All", lambda: None)
+        edit_menu.addAction("Select None", lambda: None)
+        edit_menu.addSeparator()
+
+        edit_menu.addAction("Restart Graph", self._document.reset_graph)
+        edit_menu.addSeparator()
+
+        edit_menu.addAction("New Node", self.openOperatorDialog).setShortcut("Ctrl+P")
+        edit_menu.addAction("Delete Nodes", self._document.deleteSelectedNodes).setShortcut("Del")
+        edit_menu.addAction("Duplicate Nodes", lambda: None)
+        edit_menu.addSeparator()
+
+        edit_menu.addAction("Add New Script Module", lambda: self.addNewScriptModule())
+        edit_menu.addAction("Remove Module", lambda: None)
+
+        view_menu = QMenu("View", self)
+        view_menu.addAction("fit nodes",  lambda: None)
+        view_menu.addAction("layout nodes",  lambda: None)
+        view_menu.addSeparator()
+        menubar.addMenu(view_menu)
+
+        window_menu = menubar.addMenu("Window")
+        serialization_action = window_menu.addAction("Serialization")
+        serialization_action.setCheckable(True)
+        serialization_action.toggled.connect(self._serialization_window.setVisible)
+        self._serialization_window.finished.connect(
+            lambda _: serialization_action.setChecked(False)
+        )
+
+    def addNewScriptModule(self):
+        name, ok = QInputDialog.getText(self, "New Script Module", "Enter module name:")
+        if ok and name:
+            self._document.addNewScriptModule(name)
+
+    def importModule(self):
+        # open file browser dialog
+        file_dialog = QFileDialog(self)
+        file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        relative_path_option = QCheckBox("Import with relative path", file_dialog)
+        relative_path_option.setToolTip("Relative to the current working directory.")
+        layout = file_dialog.layout()
+        layout.addWidget(relative_path_option, layout.rowCount(), 0, 1, layout.columnCount())
+        if file_dialog.exec_():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                file_path = selected_files[0]
+                if relative_path_option.isChecked():
+                    try:
+                        file_path = os.path.relpath(file_path)
+                    except ValueError:
+                        QMessageBox.warning(
+                            self,
+                            "Cannot import with relative path",
+                            "The file must be on the same drive as the current working directory.",
+                        )
+                        return
+                self._document.importModule(file_path)
+
     def _register_color_editor(self):
         # Script reloads can create a new ColorData class object.
+        if self._document._imagi_module is None:
+            return
         operator = OperatorRef(self._document._imagi_module, "constant")
         parameter = operator.get_parameters().get("color")
         if parameter is not None:
             color_type = parameter.annotation
             if isinstance(color_type, type) and color_type.__name__ == "ColorData":
                 self._inspector_view.registerEditor(color_type, _color_editor)
-
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
         dialog = SelectionDialog(self._document.operatormodel(), self)
@@ -301,10 +306,44 @@ class PyFlow5Window(QMainWindow):
         finally:
             dialog.deleteLater()
 
+    def openGraph(self) -> None:
+        # open file browser dialog
+        file_dialog = QFileDialog(self)
+        file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        layout = file_dialog.layout()
+        if file_dialog.exec():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                file_path = selected_files[0]
+                try:
+                    self._document.openGraph(file_path)
+                except Exception as error:
+                    QMessageBox.warning(self, "Cannot open graph", str(error))
+
+    def saveGraph(self) -> None:
+        file_dialog = QFileDialog(self)
+        file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        file_dialog.setAcceptMode(QFileDialog.AcceptSave)  # Configures dialog for saving
+        file_dialog.setFileMode(QFileDialog.AnyFile)
+
+        if file_dialog.exec():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                file_path = selected_files[0]
+                try:
+                    self._document.saveGraph(file_path)
+                except Exception as error:
+                    QMessageBox.warning(self, "Cannot save graph", str(error))
+
     @Slot()
     def _on_output_value_got_dirty(self):
         self._display_widget.display(self._document.execute())
-        self._serialization_widget.setPlainText(self._document.serialize())
+        try:
+            text = self._document.serialize()
+        except (TypeError, ValueError, RecursionError) as error:
+            text = f"Cannot serialize document: {error}"
+        self._serialization_widget.setPlainText(text)
 
     @Slot()
     def _on_script_module_state_changed(self):

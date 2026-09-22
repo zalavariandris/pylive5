@@ -33,10 +33,11 @@ class PyFlowRTModel(AbstractDAGModel):
         self._observed_modules = set()
         self._connect_runtime()
 
-    def setRT(self, rt: rt.GraphRT):
+    def setRT(self, rt: rt.GraphRT, positions=None):
         self._beginResetModel()
         self._disconnect_runtime()
         self._rt = rt
+        self._positions = defaultdict(lambda: (0.0, 0.0), positions or {})
         self._connect_runtime()
         self._endResetModel()
 

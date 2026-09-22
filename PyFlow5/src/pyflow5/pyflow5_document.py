@@ -7,9 +7,10 @@ import warnings
 from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKeywordsCompleter
 from myqtx.selection_dialog import SelectionDialog
 from pyflow5.module_operator_tree_model import ModuleOperatorTreeModel
+from pyflow5.modules_list_model import ModulesListModel
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.graph_rt import NodeRef
-from qtpy.QtCore import QAbstractTableModel, QItemSelectionModel, QObject, QPoint, QPointF, Qt, Signal, Slot
+from qtpy.QtCore import QItemSelectionModel, QObject, QPoint, QPointF, Qt, Signal, Slot
 from qtpy.QtWidgets import QAction, QToolBar
 
 from pygraphrt.script_module import ScriptModuleRT
@@ -26,61 +27,6 @@ from qdageditor5.models.abstract_dag_model import (
 import pygraphrt as rt
 from pyflow5.pygraphrt_model import PyFlowRTModel
 from pyflow5.node_inspector_model import NodeInspectorModel
-
-
-from qtpy.QtCore import QAbstractTableModel, QModelIndex
-class ModulesListModel(QAbstractTableModel):
-    NameRole = int(Qt.ItemDataRole.UserRole) + 1
-    CodeRole = NameRole + 1
-
-    def __init__(self, imports:list[ScriptModuleRT|ImportModuleRT], parent:QObject=None):
-        super().__init__(parent)
-        self._modules: list[ScriptModuleRT|ImportModuleRT] = imports
-
-    def columnCount(self, parent=QModelIndex()) -> int:
-        return 1
-
-    def rowCount(self, parent=QModelIndex()) -> int:
-        return len(self._modules)
-
-    def data(self, index:QModelIndex, role:int=Qt.DisplayRole):
-        if not index.isValid():
-            return None
-
-        match role:
-            case Qt.DisplayRole | Qt.EditRole | ModulesListModel.NameRole:
-                return self._modules[index.row()].get_name()
-            case ModulesListModel.CodeRole:
-                return self._modules[index.row()].get_script()
-        return None
-
-    def setData(self, index:QModelIndex, value, role:int=Qt.EditRole)->bool:
-        if not index.isValid():
-            return False
-
-        match role:
-            case Qt.EditRole | ModulesListModel.NameRole:
-                self._modules[index.row()].set_name(value)
-                self.dataChanged.emit(index, index, [role])
-                return True
-            
-            case ModulesListModel.CodeRole:
-                self._modules[index.row()].set_script(value)
-                self.dataChanged.emit(index, index, [role])
-                return True
-            
-        return False
-
-    def addModule(self, module:ImportModuleRT|ScriptModuleRT):
-        self.beginInsertRows(QModelIndex(), len(self._modules), len(self._modules))
-        self._modules.append(module)
-        self.endInsertRows()
-
-    def removeModule(self, row:int):
-        if 0 <= row < len(self._modules):
-            self.beginRemoveRows(QModelIndex(), row, row)
-            self._modules.pop(row)
-            self.endRemoveRows()
 
 
 class PyFlowDocument(QObject):
@@ -143,20 +89,12 @@ class PyFlowDocument(QObject):
             ]
             """))
 
-        self._imports: Iterable[ScriptModuleRT] = [
-            self._mathy_module,
-            self._imagi_module
-        ]
-
-        self._modules_model = ModulesListModel(self._imports, self)
-        self._module_selection_model = QItemSelectionModel(self._modules_model)
-
         self._G = rt.GraphRT()
-        self._operator_model = ModuleOperatorTreeModel([
-            self._G.local(), 
-            *self._imports], 
-            self
+        self._operator_model = ModuleOperatorTreeModel(
+            [self._G.local(), self._mathy_module, self._imagi_module], self
         )
+        self._modules_model = ModulesListModel(self._operator_model, self)
+        self._module_selection_model = QItemSelectionModel(self._modules_model)
         self._graph_model = PyFlowRTModel(self._G)
 
         self._graph_selection_model = GraphSelectionModel(self._graph_model)
@@ -170,6 +108,7 @@ class PyFlowDocument(QObject):
         self._watcher:rt.Watcher|None = None
         self._output_node: NodeRef|None = None
         self._output_locked = False
+        self._loading = False
         self._G.nodes_removed.connect(self._on_output_nodes_removed)
 
     # def scriptmodule(self)->ScriptModuleRT:
@@ -263,7 +202,7 @@ class PyFlowDocument(QObject):
         self.set_output_locked(False)
 
     def _sync_output_to_selection(self, *args):
-        if self._output_locked:
+        if self._loading or self._output_locked:
             return
         selection = self.graphselectionmodel()
         selected = selection.selectedNodes()
@@ -278,37 +217,72 @@ class PyFlowDocument(QObject):
             node = None
         self.set_output_node(self._graph_model.getNode(node) if node is not None else None)
 
-    def todict(self)->dict:
-        from pygraphrt.serialization import _todict
-        data = dict()
+    def fromdict(self, data: dict) -> None:
+        """Load a replacement runtime, retaining the document and its models."""
+        from pyflow5.document_serialization import from_dict
 
-        data['imports'] = dict()
-        data["definitions"] = dict()
-        modules:list[ScriptModuleRT|ImportModuleRT] = self._modules_model._modules
+        graph, modules, positions = from_dict(data)
+        self._loading = True
+        try:
+            self.set_output_node(None)
+            self.set_output_locked(False)
+            self._G.nodes_removed.disconnect(self._on_output_nodes_removed)
+            self._G = graph
+            graph.nodes_removed.connect(self._on_output_nodes_removed)
+            self._mathy_module = next((m for m in modules if m.get_name() == "mathy"), None)
+            self._imagi_module = next((m for m in modules if m.get_name() == "imagi"), None)
+            self._operator_model.setModules([graph.local(), *modules])
+            self._graph_model.setRT(graph, positions)
+            if self._modules_model.rowCount():
+                self._module_selection_model.setCurrentIndex(
+                    self._modules_model.index(0, 0), QItemSelectionModel.SelectionFlag.ClearAndSelect
+                )
+        finally:
+            self._loading = False
+        self.output_value_got_dirty.emit()
 
-        for module in modules:
-            match module:
-                case ScriptModuleRT():
-                    data["definitions"][module.get_name()] = _todict(module)
-                case ImportModuleRT():
-                    data["imports"][module.path()] = _todict(module)
+    def todict(self) -> dict:
+        from pyflow5.document_serialization import to_dict
 
-        data['nodes'] = dict()
-        for node_ref in self._graph_model._rt.nodes():
-            node_value = node_ref.get_value()
-            data['nodes'][node_ref.get_name()] = _todict(node_value)
-
-        return data
+        modules = [self._modules_model.index(row, 0).data(ModulesListModel.ModuleRole)
+                   for row in range(self._modules_model.rowCount())]
+        positions = {node.get_name(): (
+            self._graph_model.nodePosition(node.get_name()).x(),
+            self._graph_model.nodePosition(node.get_name()).y(),
+        ) for node in self._G.nodes()}
+        return to_dict(self._G, modules, positions)
 
     def serialize(self)->str:
         import json
         return json.dumps(self.todict(), indent=4)
 
+    def deserialize(self, text: str) -> None:
+        import json
+        data = json.loads(text)
+        self.fromdict(data)
+
     def saveGraph(self, file_path: str) -> None:
         """Save the current graph to the specified file path."""
-        G = self._graph_model._rt
-        G.todict()
 
+        text = self.serialize()
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        
     def openGraph(self, file_path: str) -> None:
         """Load a graph from the specified file path."""
-        ...
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = f.read()
+        
+        self.deserialize(data)
+
+    def addNewScriptModule(self, name:str) -> None:
+        # todo: consider moving this method to the modulesmodel?
+        from pygraphrt import ScriptModuleRT
+        module = ScriptModuleRT(name)
+        self._modules_model.addModule(module)
+    
+    def importModule(self, file_path:str):
+        # todo: consider moving this method to the modulesmodel?
+        from pygraphrt.import_module import ImportModuleRT
+        module = ImportModuleRT(file_path)
+        self._modules_model.addModule(module)

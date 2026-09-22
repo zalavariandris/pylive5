@@ -8,16 +8,28 @@ from .abstract_module_rt import (
 from types import MappingProxyType
 from typing import Callable, Mapping, Any
 import inspect
+import sys
+
+if sys.version_info >= (3, 14):
+    from annotationlib import Format
 
 from qtpy.QtCore import QObject
+
+
 
 class FunctionOperator(AbstractOperator):
     def __init__(self, func:callable):
         super().__init__()
         self._func = func
 
+    def _signature(self):
+        # Live edits can leave annotation names unfinished (e.g. s instead of str).
+        if sys.version_info >= (3, 14):
+            return inspect.signature(self._func, annotation_format=Format.FORWARDREF)
+        return inspect.signature(self._func)
+
     def get_parameters(self) -> Mapping[str, ParameterData]:
-        sig = inspect.signature(self._func)
+        sig = self._signature()
         params = {}
         for name, param in sig.parameters.items():
             param_data = ParameterData(
@@ -30,7 +42,7 @@ class FunctionOperator(AbstractOperator):
         return MappingProxyType(params)
 
     def get_return_type(self) -> type:
-        sig = inspect.signature(self._func)
+        sig = self._signature()
         return sig.return_annotation if sig.return_annotation is not inspect.Signature.empty else Any
 
     def __call__(self, *args, **kwargs) -> Any:
