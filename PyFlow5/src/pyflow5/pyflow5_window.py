@@ -16,7 +16,9 @@ from qtpy.QtWidgets import (
     QLabel,
     QDialog,
     QHBoxLayout,
-    QListView, 
+    QListView,
+    QMenu,
+    QMenuBar, 
     QSplitter,
     QTableView, 
     QVBoxLayout, 
@@ -70,6 +72,62 @@ def _color_editor(index, parent):
 class PyFlow5Window(QMainWindow):
     output_node_changed = Signal()
 
+    def setupMenubar(self):
+        # self._restart_kernel_action:QAction = QAction("Reset Graph View", self)
+        # self._restart_kernel_action.triggered.connect(self._document.reset_graph)
+        # open_operator_dialog_action = QAction("Open Operator Dialog", self)
+        # self.addAction(open_operator_dialog_action)
+        # open_operator_dialog_action.setShortcut("Ctrl+P")
+        # open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
+
+        # delete_selected_nodes_action = QAction("Delete Selected Nodes", self)
+        # self.addAction(delete_selected_nodes_action)
+        # delete_selected_nodes_action.setShortcut("Del")
+        # delete_selected_nodes_action.triggered.connect(self._document.deleteSelectedNodes)
+
+
+    
+        menubar: QMenuBar = self.menuBar()
+        menubar.addAction("Restart Graph", self._document.reset_graph)
+
+        file_menu = QMenu("File", self)
+        menubar.addMenu(file_menu)
+        file_menu.addAction("New",     lambda: self.newFile())
+        file_menu.addAction("Open",    lambda: self.openFile())
+        file_menu.addAction("Save",    lambda: self.saveFile())
+        file_menu.addAction("Save As", lambda: self.saveFileAs())
+
+        edit_menu = QMenu("Edit", self)
+        menubar.addMenu(edit_menu)
+        edit_menu.addAction("Undo",  lambda: None)
+        edit_menu.addAction("Redo",  lambda: None)
+        edit_menu.addAction("Cut",   lambda: None)
+        edit_menu.addAction("Copy",  lambda: None)
+        edit_menu.addAction("Paste", lambda: None)
+        edit_menu.addSeparator()
+
+        edit_menu.addAction("Select All", lambda: None)
+        edit_menu.addAction("Select None", lambda: None)
+        edit_menu.addSeparator()
+
+        edit_menu.addAction("Restart Graph", self._document.reset_graph)
+        edit_menu.addSeparator()
+
+        edit_menu.addAction("New Node", self.openOperatorDialog).setShortcut("Ctrl+P")
+        edit_menu.addAction("Delete Nodes", self._document.deleteSelectedNodes).setShortcut("Del")
+        edit_menu.addAction("Duplicate Nodes", lambda: None)
+        edit_menu.addSeparator()
+
+        edit_menu.addAction("Add Module", lambda: None)
+        edit_menu.addAction("Remove Module", lambda: None)
+
+        view_menu = QMenu("View", self)
+        view_menu.addAction("fit nodes",  lambda: None)
+        view_menu.addAction("layout nodes",  lambda: None)
+        view_menu.addSeparator()
+        menubar.addMenu(view_menu)
+
+
     def __init__(self, parent=None)->None:
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
@@ -78,10 +136,9 @@ class PyFlow5Window(QMainWindow):
         self._document = PyFlowDocument()
 
         # Setup UI
-        self.setupActions()
+        # self.setupActions()
 
-        toolbar:QToolBar = self.addToolBar("Main Toolbar")
-        toolbar.addAction(self._restart_kernel_action)
+        self.setupMenubar()
 
         # - Setup imports view -
         self._imports_view = QListView(self)
@@ -187,18 +244,6 @@ class PyFlow5Window(QMainWindow):
             if isinstance(color_type, type) and color_type.__name__ == "ColorData":
                 self._inspector_view.registerEditor(color_type, _color_editor)
 
-    def setupActions(self)->None:
-        self._restart_kernel_action:QAction = QAction("Reset Graph View", self)
-        self._restart_kernel_action.triggered.connect(self._document.reset_graph)
-        open_operator_dialog_action = QAction("Open Operator Dialog", self)
-        self.addAction(open_operator_dialog_action)
-        open_operator_dialog_action.setShortcut("Ctrl+P")
-        open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
-
-        delete_selected_nodes_action = QAction("Delete Selected Nodes", self)
-        self.addAction(delete_selected_nodes_action)
-        delete_selected_nodes_action.setShortcut("Del")
-        delete_selected_nodes_action.triggered.connect(self._document.deleteSelectedNodes)
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
         dialog = SelectionDialog(self._document.operatormodel(), self)

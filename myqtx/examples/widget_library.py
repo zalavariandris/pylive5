@@ -44,4 +44,4 @@ if __name__ == "__main__":
     app = QApplication([])
     window = WidgetLibrary()
     window.show()
-    app.exec()
+    app.exec() 
