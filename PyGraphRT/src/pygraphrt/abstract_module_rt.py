@@ -61,7 +61,7 @@ class OperatorRef:
         return self.name
 
     def get_value(self) -> AbstractOperator | None:
-        return self.module.get_value(self)
+        return self.module.get_operator(self)
     
     def get_parameters(self) -> Mapping[str, ParameterData]:
         if operator_data := self.get_value():
@@ -97,7 +97,7 @@ class AbstractModule(QObject, metaclass=_AbstractQObjectMeta):
         pass
 
     @abstractmethod
-    def get_value(self, ref: OperatorRef) -> AbstractOperator | None:
+    def get_operator(self, ref: OperatorRef) -> AbstractOperator | None:
         pass
 
 

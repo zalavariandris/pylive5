@@ -163,7 +163,8 @@ def test_script_operator_notifications():
     from pygraphrt.abstract_module_rt import OperatorRef
     from pygraphrt.script_module import ScriptModuleRT
 
-    module = ScriptModuleRT("example", "def output(): return 1")
+    module = ScriptModuleRT("example")
+    module.set_script("def output(): return 1")
     graph = rt.GraphRT()
     node = graph.node()(OperatorRef(module, "output"))
     changes = []

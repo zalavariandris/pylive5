@@ -17,10 +17,17 @@ if TYPE_CHECKING:
 from .inline_module import InlineModuleRT
 from .import_module import ImportModuleRT
 from .script_module import ScriptModuleRT
+from .graph_schema import validate_graph_data
 from .abstract_module_rt import OperatorRef
 from .abstract_module_rt import AbstractOperator
 from .abstract_module_rt import MissingOperatorError
 
+
+class NodeNameCollisionError(Exception):
+    pass
+
+class OperatorNameCollisionError(Exception):
+    pass
 
 @dataclass(frozen=True)
 class CacheEntry:
@@ -144,14 +151,14 @@ class NodeRef:
         
 
 type LiteralValue = None | bool | int | float | str
-type Value = 'NodeRef' | LiteralValue
+type Value = NodeRef | LiteralValue
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
 class NodeData:
     operator: OperatorRef
-    args: tuple[Value]
+    args: tuple[Value, ...]
     kwargs: dict[str, Value]
 
-    def get_inputs(self)->Iterable[Value]:
+    def get_inputs(self)->Iterable[tuple[tuple[Value, ...], dict[str, Value]]]:
         return tuple(self.args), {
             k: v for k, v in self.kwargs.items()
         } # todo: create a view
@@ -286,43 +293,43 @@ class GraphRT(QObject):
     executed = Signal(dict) # dict[NodeRef, Any]
     modules_changed = Signal()
 
-    def __init__(self, definitions:str=""):
+    def __init__(self):
         super().__init__()
 
         self._imports: list[ImportModuleRT] = [] # List of imported modules
         self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
-        self._definitions = ScriptModuleRT("local", definitions, parent=self)
+        self._local = ScriptModuleRT("_local_", parent=self)
         self._nodes: dict[NodeRef, NodeData] = dict()
         self._profiler = Profiler()
         self.cache = DummyCache()
+
+    def setLocalDefinitions(self, test: str) -> None:
+        self._local.set_script(test)
 
     def inline(self) -> InlineModuleRT:
         """Return the inline module containing runtime functions.
         Created with the node decorators."""
         return self._inline_module
 
-    def definitions(self) -> ScriptModuleRT:
+    def local(self) -> ScriptModuleRT:
         """Return the local script module containing user-defined functions."""
-        return self._definitions
+        return self._local
 
     def imports(self) -> list[ImportModuleRT]:
         return list(self._imports)
 
     def modules(self):
         """Modules available to the editor, including unused imports."""
-        return [self._definitions, *self._imports]
+        return [self._local, *self._imports]
 
-    def add_import(self, path: str, *, source: str | None = None) -> None:
-        module = ImportModuleRT(path, source=source)
+    def add_import(self, module: ImportModuleRT) -> None:
         if not isinstance(module, ImportModuleRT):
-            raise TypeError("Only imported modules can be added; edit definitions for embedded code")
+            raise TypeError("Only imported modules can be added; edit local module for embedded code")
         if module not in self._imports:
             self._imports.append(module)
-            self.modules_changed.emit()        
+            self.modules_changed.emit()
 
-    def remove_import(self, module: ImportModuleRT | str) -> None:
-        if isinstance(module, str):
-            module = next((item for item in self._imports if item.path() == module), None)
+    def remove_import(self, module: ImportModuleRT) -> None:
         if module not in self._imports:
             raise KeyError("Import module is not in this graph")
         self._imports.remove(module)
@@ -358,26 +365,29 @@ class GraphRT(QObject):
     def node(self, *args: Value, **kwargs: Value) -> Callable[..., NodeRef]: # todo: consider using a protocol for better type checking
         def decorator(func: Callable | OperatorRef, name: str|None=None) -> NodeRef:
             assert (callable(func) and hasattr(func, "__code__")) or isinstance(func, OperatorRef), f"func must be a callable function or an instance of OperatorRef, got:{func}"
+            # validate node inputs
+            self._validate_inputs(*args, **kwargs)
 
             # create operator
             if isinstance(func, OperatorRef):
                 operator = func
             else:
-                operator = self._inline_module.op()(func)
+                operator = self.op()(func)
 
             assert isinstance(operator, OperatorRef), f"operator must be an instance of OperatorRef, got: {operator}"
 
-            # validate inputs
-            self._validate_inputs(*args, **kwargs)
-                    
-            node_data = NodeData(operator, args, kwargs)
-
+            # create noderef
             if name is None:
                 name = UniqueNameGenerator(
                     existing_names=[ref._name for ref in self._nodes.keys()]
                 )(operator.name)
 
             node_ref = NodeRef(self, name)
+            if node_ref in self._nodes:
+                raise NodeNameCollisionError(f"Nodes must have unique names: {node_ref}.")
+
+            # add node with data to the graph
+            node_data = NodeData(operator, args, kwargs)
             self._nodes[node_ref] = node_data
             self.nodes_added.emit([node_ref])
 
@@ -498,21 +508,6 @@ class GraphRT(QObject):
             # Dependencies already have hashes because this is topological order.
             fingerprints[node_ref] = hash(signature)
         return fingerprints
-
-    def _resolve_node_inputs(self, node_ref:NodeRef, ancestor_results: dict[NodeRef, Any])->tuple[list[Any], dict[str, Any]]:
-        """ build fingerprint for teh memory cache """
-        node_data = self._nodes[node_ref]
-        args, kwargs = node_data.get_inputs()
-        resolved_args = [
-            ancestor_results[value] if isinstance(value, NodeRef) else value
-            for value in args
-        ]
-        resolved_kwargs = {
-            key: ancestor_results[value] if isinstance(value, NodeRef) else value
-            for key, value in kwargs.items()
-        }
-        
-        return resolved_args, resolved_kwargs
         
     def execute(self, root:NodeRef, profile: bool = True, ):
         """Evaluate pure operators with immutable inputs and operator data.
@@ -544,12 +539,12 @@ class GraphRT(QObject):
                 args, kwargs = node_data.get_inputs()
                 
 
-                resolved_args = resolved_args = [
+                resolved_args = [
                     ancestors_output[value] if isinstance(value, NodeRef) else value
                     for value in args
                 ]
 
-                resolved_kwargs = resolved_kwargs = {
+                resolved_kwargs = {
                     key: ancestors_output[value] if isinstance(value, NodeRef) else value
                     for key, value in kwargs.items()
                 }
@@ -568,16 +563,32 @@ class GraphRT(QObject):
         return ancestors_output[root]
 
     def todict(self, explicit: bool = False) -> dict[str, Any]:
-        """Save the graph, using short local operator names unless explicit."""
+        """Save the graph, using short _local_ operator names unless explicit."""
 
-        module_ids = {self.definitions(): "definitions"}
-        imports = {}
+        data: dict[str, Any] = {
+            "version": 1
+        }
+
+        # add imports
+        module_ids: dict[ScriptModuleRT, str] = {}
+
+        imports_data: list[str] = []
         for module in self._imports:
-            module_id = module.get_name()
-            if module_id == "definitions" or module_id in imports:
-                raise ValueError(f"Import name {module_id!r} must be unique and cannot be 'definitions'")
-            module_ids[module] = module_id
-            imports[module_id] = module.path()
+            path = str(module.path())
+            if not path or path == "_local_" or path in imports_data:
+                raise ValueError(f"Import path {path!r} must be nonempty, unique, and cannot be '_local_'")
+            module_ids[module] = path
+            imports_data.append(path)
+
+        if imports_data or explicit:
+            data["imports"] = imports_data
+
+        # add the local definitions
+        if self.local().get_script() or explicit:
+            data["_local_"] = self.local().get_script()
+        module_ids[self.local()] = "_local_"
+
+        # add graph nodes
         nodes = {}
         node_refs = set(self.nodes())
         for node in self.nodes():
@@ -586,28 +597,20 @@ class GraphRT(QObject):
                 raise TypeError("Saved node names must be strings")
             operator = node.get_operator()
             if operator.module not in module_ids:
-                raise ValueError(f"Node {name!r} must use the definitions script module or a registered import")
+                raise ValueError(f"Node {name!r} must use the local script module or a registered import")
             args, kwargs = node.get_inputs()
             record: dict[str, Any] = {
                 "operator": operator.name
-                if operator.module is self.definitions() and not explicit
+                if operator.module is self.local() and not explicit
                 else {"module": module_ids[operator.module], "name": operator.name}
             }
             if args or explicit:
                 record["args"] = [_encode_value(value, node_refs) for value in args]
             if kwargs or explicit:
                 record["kwargs"] = {key: _encode_value(value, node_refs) for key, value in kwargs.items()}
+
             nodes[name] = record
 
-
-        data: dict[str, Any] = {
-            "version": 1
-        }
-
-        if imports or explicit:
-            data["imports"] = imports
-        if self.definitions().get_script() or explicit:
-            data["definitions"] = self.definitions().get_script()
         if nodes or explicit:
             data["graph"] = {"nodes": nodes}
 
@@ -617,43 +620,39 @@ class GraphRT(QObject):
     def fromdict(cls, data: dict[str, Any]) -> "GraphRT":
         """Build a new runtime. Unknown operators and invalid scripts stay editable."""
 
-        if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:
-            raise ValueError("Unsupported graph format; expected version 1")
-        definitions = data.get("definitions", "")
-        imports = data.get("imports", {})
+        validate_graph_data(data)
+
+        local_definitions = data.get("_local_", "")
+        imports = data.get("imports", [])
         graph_data = data.get("graph", {"nodes": {}})
-        if not isinstance(definitions, str):
-            raise ValueError("Graph definitions must be a source string")
-        if (not isinstance(imports, dict) or not isinstance(graph_data, dict)
-                or not isinstance(graph_data.get("nodes"), dict)):
-            raise ValueError("Graph imports and nodes must be objects")
-        graph = cls(definitions=definitions)
-        modules = {"definitions": graph.definitions()}
-        for module_id, path in imports.items():
-            if not isinstance(module_id, str) or module_id == "definitions" or not isinstance(path, str):
-                raise ValueError("Imports must map module names to paths; 'definitions' is reserved")
-            module = graph.add_import(path)
-            module.set_name(module_id)
-            modules[module_id] = module
+        if len(imports) != len(set(imports)):
+            raise ValueError("Import paths must be unique")
+
+        module_ids = {"_local_", *imports}
+        for name, record in graph_data["nodes"].items():
+            operator = record["operator"]
+            if isinstance(operator, dict) and operator["module"] not in module_ids:
+                raise ValueError(f"Invalid operator reference for node {name!r}")
+
+        graph = cls()
+        modules_by_id: dict[str, ScriptModuleRT] = {"_local_": graph.local()}
+        graph.setLocalDefinitions(local_definitions)
+        for path in imports:
+            import_module = ImportModuleRT(path)
+            graph.add_import(import_module)
+            modules_by_id[path] = import_module
 
         nodes: dict[str, NodeRef] = {}
         for name, record in graph_data["nodes"].items():
-            if not isinstance(name, str) or not isinstance(record, dict):
-                raise ValueError("Invalid node record")
-            operator = record.get("operator")
+            operator = record["operator"]
             if isinstance(operator, str):
-                operator = {"module": "definitions", "name": operator}
-            if (not isinstance(operator, dict) or not isinstance(operator.get("module"), str)
-                    or operator["module"] not in modules or not isinstance(operator.get("name"), str)):
-                raise ValueError(f"Invalid operator reference for node {name!r}")
-            ref = OperatorRef(modules[operator["module"]], operator["name"])
+                operator = {"module": "_local_", "name": operator}
+            ref = OperatorRef(modules_by_id[operator["module"]], operator["name"])
             nodes[name] = graph.node()(ref, name=name)
 
         # Create every node before restoring inputs, allowing forward references.
         for name, record in graph_data["nodes"].items():
             args, kwargs = record.get("args", []), record.get("kwargs", {})
-            if not isinstance(args, list) or not isinstance(kwargs, dict) or any(not isinstance(k, str) for k in kwargs):
-                raise ValueError(f"Invalid inputs for node {name!r}")
             nodes[name].set_inputs(
                 *[_decode_value(value, nodes) for value in args],
                 **{key: _decode_value(value, nodes) for key, value in kwargs.items()},

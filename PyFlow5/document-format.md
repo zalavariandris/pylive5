@@ -11,19 +11,17 @@ to `GraphRT`.
 ```json
 {
   "version": 1,
-  "imports": {
-    "tools": "./tools.py"
-  },
-  "definitions": "def identity(value): return value",
+  "imports": ["./tools.py"],
+  "_local_": "def identity(value): return value",
   "graph": {
     "nodes": {
       "first": {
-        "operator": {"module": "definitions", "name": "identity"},
+        "operator": {"module": "_local_", "name": "identity"},
         "args": [42],
         "position": [0, 0]
       },
       "second": {
-        "operator": {"module": "tools", "name": "identity"},
+        "operator": {"module": "./tools.py", "name": "identity"},
         "args": [{"type": "node", "name": "first"}],
         "position": [200, 0]
       }
@@ -32,10 +30,12 @@ to `GraphRT`.
 }
 ```
 
-`definitions` is the graph's single embedded Python script. `imports` maps unique
-module names to file paths. The name `definitions` is reserved for the embedded
-script. Operator references include their module so equally named functions in
-different modules are unambiguous. Unused imports are retained.
+`_local_` is the graph's single embedded Python script. `imports` is a list of
+unique, nonempty file paths, without module aliases. Imported operator references
+use exactly the same path string as their `module` identifier, so files with the
+same basename remain distinct. Module names are display labels only. `_local_`
+is reserved for the embedded script; local operators may also use a short string
+reference such as `"identity"`. Unused imports are retained.
 
 Imported source is read from its file when loading. Editor changes write through
 to that Python file immediately, including incomplete code while typing. Saving a
@@ -58,7 +58,7 @@ recursively:
 Literal dictionaries are tagged, so they cannot be mistaken for node references.
 Empty `args` and `kwargs` are omitted unless `todict(explicit=True)` is used.
 Opaque Python values and operators created by inline decorators cannot be saved;
-use the definitions script or an imported module for portable operators.
+use the `_local_` script or an imported module for portable operators.
 
 Loading creates all nodes before connecting inputs, so forward references work.
 Invalid definition source and unavailable operators remain editable. Invalid data
@@ -66,4 +66,5 @@ or positions are rejected before changing the document. The existing document an
 models are retained; their contents and selections reset, the output watcher stops,
 and positions are restored. Selection and output locks are not saved.
 
-The older `modules` format and unversioned stringified input format are rejected.
+The older alias-to-path `imports` mapping, `modules` format, and unversioned
+stringified input format are rejected.

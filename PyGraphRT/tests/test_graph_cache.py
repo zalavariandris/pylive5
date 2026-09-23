@@ -617,5 +617,20 @@ def test_cache_policy_controls_retention_of_previous_results(cache):
     assert latest() is None
 
 
+def test_cache_collisions_with_minus_1(cache):
+    """this is a regression test
+    turnes out hash(-1) == hash(-2) which messes with the cache using hash for fingerprints"""
+    G = rt.GraphRT()
+    G.cache = cache
+
+    @G.node(-1)
+    def source(value):
+        return value
+
+    node = G.node()(source)
+    assert G.execute(node) == -1
+    source.set_inputs(-2)
+    assert G.execute(node) == -2
+
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"]) 

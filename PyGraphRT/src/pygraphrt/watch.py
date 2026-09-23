@@ -2,6 +2,7 @@ from .graph_rt import GraphRT, NodeRef
 from .abstract_module_rt import OperatorRef
 from typing import Callable, Iterable
 import weakref
+from qtpy.QtCore import Signal
 
 
 class Watcher:
@@ -17,7 +18,25 @@ class Watcher:
 		self._node = weakref.ref(node)
 		self._callback = callback
 
-		self._ancestors = [n for n in graph.ancestors(node)]
+		self._running = False
+		self._ancestors: list[NodeRef] = []
+		self._graph_connections:list[tuple[Signal, callable]] = []
+		self._module_connections:list[tuple[Signal, callable]] = []
+
+		self.start()
+
+	def start(self):
+		if self._running:
+			return
+
+		# get references
+		graph = self._graph()
+		node = self._node()
+		if graph is None or node is None:
+			return
+
+		self._ancestors = [
+			n for n in graph.ancestors(node)]
 
 		self._graph_connections = [
 			(graph.nodes_changed, self._on_nodes_changed),
@@ -25,14 +44,6 @@ class Watcher:
 		]
 
 		self._module_connections = self._make_module_connections()
-
-		self._running = False
-
-		self.start()
-
-	def start(self):
-		if self._running:
-			return
 		
 		for signal, slot in self._graph_connections:
 			signal.connect(slot)

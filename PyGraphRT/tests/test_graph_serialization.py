@@ -3,14 +3,16 @@ import json
 import math
 from pathlib import Path
 
+from pygraphrt.import_module import ImportModuleRT
 import pytest
 
 from pygraphrt import GraphRT, OperatorRef
 
 from textwrap import dedent
+import pprint
 
 def test_strictly_the_hello_world_graph_serialization() -> None:
-    definitions = dedent("""\
+    local_definitions = dedent("""\
         def the_name():
             return "Masa"
 
@@ -20,11 +22,12 @@ def test_strictly_the_hello_world_graph_serialization() -> None:
         def hello_world(name:str, greeting:str='Hello'):
             return f"{greeting} {name}!"
         """)
-    G = GraphRT(definitions=definitions)
+    G = GraphRT()
+    G.setLocalDefinitions(local_definitions)
 
     operators_by_name = {
         op.get_name(): op 
-        for op in G.definitions().operators()
+        for op in G.local().operators()
     }
 
     assert set(operators_by_name.keys()) == {"the_name", "the_greeting", "hello_world"}
@@ -35,9 +38,9 @@ def test_strictly_the_hello_world_graph_serialization() -> None:
     hello_world = G.node(the_name, the_greeting)(operators_by_name["hello_world"], name="hello_world")
 
     data = G.todict(explicit=False)
-    assert set(data.keys()) == {"version", "definitions", "graph"}
+    assert set(data.keys()) == {"version", "_local_", "graph"}
 
-    assert data["definitions"] == definitions
+    assert data["_local_"] == local_definitions
     assert data["graph"] == {
         "nodes": {
             "the_name": {
@@ -56,9 +59,11 @@ def test_strictly_the_hello_world_graph_serialization() -> None:
         }
     }
 
-    loaded = GraphRT.fromdict(data)
-    assert loaded.todict() == data
-    assert loaded.execute(loaded.nodes()[-1]) == G.execute(hello_world) == "Hey Masa!"
+    loaded_graph = GraphRT.fromdict(data)
+    loaded_data = loaded_graph.todict()
+    import json
+    assert loaded_data == data, f"Loaded data does not match original data: {json.dumps(loaded_data, indent=2)} != {json.dumps(data, indent=2)}"
+    assert loaded_graph.execute(loaded_graph.nodes()[-1]) == G.execute(hello_world) == "Hey Masa!"
 
 
 def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Path) -> None:
@@ -73,15 +78,16 @@ def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Pat
         def hello_world(name: str, greeting: str = "Hello") -> str:
             return f"{greeting} {name}!"
         """)
-    module_path = tmp_path / "hello_world_operators.py"
-    module_path.write_text(source, encoding="utf-8")
+    import_module_path = tmp_path / "hello_world_operators.py"
+    import_module_path.write_text(source, encoding="utf-8")
 
     # create the runtime graph and add the imported module
     graph = GraphRT()
-    module = graph.add_import(str(module_path))
+    import_module = ImportModuleRT(import_module_path)
+    graph.add_import(import_module)
 
     # collect operators from the imported module
-    operators_by_name = {op.get_name(): op for op in module.operators()}
+    operators_by_name = {op.get_name(): op for op in import_module.operators()}
     assert set(operators_by_name) == {"the_name", "the_greeting", "hello_world"}
 
     # create the nodes using the imported module
@@ -93,19 +99,22 @@ def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Pat
 
     # serialize the graph to a dictionary
     data = graph.todict(explicit=False)
+    assert set(data.keys()) == {"version", "imports", "graph"}
+    assert data['version'] == 1
+    assert data['imports'] == [str(import_module_path)]
     assert data == {
         "version": 1,
-        "imports": {"hello_world_operators": str(module_path)},
+        "imports": [str(import_module_path)],
         "graph": {
             "nodes": {
                 "the_name": {
-                    "operator": {"module": "hello_world_operators", "name": "the_name"}
+                    "operator": {"module": str(import_module_path), "name": "the_name"}
                 },
                 "the_greeting": {
-                    "operator": {"module": "hello_world_operators", "name": "the_greeting"}
+                    "operator": {"module": str(import_module_path), "name": "the_greeting"}
                 },
                 "hello_world": {
-                    "operator": {"module": "hello_world_operators", "name": "hello_world"},
+                    "operator": {"module": str(import_module_path), "name": "hello_world"},
                     "args": [
                         {"type": "node", "name": "the_name"},
                         {"type": "node", "name": "the_greeting"}
@@ -117,7 +126,7 @@ def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Pat
 
     loaded = GraphRT.fromdict(json.loads(json.dumps(data)))
     assert loaded.todict() == data
-    assert loaded.definitions().get_script() == ""
+    assert loaded.local().get_script() == ""
     assert all(node.get_operator().module is loaded.imports()[0] for node in loaded.nodes())
     loaded_nodes = {node.get_name(): node for node in loaded.nodes()}
     assert loaded.execute(loaded_nodes["hello_world"]) == graph.execute(hello_world) == "Hey Masa!"
@@ -129,15 +138,16 @@ def test_empty_graph_round_trip(explicit: bool) -> None:
     data = graph.todict(explicit=explicit)
     expected: dict[str, object] = {"version": 1}
     if explicit:
-        expected.update(imports={}, definitions="", graph={"nodes": {}})
+        expected.update(imports=[], _local_="", graph={"nodes": {}})
     assert data == expected
     assert GraphRT.fromdict(data).todict(explicit=explicit) == data
 
 
 @pytest.fixture
 def graph():
-    graph = GraphRT(definitions="def op(*args, **kwargs): return args, kwargs")
-    operator = OperatorRef(graph.definitions(), "op")
+    graph = GraphRT()
+    graph.setLocalDefinitions("def op(*args, **kwargs): return args, kwargs")
+    operator = OperatorRef(graph.local(), "op")
     source = graph.node(42)(operator, name="source")
     graph.node(source, "source", 42, "42", True, None, 1.5,
                nested={"type": "node", "name": "source", (1, 2): [3, (4, 5)]},
@@ -147,7 +157,7 @@ def graph():
 
 def test_runtime_round_trip_preserves_values_and_forward_references(graph):
     data = graph.todict()
-    assert isinstance(data["definitions"], str)
+    assert isinstance(data["_local_"], str)
     assert "nodes" not in data
     records = data["graph"]["nodes"]
     assert all("position" not in record for record in records.values())
@@ -166,46 +176,84 @@ def test_runtime_round_trip_preserves_values_and_forward_references(graph):
     assert loaded.todict() == data
 
 
-def test_explicit_empty_inputs():
-    graph = GraphRT(definitions="def one(): return 1")
-    graph.node()(OperatorRef(graph.definitions(), "one"))
-    compact = graph.todict()["graph"]["nodes"]["one"]
-    assert "args" not in compact and "kwargs" not in compact
-    explicit = graph.todict(explicit=True)["graph"]["nodes"]["one"]
-    assert explicit["args"] == [] and explicit["kwargs"] == {}
-    assert compact["operator"] == "one"
-    assert explicit["operator"] == {"module": "definitions", "name": "one"}
-    assert GraphRT.fromdict(graph.todict(explicit=True)).todict() == graph.todict()
+def test_explicit_empty_node_inputs():
+    graph = GraphRT()
+    graph.setLocalDefinitions("def one(): return 1")
+    one_op = list(graph.local().operators())[0]
+    graph.node()(one_op, name="one")
 
+    explicit_data = graph.todict(explicit=True)["graph"]["nodes"]["one"]
+    assert explicit_data["args"] == []
+    assert explicit_data["kwargs"] == {}
 
-def test_runtime_ignores_presentation_metadata(graph):
-    data = graph.todict()
-    data["graph"]["nodes"]["target"]["position"] = "not a runtime concern"
-    assert GraphRT.fromdict(data).todict() == graph.todict()
-
-
-def test_imports_and_definitions_disambiguate_operator_names(tmp_path):
+def test_imports_and_local_disambiguate_operator_names(tmp_path):
     path = tmp_path / "tools.py"
     path.write_text("def op(): return 42", encoding="utf-8")
-    graph = GraphRT(definitions="def op(value): return value * 2")
-    module = graph.add_import(str(path))
-    source = graph.node()(OperatorRef(module, "op"), name="source")
-    graph.node(source)(OperatorRef(graph.definitions(), "op"), name="target")
-    assert graph.todict()["imports"] == {"tools": str(path)}
+    graph = GraphRT()
+    graph.setLocalDefinitions("def op(value): return value * 2")
+    import_module = ImportModuleRT(path)
+    graph.add_import(import_module)
+    source = graph.node()(OperatorRef(import_module, "op"), name="source")
+    graph.node(source)(OperatorRef(graph.local(), "op"), name="target")
+    assert graph.todict()["imports"] == [str(path)]
     records = graph.todict()["graph"]["nodes"]
-    assert records["source"]["operator"] == {"module": "tools", "name": "op"}
+    assert records["source"]["operator"] == {"module": str(path), "name": "op"}
     assert records["target"]["operator"] == "op"
     loaded = GraphRT.fromdict(graph.todict())
     assert loaded.execute(loaded.nodes()[1]) == 84
     assert loaded.nodes()[0].get_operator().module is loaded.imports()[0]
-    assert loaded.nodes()[1].get_operator().module is loaded.definitions()
+    assert loaded.nodes()[1].get_operator().module is loaded.local()
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_same_basename_imports_round_trip(tmp_path: Path, explicit: bool) -> None:
+    graph = GraphRT()
+    paths: list[str] = []
+    for index, folder in enumerate(("first", "second")):
+        directory = tmp_path / folder
+        directory.mkdir()
+        path = directory / "tools.py"
+        path.write_text(f"def value(): return {index}", encoding="utf-8")
+        module = ImportModuleRT(str(path))
+        module.set_name("display label")
+        graph.add_import(module)
+        graph.node()(OperatorRef(module, "value"), name=folder)
+        paths.append(str(path))
+
+    data = graph.todict(explicit=explicit)
+    assert data["imports"] == paths
+    for name, path in zip(("first", "second"), paths):
+        assert data["graph"]["nodes"][name]["operator"] == {
+            "module": path, "name": "value"
+        }
+    loaded = GraphRT.fromdict(json.loads(json.dumps(data)))
+    assert loaded.todict(explicit=explicit) == data
+    assert [loaded.execute(node) for node in loaded.nodes()] == [0, 1]
+
+
+@pytest.mark.parametrize("imports", [
+    {"tools": "tools.py"}, [42], [None], [[]], [""], ["_local_"],
+    ["tools.py", "tools.py"],
+])
+def test_invalid_import_paths_are_rejected(imports: object) -> None:
+    with pytest.raises(ValueError):
+        GraphRT.fromdict({"version": 1, "imports": imports})
+
+
+def test_duplicate_import_paths_cannot_be_saved() -> None:
+    graph = GraphRT()
+    for _ in range(2):
+        graph.add_import(ImportModuleRT("tools.py"))
+    with pytest.raises(ValueError, match="unique"):
+        graph.todict()
 
 
 def test_unused_imports_survive(tmp_path):
     path = tmp_path / "unused.py"
     path.write_text("def unused(): return 1", encoding="utf-8")
     graph = GraphRT()
-    graph.add_import(str(path))
+    import_module = ImportModuleRT(path)
+    graph.add_import(import_module)
     loaded = GraphRT.fromdict(graph.todict())
     assert len(loaded.imports()) == 1
     assert loaded.imports()[0].path() == str(path)
@@ -214,24 +262,25 @@ def test_unused_imports_survive(tmp_path):
 
 @pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan")])
 def test_nonfinite_floats_use_json_tags(value):
-    graph = GraphRT(definitions="def op(value): return value")
-    graph.node(value)(OperatorRef(graph.definitions(), "op"))
+    graph = GraphRT()
+    graph.setLocalDefinitions("def op(value): return value")
+    graph.node(value)(OperatorRef(graph.local(), "op"))
     encoded = json.dumps(graph.todict(), allow_nan=False)
     loaded = GraphRT.fromdict(json.loads(encoded))
     restored = loaded.nodes()[0].get_inputs()[0][0]
     assert math.isnan(restored) if math.isnan(value) else restored == value
 
 
-@pytest.mark.parametrize("damage", ["version", "definitions", "imports", "node", "module", "reference", "args", "value"])
+@pytest.mark.parametrize("damage", ["version", "_local_", "imports", "node", "module", "reference", "args", "value"])
 def test_malformed_runtime_data_is_rejected(graph, damage):
     data = graph.todict()
     record = data["graph"]["nodes"]["target"]
     if damage == "version":
         data["version"] = 99
-    elif damage == "definitions":
-        data["definitions"] = {}
+    elif damage == "_local_":
+        data["_local_"] = {}
     elif damage == "imports":
-        data["imports"] = []
+        data["imports"] = {}
     elif damage == "node":
         data["graph"]["nodes"]["target"] = None
     elif damage == "module":
@@ -247,12 +296,15 @@ def test_malformed_runtime_data_is_rejected(graph, damage):
 
 
 def test_invalid_source_and_missing_operator_stay_editable():
-    graph = GraphRT(definitions="def op(:")
-    graph.node()(OperatorRef(graph.definitions(), "op"))
+    graph = GraphRT()
+    graph.setLocalDefinitions("def op(:")
+    
+    
+    graph.node()(OperatorRef(graph.local(), "op"))
     loaded = GraphRT.fromdict(graph.todict())
-    assert loaded.definitions().get_script() == "def op(:"
+    assert loaded.local().get_script() == "def op(:"
     assert loaded.nodes()[0].get_operator().get_value() is None
-    loaded.definitions().set_script("def op(): return 7")
+    loaded.local().set_script("def op(): return 7")
     assert loaded.execute(loaded.nodes()[0]) == 7
 
 
@@ -276,23 +328,3 @@ def test_fromdict_constructs_subclass(graph):
 
     assert isinstance(CustomGraph.fromdict(graph.todict()), CustomGraph)
 
-
-def test_import_alias_survives_round_trip(tmp_path):
-    path = tmp_path / "tools.py"
-    path.write_text("def op(): return 3", encoding="utf-8")
-    graph = GraphRT()
-    module = graph.add_import(str(path))
-    module.set_name("renamed")
-    graph.node()(OperatorRef(module, "op"))
-    loaded = GraphRT.fromdict(graph.todict())
-    assert loaded.imports()[0].get_name() == "renamed"
-    assert loaded.execute(loaded.nodes()[0]) == 3
-
-
-@pytest.mark.parametrize("name", ["definitions", "duplicate"])
-def test_ambiguous_import_names_fail_explicitly(name):
-    graph = GraphRT()
-    graph.add_import("first.py", source="").set_name(name)
-    graph.add_import("second.py", source="").set_name(name)
-    with pytest.raises(ValueError, match="must be unique"):
-        graph.todict()

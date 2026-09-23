@@ -2,6 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
+from qtpy.QtCore import QAbstractItemModel, QItemSelection, QItemSelectionModel, QModelIndex
 
 from qtpy.QtCore import (
     QObject,
@@ -52,13 +53,12 @@ from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKeywordsCompleter
 
 from .pyflow5_document import PyFlowDocument
-from .modules_list_proxy_model import ModulesListModel
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
 
 
 from .inspector_view import InspectorEditor, InspectorView
 
-def _color_editor(index, parent):
+def _color_editor(index:QModelIndex, parent:QWidget=None)->InspectorEditor:
     widget = ColorEdit(parent)
     color_type = type(index.data(Qt.ItemDataRole.EditRole))
 
@@ -75,6 +75,140 @@ def _color_editor(index, parent):
     )
 
 
+class ModuleDetailsView(QWidget):
+    # consider refactoring this class using a QDataWidgetMapper
+    def __init__(self, parent:QWidget=None):
+        super().__init__(parent=parent)
+        
+        self._model:QAbstractItemModel = None
+        self._model_connections = []
+
+        self._selection_model: QItemSelectionModel = None
+        self._selection_connections = []
+        self._current: QModelIndex = QModelIndex()
+
+        # self._code_editor = ScriptEdit2(self)
+        self._title_label = QLabel(self)
+        self._code_editor = ScriptEditAdvanced(
+            completer=None,
+            parent=self
+        )
+        self._code_editor.textChanged.connect(self._on_editor_text_changed)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self._title_label)
+        layout.addWidget(self._code_editor)
+        self.setLayout(layout)
+
+    def model(self):
+        return self._model
+
+    def setModel(self, model: QAbstractItemModel|None):
+        if self._model:
+            for signal, slot in self._model_connections:
+                signal.disconnect(slot)
+            self._model_connections.clear()
+
+        if model:
+            self._model_connections = [
+                (model.modelReset,  self._on_model_reset),
+                (model.dataChanged, self._on_data_changed),
+                (model.rowsRemoved, self._on_rows_removed)
+            ]
+        self._model = model
+
+    def setSelectionModel(self, selection_model: QItemSelectionModel|None):
+        if self._selection_model:
+            for signal, slot in self._selection_connections:
+                signal.disconnect(slot)
+            self._selection_connections.clear()
+
+        if selection_model:
+            self._selection_connections = [
+                (selection_model.currentChanged, self._on_current_changed)
+            ]
+            for signal, slot in self._selection_connections:
+                signal.connect(slot)
+        self._selection_model = selection_model
+
+    def selectionModel(self):
+        return self._selection_model
+
+    def _on_editor_text_changed(self):
+        if not self._current.isValid():
+            return
+
+        current = self._selection_model.currentIndex()
+        if not current.isValid():
+            return
+
+        new_text = self._code_editor.toPlainText()
+        self._model.setData(current, new_text, ModulesOperatorsTreeModel.SourceRole)
+
+    def _on_current_changed(self, current: QModelIndex, previous: QModelIndex)->bool:
+        if self._model is None:
+            return False
+
+        if current.isValid() and current.model() == self._model:
+            
+            self._title_label.setText(current.data(Qt.ItemDataRole.DisplayRole))
+            with myqtx.blockingSignals(self._code_editor):
+                text = current.data(ModulesOperatorsTreeModel.SourceRole)
+                self._code_editor.setPlainText(text)
+                self._code_editor.setEnabled(True)
+        else:
+            self._title_label.setText("<No Selection>")
+            with myqtx.blockingSignals(self._code_editor):
+                self._code_editor.clear()
+                self._code_editor.setEnabled(False)
+
+    @Slot()
+    def _on_model_reset(self):
+        if not self._current.isValid():
+            return
+
+        current = self._selection_model.currentIndex()
+        if not current.isValid():
+            return
+        
+        self._title_label.setText(current.data(Qt.ItemDataRole.DisplayRole))
+        with myqtx.blockingSignals(self._code_editor):
+            text = current.data(ModulesOperatorsTreeModel.SourceRole)
+            self._code_editor.setPlainText(text)
+            self._code_editor.setEnabled(True)
+
+    @Slot()
+    def _on_data_changed(self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list[int] = []):
+        if not self._current.isValid():
+            return
+
+        current = self._selection_model.currentIndex()
+        if not current.isValid():
+            return
+        
+        if current.parent() == topLeft.parent() and topLeft.row() <= current.row() <= bottomRight.row():
+            self._title_label.setText(current.data(Qt.ItemDataRole.DisplayRole))
+            with myqtx.blockingSignals(self._code_editor):
+                text = current.data(ModulesOperatorsTreeModel.SourceRole)
+                self._code_editor.setPlainText(text)
+                self._code_editor.setEnabled(True)
+    
+    @Slot()
+    def _on_rows_removed(self, parent: QModelIndex, start: int, end: int):
+        if not self._current.isValid():
+            return
+
+        current = self._selection_model.currentIndex()
+        if not current.isValid():
+            return
+        
+        if current.parent() == parent and start <= current.row() <= end:
+            self._title_label.setText("<No Selection>")
+            with myqtx.blockingSignals(self._code_editor):
+                self._code_editor.clear()
+                self._code_editor.setEnabled(False)
+
+
 class PyFlow5Window(QMainWindow):
     def __init__(self, parent=None)->None:
         super().__init__(parent)
@@ -86,60 +220,39 @@ class PyFlow5Window(QMainWindow):
         # Setup UI
         # self.setupActions()
 
-        # - Setup imports view -
+        # - Setup modules view -
         self._module_list_view = QListView(self)
-        self._module_list_view.setModel(self._document.modulesmodel())
-        self._module_list_view.setSelectionModel(self._document.moduleselectionmodel())
-        
-        # self._code_editor = ScriptEdit2(self)
-        self._code_editor = ScriptEditAdvanced(
-            completer=None,
-            parent=self
-        )
+        self._module_list_view.setModel(self._document.modulesmodel)
+        module_selection_model = QItemSelectionModel(self._document.modulesmodel)
+        self._module_list_view.setSelectionModel(module_selection_model)
 
-        # two-way binding between code editor and script module
-        def update_code_editor():
-            selected_import_idx = self._document.moduleselectionmodel().currentIndex()
-            next_script = selected_import_idx.data(ModulesListModel.CodeRole) if selected_import_idx.isValid() else "" 
-            # todo: consider moving change guard to the code editor itself
-            current_script = self._code_editor.toPlainText()
-            if current_script != next_script:
-                self._code_editor.blockSignals(True)
-                self._code_editor.setPlainText(next_script)
-                self._code_editor.blockSignals(False)
+        # - Setup modules view -
+        self._module_details_view = ModuleDetailsView(self)
+        self._module_details_view.setModel(self._document.modulesmodel)
+        self._module_details_view.setSelectionModel(module_selection_model)
 
-        update_code_editor()
-        self._document.modulesmodel().modelReset.connect(update_code_editor)
-        self._document.modulesmodel().dataChanged.connect(update_code_editor)
-        self._document.moduleselectionmodel().currentChanged.connect(update_code_editor)
-
-        def update_script_module():
-            selected_import_idx = self._document.moduleselectionmodel().currentIndex()
-            if not selected_import_idx.isValid():
-                return
-
-            new_text = self._code_editor.toPlainText()
-            if self._document.modulesmodel().setData(selected_import_idx, new_text, ModulesListModel.CodeRole):
-                self.statusBar().clearMessage()
-
-        self._document.operatormodel().scriptSaveFailed.connect(
-            lambda error: self.statusBar().showMessage(f"Cannot save source: {error}")
-        )
-        self._code_editor.textChanged.connect(update_script_module)
-        # self._document.scriptmodule().state_changed.connect(self._on_script_module_state_changed)
-        
         # - Setup graphview -
         self._graph_view = DirectionalGraphView5(self)
-        self._graph_view.setModel(self._document.graphmodel())
-        self._graph_view.setSelectionModel(self._document.graphselectionmodel())
-        self._graph_view.requestLink.connect(lambda src, outlet, dst, inlet: self._on_request_link(src, outlet, dst, inlet))
-        self._graph_view.requestNode.connect(lambda pos, source: self._on_request_node(pos, source))
+        self._graph_view.setModel(self._document.graphmodel)
+        self._graph_view.setSelectionModel(self._document.graphselectionmodel)
         self._graph_view.layout_nodes()
         self._graph_view.fitNodes()
 
-        # - Setup inspector -
+        @Slot()
+        def _on_request_node(scene_pos:QPointF, source:NodeName):
+            # show a dialog with a multiselection of operator in GraphRT
+            self.openOperatorDialog(scene_pos=scene_pos, source=source)
+        self._graph_view.requestNode.connect(_on_request_node)
+
+        @Slot()
+        def _on_request_link(source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
+            self._document.graphmodel.addLink(source, outlet, target, inlet)
+        self._graph_view.requestLink.connect(_on_request_link)
+
+        # - Setup node inspector -
         self._inspector_view = InspectorView(self)
-        self._inspector_view.setModel(self._document.graphdetailsmodel())
+        self._inspector_view.setModel(self._document.graphdetailsmodel)
+        # self._inspector_view.setSelectionModel(self._document.graphselectionmodel)
 
         # - Setup display widget -
         viewer = QWidget(self)
@@ -150,13 +263,19 @@ class PyFlow5Window(QMainWindow):
         viewer_header.addStretch()
         self._viewer_lock_switch = QCheckBox("Lock", viewer)
         self._viewer_lock_switch.setToolTip("Keep viewing this output when the selection changes.")
-        self._viewer_lock_switch.setChecked(self._document.is_output_locked())
-        self._viewer_lock_switch.toggled.connect(self._document.set_output_locked)
+        self._viewer_lock_switch.setChecked(self._document.isOutputLocked())
+        self._viewer_lock_switch.toggled.connect(self._document.setOutputLocked)
         self._document.output_lock_changed.connect(self._viewer_lock_switch.setChecked)
         viewer_header.addWidget(self._viewer_lock_switch)
         viewer_layout.addLayout(viewer_header)
         self._display_widget = myqtx.DisplayWidget(viewer)
         viewer_layout.addWidget(self._display_widget)
+
+        @Slot()
+        def _on_output_value_changed():
+            # update display widget
+            self._display_widget.display(self._document.output_value())
+        self._document.output_value_changed.connect(_on_output_value_changed)
 
         # - Serialization widget -
         self._serialization_window = QDialog(self)
@@ -171,7 +290,7 @@ class PyFlow5Window(QMainWindow):
         # - Add widgets to splitter -
         splitter = QSplitter(self)
         splitter.addWidget(self._module_list_view)
-        splitter.addWidget(self._code_editor)
+        splitter.addWidget(self._module_details_view)
         splitter.addWidget(self._graph_view)
         splitter.addWidget(self._inspector_view)
         splitter.addWidget(viewer)
@@ -184,25 +303,9 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.setFocus()
 
         # - Initial results update -
-        self._document.execute()
-
-        self._document.output_value_got_dirty.connect(self._on_output_value_got_dirty)
+        self._document._execute()
 
     def setupMenubar(self):
-        # self._restart_kernel_action:QAction = QAction("Reset Graph View", self)
-        # self._restart_kernel_action.triggered.connect(self._document.reset_graph)
-        # open_operator_dialog_action = QAction("Open Operator Dialog", self)
-        # self.addAction(open_operator_dialog_action)
-        # open_operator_dialog_action.setShortcut("Ctrl+P")
-        # open_operator_dialog_action.triggered.connect(self.openOperatorDialog)
-
-        # delete_selected_nodes_action = QAction("Delete Selected Nodes", self)
-        # self.addAction(delete_selected_nodes_action)
-        # delete_selected_nodes_action.setShortcut("Del")
-        # delete_selected_nodes_action.triggered.connect(self._document.deleteSelectedNodes)
-
-
-    
         menubar: QMenuBar = self.menuBar()
         menubar.addAction("Restart Graph", self._document.reset_graph)
 
@@ -236,7 +339,7 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Duplicate Nodes", lambda: None)
         edit_menu.addSeparator()
 
-        edit_menu.addAction("Edit Definitions", self.editDefinitions)
+        edit_menu.addAction("Edit Local Definitions", self.editLocalDefinitions)
         edit_menu.addAction("Remove Module", lambda: None)
 
         view_menu = QMenu("View", self)
@@ -253,9 +356,9 @@ class PyFlow5Window(QMainWindow):
             lambda _: serialization_action.setChecked(False)
         )
 
-    def editDefinitions(self):
-        model = self._document.modulesmodel()
-        # Definitions are the first editable module in every graph.
+    def editLocalDefinitions(self):
+        model = self._document.modules_proxy_model
+        # `Local` is the first editable module in every graph.
         self._module_list_view.setCurrentIndex(model.index(0, 0))
         self._code_editor.setFocus()
 
@@ -284,16 +387,14 @@ class PyFlow5Window(QMainWindow):
                         return
                 self._document.importModule(file_path)
 
-
-
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
-        dialog = SelectionDialog(self._document.operatormodel(), self)
+        dialog = SelectionDialog(self._document.modulesmodel, self)
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
                 selected_op = selected_index.data(ModulesOperatorsTreeModel.OperatorRole)
                 if selected_op:
-                    self._document.graphmodel().addNode(selected_op, scene_pos or QPointF(0, 0))
+                    self._document.graphmodel.addNode(selected_op, scene_pos or QPointF(0, 0))
         finally:
             dialog.deleteLater()
 
@@ -328,19 +429,6 @@ class PyFlow5Window(QMainWindow):
                     QMessageBox.warning(self, "Cannot save graph", str(error))
 
     @Slot()
-    def _on_output_value_got_dirty(self):
-        self._display_widget.display(self._document.execute())
-        try:
-            data = self._document._G.todict()
-            for name, record in data.get("graph", {}).get("nodes", {}).items():
-                position = self._document.graphmodel().nodePosition(name)
-                record["position"] = [position.x(), position.y()]
-            text = json.dumps(data, indent=4)
-        except (TypeError, ValueError, RecursionError) as error:
-            text = f"Cannot serialize document: {error}"
-        self._serialization_widget.setPlainText(text)
-
-    @Slot()
     def _on_script_module_state_changed(self):
         # set code editor style to red border if the script module is in an error state
         match self._code_editor:
@@ -369,13 +457,3 @@ class PyFlow5Window(QMainWindow):
                         self._code_editor.clearError()
                     case _:
                         pass
-
-    @Slot()
-    def _on_request_node(self, scene_pos:QPointF, source:NodeName):
-        print(f"Request node signal received {scene_pos} {source}")
-        # show a dialog with a multiselection of operator in GraphRT
-        self.openOperatorDialog(scene_pos=scene_pos, source=source)
-
-    @Slot()
-    def _on_request_link(self, source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
-        self._document.graphmodel().addLink(source, outlet, target, inlet)

@@ -62,7 +62,7 @@ class InlineModuleRT(AbstractModule):
     def __init__(self, parent:QObject | None = None):
         super().__init__("_inline_", parent=parent)
 
-        self._operators:dict[str, FunctionOperator] = dict()
+        self._operators:dict[OperatorRef, FunctionOperator] = dict()
 
     def op(self) -> Callable[[Callable], OperatorRef]:
         def decorator(func: Callable) -> OperatorRef:
@@ -70,14 +70,14 @@ class InlineModuleRT(AbstractModule):
             assert callable(func), "func must be a callable function"
             
             ref = OperatorRef(self, func.__name__)
+            if ref in self._operators:
+                raise ValueError(f"Operators must have unique names: {ref}.")
+            
             data = FunctionOperator(func)
             self._operators[ref] = data
             self.operators_added.emit([ref])
             return ref
         return decorator
-
-    def operators(self) -> Mapping[str, AbstractOperator]:
-        return {k:v for k, v in self._operators.items()} # todo: use a dictionary view (or a frozendict) instead of a copy
 
     def operators(self) -> list[OperatorRef]:
         return list(self._operators.keys())
@@ -95,5 +95,5 @@ class InlineModuleRT(AbstractModule):
         self._operators[op_ref] = op_data
         self.operators_changed.emit([op_ref])
 
-    def get_value(self, ref: OperatorRef) -> AbstractOperator | None:
+    def get_operator(self, ref: OperatorRef) -> AbstractOperator | None:
         return self._operators.get(ref, None)

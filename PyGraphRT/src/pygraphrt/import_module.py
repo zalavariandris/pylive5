@@ -8,11 +8,13 @@ from .script_module import ScriptModuleRT
 class ImportModuleRT(ScriptModuleRT):
     """A script module whose edits are written back to its source file."""
 
-    def __init__(self, path: str, parent: QObject | None = None, *, source: str | None = None):
-        super().__init__(Path(path).stem, source if source is not None else "", parent=parent)
+    def __init__(self, path: str, parent: QObject | None = None):
+        super().__init__(Path(path).stem, parent=parent)
         self._path = path
-        if source is None:
-            self.reload()
+        try:
+            self.reload_file()
+        except FileNotFoundError:
+            pass
 
     def path(self) -> str:
         return self._path
@@ -26,10 +28,7 @@ class ImportModuleRT(ScriptModuleRT):
         Path(self._path).write_text(script, encoding="utf-8")
         super().set_script(script)
 
-    def reload(self):
-        try:
-            text = Path(self._path).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            print(f"File not found: {self._path}")
-            return
+    def reload_file(self)->"None":
+        """raises FileNotFoundError, if the source file does not exist."""
+        text = Path(self._path).read_text(encoding="utf-8")
         super().set_script(text)

@@ -13,7 +13,8 @@ from pygraphrt.script_module import ScriptModuleRT
 )
 def test_script_module_function_changed(a_value, b_value, unused_value, expected_changes):
     from pygraphrt.script_module import ScriptModuleRT
-    sm = ScriptModuleRT("mathy", dedent("""
+    sm = ScriptModuleRT("mathy")
+    sm.set_script(dedent("""
     def A():
         return 1
 
@@ -69,7 +70,8 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
 def ancestor_graph():
     """The output is local; its ancestor comes from an independently edited script."""
     graph = rt.GraphRT()
-    module = ScriptModuleRT("source", "def value(): return 1")
+    module = ScriptModuleRT("source")
+    module.set_script("def value(): return 1")
     ancestor = graph.node()(OperatorRef(module, "value"))
 
     @graph.node(value=ancestor)
@@ -121,9 +123,11 @@ def test_ancestor_operator_changed_and_unrelated_exports_ignored(ancestor_graph)
 def test_setting_ancestor_inputs_rewires_watched_modules(ancestor_graph):
     graph, module, ancestor, output, watcher, changes = ancestor_graph
     # Both scripts export the same name: matching must include module identity.
-    other_module = ScriptModuleRT("other", "def value(): return 4")
+    other_module = ScriptModuleRT("other")
+    other_module.set_script("def value(): return 4")
     other = graph.node()(OperatorRef(other_module, "value"))
-    bridge_module = ScriptModuleRT("bridge", "def identity(value): return value")
+    bridge_module = ScriptModuleRT("bridge")
+    bridge_module.set_script("def identity(value): return value")
     bridge = graph.node(value=ancestor)(OperatorRef(bridge_module, "identity"))
     output.set_inputs(value=bridge)
     assert changes == [True]

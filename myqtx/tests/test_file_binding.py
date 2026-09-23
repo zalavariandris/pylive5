@@ -173,15 +173,15 @@ def test_save_checks_for_unseen_disk_conflicts_before_writing(tmp_path):
     path = tmp_path / "notes.txt"
     path.write_text("base", encoding="utf-8")
     buffer = myqtx.FileBinding(path, watch=False)
-    buffer.set_text("local")
+    buffer.set_text("_local_")
     conflicts = []
     buffer.conflict_detected.connect(lambda *versions: conflicts.append(versions))
     path.write_text("external", encoding="utf-8")
 
     assert buffer.save() is False
 
-    assert conflicts == [("base", "local", "external")]
-    assert buffer.get_text() == "local"
+    assert conflicts == [("base", "_local_", "external")]
+    assert buffer.get_text() == "_local_"
     assert buffer.is_modified()
     assert path.read_text(encoding="utf-8") == "external"
 
@@ -246,7 +246,7 @@ def test_opening_another_document_resets_the_baseline(tmp_path):
     second = tmp_path / "second.txt"
     second.write_text("second", encoding="utf-8")
     buffer = myqtx.FileBinding(first, watch=False)
-    buffer.set_text("local")
+    buffer.set_text("_local_")
     first.write_text("external", encoding="utf-8")
     assert buffer.reload() is False
 

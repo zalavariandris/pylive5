@@ -55,41 +55,16 @@ class ScriptModuleRT(AbstractModule):
     """
     state_changed = Signal()
     script_changed = Signal()
-    script_failed = Signal(object)
 
-    def __init__(self, name: str, script: str = "", parent:QObject | None = None):
+    def __init__(self, name: str, parent:QObject | None = None):
         if not isinstance(name, str):
             raise TypeError("name must be a string")
-        if not isinstance(script, str):
-            raise TypeError("script must be a string")
         
         super().__init__(name, parent=parent)
-        self._script = script
-
-        # collect functions from the initial script
-        self._state: str|BaseException = "VALID" # consider introducing an enum for states. also a not initialized state
-        try:
-            new_functions = _get_all_callables_from_script(script, name=name)
-
-            self._state: str|BaseException = "VALID" # todo: refine typehint
-        except BaseException as error:
-            new_functions = {}
-            if self._state != error:
-                self._state = error
-            import traceback
-            traceback.print_exc()
         
-        self._operators_cache = {
-            key: FunctionOperator(func) 
-            for key, func in new_functions.items()
-        }
-
-    def get_state(self) -> str|BaseException:
-        """Validity of the stored script: valid (including empty) or syntax_error.
-
-        Other execution errors propagate without committing an update.
-        """
-        return self._state
+        self._operators_cache = dict()
+        self._script = ""
+        self._state: str|BaseException = "VALID"
 
     def get_script(self) -> str:
         return self._script
@@ -100,10 +75,16 @@ class ScriptModuleRT(AbstractModule):
         self._apply_script(script)
         self.script_changed.emit()
 
+    def get_state(self) -> str|BaseException:
+        """Validity of the stored script: valid (including empty) or syntax_error.
+
+        Other execution errors propagate without committing an update.
+        """
+        return self._state
+
     def _apply_script(self, script: str) -> None:
         if not isinstance(script, str):
             raise TypeError("script must be a string")
-        
         
         if script == self._script:
             return
@@ -173,13 +154,11 @@ class ScriptModuleRT(AbstractModule):
             if removed:
                 self.operators_removed.emit([OperatorRef(self, name) for name in removed])
 
-        
-
     def operators(self) -> Iterable[OperatorRef]:
         return [
             OperatorRef(self, k) 
             for k in self._operators_cache.keys()
         ] # todo: use a dictionary view (or a frozendict) instead of a copy
 
-    def get_value(self, ref: OperatorRef) -> AbstractOperator | None:
+    def get_operator(self, ref: OperatorRef) -> AbstractOperator | None:
         return self._operators_cache.get(ref.name, None)

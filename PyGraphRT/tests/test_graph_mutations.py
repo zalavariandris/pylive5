@@ -1,4 +1,5 @@
-from pygraphrt.abstract_module_rt import MissingOperatorError
+from pygraphrt.abstract_module_rt import MissingOperatorError, OperatorRef
+from pygraphrt.script_module import ScriptModuleRT
 import pytest
 
 import pygraphrt as rt
@@ -221,6 +222,23 @@ class TestUpdatingOperatorFunction:
 
         result = G.execute(mult_node)
         assert result == 1, "Node should compute (1 + 2) / 3 = 1 after changing add to divide"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="Known limitation: helper edits leave callers stale; fix in a later iteration.",
+)
+def test_helper_edit_updates_existing_callers() -> None:
+    source = "def helper(): return 1\ndef result(): return helper()"
+    module = ScriptModuleRT("tools")
+    module.set_script(source)
+
+    module.set_script(source.replace("return 1", "return 2"))
+
+    result = OperatorRef(module, "result").get_value()
+    assert result is not None
+    assert result() == 2
 
 
 if __name__ == "__main__":

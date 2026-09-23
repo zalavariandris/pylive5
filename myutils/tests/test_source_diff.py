@@ -77,6 +77,11 @@ def test_ast_diff_ignores_module_statements():
         changed=set(), unchanged=set(), added=set(), removed=set()
     )
 
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="Known limitation: helper edits leave callers stale; fix in a later iteration.",
+)
 def test_ast_diff_global_change_affects_behavior_but_reports_unchanged():
     source1 = dedent("""
     value = 1
@@ -94,11 +99,11 @@ def test_ast_diff_global_change_affects_behavior_but_reports_unchanged():
     assert before["read_value"]() == 1
     assert after["read_value"]() == 2
     assert ast_functions_diff(source1, source2) == FunctionsDiff(
-        changed=set(),
-        unchanged={"read_value"},
+        changed={"read_value"},
+        unchanged={},
         added=set(),
         removed=set(),
-    )
+    ), f"read_value behaviour changed, therefor should report as changed"
 
 
 def test_ast_diff_invalid_source():

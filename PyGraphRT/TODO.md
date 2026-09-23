@@ -16,6 +16,8 @@
 - [x] test change signal, when the function itself did not, but due to its scope the behaviour has changed.
 
 
+- [ ] ImportModuleRT. how to handle importmodules, when there is no real file? when there was a real file, but it was deleted? In the UI we should be able to create files, that are not yet saved. So it should be valid as long as the script is valid.
+
 ## Architecture
 NOTE: these might be outdated:
 - [ ] Investigate operator fingerprints in ScriptModuleRT. Re-executing a script

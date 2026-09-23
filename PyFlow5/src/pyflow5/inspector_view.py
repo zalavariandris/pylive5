@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from qtpy.QtCore import QModelIndex, QPersistentModelIndex, Qt
+from qtpy.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelIndex, Qt
 from qtpy.QtWidgets import (
     QCheckBox, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget,
 )
@@ -22,10 +22,6 @@ class InspectorEditor:
     write: Callable[[Any], None]
     committed: Any = None
 
-
-
-
-
 def _text_editor(value_type):
     def create(index, parent):
         widget = QLineEdit(parent)
@@ -35,11 +31,9 @@ def _text_editor(value_type):
         )
     return create
 
-
 def _bool_editor(index, parent):
     widget = QCheckBox(parent)
     return InspectorEditor(widget, widget.isChecked, widget.setChecked, widget.clicked)
-
 
 def _display_editor(index, parent):
     widget = QLabel(parent)
@@ -151,8 +145,12 @@ class InspectorView(QScrollArea):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._model = None
+        self._model: QAbstractItemModel | None = None
         self._connections = []
+        self._seleciton_model = None
+        self._selection_connections = []
+
+
         self._rows = []
         self._editors = {
             str: _text_editor(str), int: _text_editor(int),
@@ -181,7 +179,7 @@ class InspectorView(QScrollArea):
     def model(self):
         return self._model
 
-    def setModel(self, model):
+    def setModel(self, model: QAbstractItemModel):
         if model is self._model:
             return
         for signal, slot in self._connections:
