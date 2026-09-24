@@ -53,7 +53,7 @@ class PyFlowDocument(QObject):
             self.graphmodel.addNode(selected_op_ref, scene_pos or QPointF(0, 0))
 
     def deleteSelectedNodes(self):
-        selected_nodes = self.graphselectionmodel().selectedNodes()
+        selected_nodes = self.graphselectionmodel.selectedNodes()
         self.graphmodel.removeNodes(selected_nodes)
 
     def isOutputLocked(self) -> bool:

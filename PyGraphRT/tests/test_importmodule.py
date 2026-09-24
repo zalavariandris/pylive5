@@ -1,4 +1,5 @@
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
@@ -78,3 +79,19 @@ def test_file_missing_reload_reports_no_operators(tmp_path):
     with pytest.raises(FileNotFoundError):
         module.reload_file()
     assert len(list(module.operators())) > 0
+
+def test_reading_script_with_inconsistent__all__(tmp_path):
+    path = tmp_path / "tools.py"
+    source = dedent("""\
+        def op(): return 0
+        def op1(): return 1
+
+        __all__ = ['op', 'op2']
+    """)
+    path.write_text(source, encoding="utf-8")
+    module = ImportModuleRT(str(path))
+    assert [op.get_name() for op in module.operators()] == ["op"]
+
+if __name__ == "__main__":
+    import pytest
+    pytest.main([__file__])

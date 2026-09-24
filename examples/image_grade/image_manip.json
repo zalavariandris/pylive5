@@ -1,0 +1,114 @@
+{
+    "version": 1,
+    "imports": [
+        "C:/Users/and/Documents/GitHub/pylive5/examples/image_grade/imagi.py"
+    ],
+    "graph": {
+        "nodes": {
+            "constant": {
+                "operator": {
+                    "module": "C:/Users/and/Documents/GitHub/pylive5/examples/image_grade/imagi.py",
+                    "name": "constant"
+                },
+                "position": [
+                    2.4401140936489867,
+                    16.03777121955926
+                ]
+            },
+            "img_to_np": {
+                "operator": {
+                    "module": "C:/Users/and/Documents/GitHub/pylive5/examples/image_grade/imagi.py",
+                    "name": "img_to_np"
+                },
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "merge"
+                    }
+                },
+                "position": [
+                    104.44011409364899,
+                    200.0377712195593
+                ]
+            },
+            "merge": {
+                "operator": {
+                    "module": "C:/Users/and/Documents/GitHub/pylive5/examples/image_grade/imagi.py",
+                    "name": "merge"
+                },
+                "kwargs": {
+                    "fg": {
+                        "type": "node",
+                        "name": "cornerpin"
+                    },
+                    "bg": {
+                        "type": "node",
+                        "name": "exposure"
+                    }
+                },
+                "position": [
+                    105.44011409364899,
+                    121.03777121955926
+                ]
+            },
+            "read": {
+                "operator": {
+                    "module": "C:/Users/and/Documents/GitHub/pylive5/examples/image_grade/imagi.py",
+                    "name": "read"
+                },
+                "position": [
+                    106.44011409364899,
+                    -37.96222878044074
+                ]
+            },
+            "cornerpin": {
+                "operator": {
+                    "module": "C:/Users/and/Documents/GitHub/pylive5/examples/image_grade/imagi.py",
+                    "name": "cornerpin"
+                },
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "constant"
+                    }
+                },
+                "position": [
+                    4.440114093648987,
+                    61.03777121955926
+                ]
+            },
+            "exposure": {
+                "operator": {
+                    "module": "C:/Users/and/Documents/GitHub/pylive5/examples/image_grade/imagi.py",
+                    "name": "exposure"
+                },
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "temperature"
+                    }
+                },
+                "position": [
+                    110.44011409364899,
+                    58.03777121955926
+                ]
+            },
+            "temperature": {
+                "operator": {
+                    "module": "C:/Users/and/Documents/GitHub/pylive5/examples/image_grade/imagi.py",
+                    "name": "temperature"
+                },
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "read"
+                    }
+                },
+                "position": [
+                    106.48349257856125,
+                    11.834274004728996
+                ]
+            }
+        }
+    }
+}

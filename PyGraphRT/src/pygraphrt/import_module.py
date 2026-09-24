@@ -25,8 +25,11 @@ class ImportModuleRT(ScriptModuleRT):
         if script == self.get_script():
             return
         # Persist first: observers should only see edits that were saved.
-        Path(self._path).write_text(script, encoding="utf-8")
         super().set_script(script)
+
+    def save_file(self) -> None:
+        """Save the current script to the source file."""
+        Path(self._path).write_text(self.get_script(), encoding="utf-8")
 
     def reload_file(self)->"None":
         """raises FileNotFoundError, if the source file does not exist."""

@@ -43,6 +43,7 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     qtbot.wait(WAIT_TIME_MS)
     qtbot.mouseClick(editor.viewport(), Qt.MouseButton.LeftButton)
     qtbot.keyClick(editor, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+
     # Paste supports multiline and Unicode text, including accented names.
     clipboard = QApplication.clipboard()
     saved_clipboard = QMimeData()
@@ -99,6 +100,7 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
             Qt.MouseButton.LeftButton,
         )
     )
+    
     # Close the modal loop if a queued interaction fails, so pytest can finish.
     dialog_timeout = QTimer(window)
     dialog_timeout.setSingleShot(True)

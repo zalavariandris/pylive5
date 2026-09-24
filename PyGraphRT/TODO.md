@@ -7,16 +7,29 @@
       see: pygraphrt model tests. its uses fixture, and parametrize
 
 ## Features
-- [ ] graph snapshots and serialization
+- [x] graph (snapshots) and serialization
 - [ ] support callable objects not just functions
 - [x] refactor Cache to be pluggable.
 
+- [x] emit signals, when functions actually added, removed changed. dont emit
+      add, remove, change signlas, when only the script has changed.
 
-- [x] emit signals, when functions actually added, removed changed. dont emit add, remove, change signlas, when only the script has changed.
-- [x] test change signal, when the function itself did not, but due to its scope the behaviour has changed.
+- [x] TEST change signal, when the function itself did not, but due to its scope the behaviour has changed.
 
+- [ ] **ImportModuleRT** how to handle importmodule without a file. <unnamed>
+      when there was a real file, but it was deleted? In the UI we should be
+      able to create files, that are not yet saved. So it should be valid as
+      long as the script is valid.
 
-- [ ] ImportModuleRT. how to handle importmodules, when there is no real file? when there was a real file, but it was deleted? In the UI we should be able to create files, that are not yet saved. So it should be valid as long as the script is valid.
+- [ ] **ImportModule** should save **relative paths**.
+      when a graph was not yet saved, importing modules, will have to store the
+      abolute path. Now when the graph is saved, the importmodule paths should
+      be resolved to be relative to the graph. by default it sohuld be relative,
+      we should add an option, to save it as absolute path.
+
+- [ ] **ImportModule** indicate when the script has been __*edited__ with a STAR
+
+- [ ] Fit node size to its content in the **DAGView**
 
 ## Architecture
 NOTE: these might be outdated:

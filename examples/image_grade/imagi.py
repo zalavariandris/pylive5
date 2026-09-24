@@ -1,3 +1,4 @@
+
 import numpy as np
 import pathlib
 from dataclasses import dataclass
@@ -22,20 +23,24 @@ def read(path: pathlib.Path)->ImageRGBA:
 def cornerpin(img: ImageRGBA)->ImageRGBA:
     return img
 
-def exposure(img: ImageRGBA, factor: float)->ImageRGBA:
+def exposure(img: ImageRGBA, factor: float=0.0)->ImageRGBA:
     return img
 
-def temperature(img: ImageRGBA, value: float)->ImageRGBA:
+def temperature(img: ImageRGBA, value: float=0.0)->ImageRGBA:
     return img
 
-def image_to_data(img: ImageRGBA) -> np.ndarray:
+def img_to_np(img: ImageRGBA) -> np.ndarray:
     return img.data
 
+def merge(fg: ImageRGBA, bg: ImageRGBA) -> ImageRGBA:
+    return fg+bg
+
 __all__ = [
-"constant",
-"read",
-"cornerpin",
-"exposure",
-"temperature",
-"image_to_data"
+    "constant",
+    "read",
+    "cornerpin",
+    "exposure",
+    "temperature",
+    "img_to_np",
+    "merge"
 ]
