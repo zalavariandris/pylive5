@@ -420,34 +420,32 @@ class PyFlow5Window(QMainWindow):
             dialog.deleteLater()
 
     def openGraph(self) -> None:
-        # open file browser dialog
-        file_dialog = QFileDialog(self)
-        file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
-        file_dialog.setFileMode(QFileDialog.ExistingFile)
-        layout = file_dialog.layout()
-        if file_dialog.exec():
-            selected_files = file_dialog.selectedFiles()
-            if selected_files:
-                file_path = selected_files[0]
-                try:
-                    self._document.open(file_path)
-                except Exception as error:
-                    QMessageBox.warning(self, "Cannot open graph", str(error))
+        # # open file browser dialog
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open file",
+            "",
+            "JSON files (*.json)",
+        )
+        print(path)
+        if path:
+            try:
+                self._document.open(path)
+            except Exception as error:
+                QMessageBox.warning(self, "Cannot open graph", str(error))
 
     def saveGraph(self) -> None:
-        file_dialog = QFileDialog(self)
-        file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
-        file_dialog.setAcceptMode(QFileDialog.AcceptSave)  # Configures dialog for saving
-        file_dialog.setFileMode(QFileDialog.AnyFile)
-
-        if file_dialog.exec():
-            selected_files = file_dialog.selectedFiles()
-            if selected_files:
-                file_path = selected_files[0]
-                try:
-                    self._document.save(file_path)
-                except Exception as error:
-                    QMessageBox.warning(self, "Cannot save graph", str(error))
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save file",
+            "untitled.json",
+            "JSON files (*.json)",
+        )
+        if path:
+            try:
+                self._document.save(path)
+            except Exception as error:
+                QMessageBox.warning(self, "Cannot save graph", str(error))
 
     @Slot()
     def _on_script_module_state_changed(self):
