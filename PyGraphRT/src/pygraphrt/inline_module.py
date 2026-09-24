@@ -80,7 +80,7 @@ class InlineModuleRT(AbstractModule):
             ref = OperatorRef(self, func.__name__)
 
             if ref in self._operators:
-                self._update_operator(ref, FunctionOperator(func))
+                self._update_operator(ref, func)
             else:
                 ref = self._create_operator(func)
 
@@ -114,4 +114,6 @@ class InlineModuleRT(AbstractModule):
             self.operators_removed.emit([op_ref])
 
     def get_operator(self, ref: OperatorRef) -> AbstractOperator | None:
+        if ref not in self._operators:
+            raise MissingOperatorError(f"Operator {ref} does not exist in the graph.")
         return self._operators.get(ref, None)

@@ -7,8 +7,6 @@ from qtpy.QtCore import (
     Signal
 )
 
-from pytools import UniqueNameGenerator
-
 from myutils.profiler import Profiler
 
 if TYPE_CHECKING:
@@ -370,21 +368,14 @@ class GraphRT(QObject):
 
             self._validate_inputs(*args, **kwargs)
 
-            # Functions define named nodes; operator references create new uses.
-            if name is None:
-                if isinstance(func, OperatorRef):
-                    existing_names = [ref.get_name() for ref in self._nodes]
-                    name = UniqueNameGenerator(
-                        existing_names=existing_names,
-                    )(func.name)
-                else:
-                    name = func.__name__
-
             # Reuse an operator reference or register the function.
             if isinstance(func, OperatorRef):
                 operator = func
             else:
                 operator = self._inline_module.op()(func)
+
+            if name is None:
+                name = operator.get_name()
 
             # Create or update the named node.
             node_ref = NodeRef(self, name)
