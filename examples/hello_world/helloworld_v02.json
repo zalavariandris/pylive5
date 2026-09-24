@@ -1,0 +1,35 @@
+{
+    "version": 1,
+    "_local_": "def the_greeting():\n    return \"Hey\"\n\ndef the_name():\n    return \"M\u00e1sa\"\n    \ndef hello(name:str, greeting:str=\"Hello\"):\n    return f\"{greeting} {name}!\"",
+    "graph": {
+        "nodes": {
+            "hello": {
+                "operator": "hello",
+                "kwargs": {
+                    "name": {
+                        "type": "node",
+                        "name": "the_name"
+                    }
+                },
+                "position": [
+                    61.0,
+                    188.0
+                ]
+            },
+            "the_name": {
+                "operator": "the_name",
+                "position": [
+                    22.0,
+                    66.0
+                ]
+            },
+            "the_greeting": {
+                "operator": "the_greeting",
+                "position": [
+                    111.0,
+                    68.0
+                ]
+            }
+        }
+    }
+}

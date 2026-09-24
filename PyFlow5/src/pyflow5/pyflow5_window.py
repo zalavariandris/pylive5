@@ -404,14 +404,18 @@ class PyFlow5Window(QMainWindow):
                         return
                 self._document.importModule(file_path)
 
-    def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None):
+    def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None) -> None:
+        if scene_pos is None:
+            viewport_center = QPointF(self._graph_view.contentsRect().center())
+            scene_pos = self._graph_view.mapToScene(viewport_center)
+
         dialog = SelectionDialog(self._document.modulesmodel, self)
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
                 selected_op = selected_index.data(ModulesOperatorsTreeModel.OperatorRole)
                 if selected_op:
-                    self._document.graphmodel.addNode(selected_op, scene_pos or QPointF(0, 0))
+                    self._document.graphmodel.addNode(selected_op, scene_pos)
         finally:
             dialog.deleteLater()
 

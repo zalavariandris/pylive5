@@ -104,9 +104,9 @@ class PyFlowDocument(QObject):
             self._output_value = result
             self.output_value_changed.emit()
 
-        except Exception as e:
+        except Exception as err:
             traceback.print_exc()
-            self._output_value = None
+            self._output_value = err
             self.output_value_changed.emit()
 
     @Slot()
@@ -125,7 +125,7 @@ class PyFlowDocument(QObject):
     def _sync_output_to_selection(self, *args):
         if self._output_locked:
             return
-        selection = self.graphselectionmodel()
+        selection = self.graphselectionmodel
         selected = selection.selectedNodes()
         current = selection.currentNode()
         if current in selected:
@@ -166,12 +166,14 @@ class PyFlowDocument(QObject):
             self._G = new_graph_rt
             self.modulesmodel.setGraph(new_graph_rt)
             self.graphmodel.setRT(new_graph_rt, positions)
-            if self.modules_proxy_model.rowCount():
+            if self.modulesmodel.rowCount():
                 self.operatorselectionmodel.setCurrentIndex(
-                    self.modules_proxy_model.index(0, 0), QItemSelectionModel.SelectionFlag.ClearAndSelect
+                    self.modulesmodel.index(0, 0), QItemSelectionModel.SelectionFlag.ClearAndSelect
                 )
         except Exception as e:
+            traceback.print_exc()
             raise e
+            
 
         self.output_value_changed.emit()
 

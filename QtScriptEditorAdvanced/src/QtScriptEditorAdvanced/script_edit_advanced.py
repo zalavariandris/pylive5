@@ -207,9 +207,28 @@ class ScriptEditAdvanced(QPlainTextEdit):
                 cursor.MoveMode
                 return True
 
+            elif e.key() == Qt.Key.Key_Backspace:
+                if cursor.hasSelection():
+                    return super().eventFilter(o, e)
+                else:
+                    self.removePreviousIndentation()
+                    return True
+
         return super().eventFilter(o, e)
 
 
+    def removePreviousIndentation(self) -> None:
+        cursor = ScriptCursor(self.textCursor())
+        prefix: str = cursor.block().text()[:cursor.positionInBlock()]
+        if self.indentUsingSpaces() and not cursor.hasSelection() and prefix and not prefix.strip(" \t"):
+            tab_size: int = max(1, self.tabSize())
+            column: int = len(prefix.expandtabs(tab_size))
+            spaces: int = len(prefix) - len(prefix.rstrip(" "))
+            count: int = min((column - 1) % tab_size + 1, spaces)
+            if count:
+                cursor.movePosition(cursor.MoveOperation.Left, cursor.MoveMode.KeepAnchor, count)
+        cursor.deletePreviousChar()
+        self.setTextCursor(cursor)
 
 
 def main():
