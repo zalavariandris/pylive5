@@ -31,6 +31,8 @@
 
 - [ ] Fit node size to its content in the **DAGView**
 
+- [ ] **export** a runnable python script.
+
 ## Architecture
 NOTE: these might be outdated:
 - [ ] Investigate operator fingerprints in ScriptModuleRT. Re-executing a script
