@@ -9,8 +9,7 @@ from qtpy.QtCore import (
 
 from dataclasses import dataclass
 
-class MissingOperatorError(Exception):
-    pass
+
 
 import abc
 class AbstractOperator(abc.ABC):

@@ -66,7 +66,7 @@ def test_operator_function_change_invalidates_cache(cache):
     def func(a: int, b: int) -> int:
         return a * b
 
-    G._inline_module.update_operator(node.get_operator(), rt.FunctionOperator(func))
+    G._inline_module._update_operator(node.get_operator(), rt.FunctionOperator(func))
 
     result = G.execute(node)
     assert result == 12, "should compute 3 * 4 = 12 after swapping add to multiply"
@@ -90,7 +90,7 @@ def test_upstream_operator_function_change_invalidates_downstream_cache(cache):
     def subtract(a: int, b: int) -> int:
         return a - b
 
-    G._inline_module.update_operator(add_node.get_operator(), rt.FunctionOperator(subtract))
+    G._inline_module._update_operator(add_node.get_operator(), rt.FunctionOperator(subtract))
 
     result = G.execute(mult_node)
     assert result == -2, "should compute (3 - 4) * 2 = -2 after swapping add to subtract"
@@ -236,7 +236,7 @@ def test_removing_node_releases_its_cached_result(cache):
     result_ref = weakref.ref(G.execute(source))
     assert result_ref() is not None
 
-    G.remove_node(source)
+    G.delete_node(source)
     gc.collect()
     assert result_ref() is None
 
@@ -260,7 +260,7 @@ def test_shared_dependencies_do_not_repeat_fingerprinting(cache):
             return object.__hash__(self)
 
     add_op = G.op()(add)
-    G._inline_module.update_operator(add_op, CountedOperator(add))
+    G._inline_module._update_operator(add_op, CountedOperator(add))
     root = G.node(1, 1)(add_op)
     for _ in range(node_count - 1):
         root = G.node(root, root)(add_op)
@@ -365,12 +365,12 @@ def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
     assert G.execute(second) is second_result()
     assert calls == ["source", "source"]
 
-    G.remove_node(first)
+    G.delete_node(first)
     gc.collect()
     assert first_result() is None
     assert G.execute(second) is second_result()
     assert calls == ["source", "source"]
-    G.remove_node(second)
+    G.delete_node(second)
     gc.collect()
     assert second_result() is None
 
@@ -390,11 +390,11 @@ def test_operator_replacement_respects_cache_history_policy(cache):
 
     node = G.node(1)(original)
     original_data = rt.FunctionOperator(original)
-    G._inline_module.update_operator(node.get_operator(), original_data)
+    G._inline_module._update_operator(node.get_operator(), original_data)
     assert G.execute(node) == 2
-    G._inline_module.update_operator(node.get_operator(), rt.FunctionOperator(replacement))
+    G._inline_module._update_operator(node.get_operator(), rt.FunctionOperator(replacement))
     assert G.execute(node) == 3
-    G._inline_module.update_operator(node.get_operator(), original_data)
+    G._inline_module._update_operator(node.get_operator(), original_data)
     assert G.execute(node) == 2
     expected = ["original", "replacement"]
     if isinstance(cache, rt.MemoryCache):
@@ -530,7 +530,7 @@ def test_custom_operator_behavior_contributes_to_identity(cache):
 
     node = G.node(3)(original)
     assert G.execute(node) == 3
-    G._inline_module.update_operator(node.get_operator(), DoubledOperator(original))
+    G._inline_module._update_operator(node.get_operator(), DoubledOperator(original))
     assert G.execute(node) == 6
 
 

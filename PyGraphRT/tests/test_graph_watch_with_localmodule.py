@@ -39,14 +39,14 @@ def test_update_operator_triggers_watcher():
         tracker.append("change")
     watcher = rt.watch(G, output, callback)
 
-    G.inline().update_operator(output.get_operator(), lambda: 2)
+    G.inline()._update_operator(output.get_operator(), lambda: 2)
     assert len(tracker) == 1, "Watcher callback should be triggered when output operator is updated"
 
-    G.inline().update_operator(output.get_operator(), lambda: 3)
+    G.inline()._update_operator(output.get_operator(), lambda: 3)
     assert len(tracker) == 2, "Watcher callback should be triggered when output operator is updated"
 
     watcher.stop()
-    G.inline().update_operator(output.get_operator(), lambda: 4)
+    G.inline()._update_operator(output.get_operator(), lambda: 4)
     assert len(tracker) == 2, "Watcher callback should not be triggered after watcher is stopped"
 
 # def test_watch_node_changes():
@@ -131,7 +131,7 @@ def test_operator_removal_keeps_watcher_for_restoration():
     node = graph.node()(lambda: 1)
     changes = []
     watcher = rt.watch(graph, node, lambda: changes.append(True))
-    graph.inline().remove_operator(node.get_operator())
+    graph.inline().delete_operator(node.get_operator())
     assert watcher._running
     assert changes == [True]
     watcher.stop()
@@ -148,12 +148,12 @@ def test_unrelated_operator_update_and_watcher_restart():
     changes = []
     watcher = rt.watch(graph, node, lambda: changes.append(True))
     try:
-        graph.inline().update_operator(other.get_operator(), lambda: 2)
+        graph.inline()._update_operator(other.get_operator(), lambda: 2)
         assert changes == []
         watcher.stop()
         watcher.start()
         watcher.start()
-        graph.inline().update_operator(node.get_operator(), lambda: 3)
+        graph.inline()._update_operator(node.get_operator(), lambda: 3)
         assert changes == [True]
     finally:
         watcher.stop()

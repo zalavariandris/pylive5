@@ -14,13 +14,12 @@ from myutils.profiler import Profiler
 if TYPE_CHECKING:
     from .abstract_module_rt import AbstractOperator, OperatorRef
 
-from .inline_module import InlineModuleRT
+from .inline_module import InlineModuleRT, MissingOperatorError
 from .import_module import ImportModuleRT
 from .script_module import ScriptModuleRT
 from .graph_schema import validate_graph_data
 from .abstract_module_rt import OperatorRef
 from .abstract_module_rt import AbstractOperator
-from .abstract_module_rt import MissingOperatorError
 
 
 class NodeNameCollisionError(Exception):
@@ -364,32 +363,39 @@ class GraphRT(QObject):
 
     def node(self, *args: Value, **kwargs: Value) -> Callable[..., NodeRef]: # todo: consider using a protocol for better type checking
         def decorator(func: Callable | OperatorRef, name: str|None=None) -> NodeRef:
-            assert (callable(func) and hasattr(func, "__code__")) or isinstance(func, OperatorRef), f"func must be a callable function or an instance of OperatorRef, got:{func}"
-            # validate node inputs
+            assert (
+                isinstance(func, OperatorRef)
+                or (callable(func) and hasattr(func, "__code__"))
+            ), f"Expected a Python function or an OperatorRef, got: {func}"
+
             self._validate_inputs(*args, **kwargs)
 
-            # create operator
+            # Functions define named nodes; operator references create new uses.
+            if name is None:
+                if isinstance(func, OperatorRef):
+                    existing_names = [ref.get_name() for ref in self._nodes]
+                    name = UniqueNameGenerator(
+                        existing_names=existing_names,
+                    )(func.name)
+                else:
+                    name = func.__name__
+
+            # Reuse an operator reference or register the function.
             if isinstance(func, OperatorRef):
                 operator = func
             else:
-                operator = self.op()(func)
+                operator = self._inline_module.op()(func)
 
-            assert isinstance(operator, OperatorRef), f"operator must be an instance of OperatorRef, got: {operator}"
-
-            # create noderef
-            if name is None:
-                name = UniqueNameGenerator(
-                    existing_names=[ref._name for ref in self._nodes.keys()]
-                )(operator.name)
-
+            # Create or update the named node.
             node_ref = NodeRef(self, name)
-            if node_ref in self._nodes:
-                raise NodeNameCollisionError(f"Nodes must have unique names: {node_ref}.")
+            node_data = NodeData(operator, args, dict(kwargs))
 
-            # add node with data to the graph
-            node_data = NodeData(operator, args, kwargs)
-            self._nodes[node_ref] = node_data
-            self.nodes_added.emit([node_ref])
+            if node_ref in self._nodes:
+                self._update_node(node_ref, node_data)
+            else:
+                # Create the new node to the graph
+                self._nodes[node_ref] = node_data
+                self.nodes_added.emit([node_ref])
 
             return node_ref
         return decorator
@@ -400,7 +406,7 @@ class GraphRT(QObject):
         self._nodes[node_ref] = node_data
         self.nodes_changed.emit([node_ref])
 
-    def remove_node(self, node_ref: NodeRef) -> None:
+    def delete_node(self, node_ref: NodeRef) -> None:
         if node_ref not in self._nodes:
             raise MissingNodeError(f"Node {node_ref} does not exist in the graph.")
         

@@ -27,7 +27,7 @@ class TestNodeCollectionSignals():
         def my_node(x):
             return x * 2
 
-        G.remove_node(my_node)
+        G.delete_node(my_node)
         assert len(spy) == 1, "nodes_removed signal should have been emitted once"
         assert my_node in spy[0][0], "nodes_removed signal should contain the name of the removed node"
 
@@ -64,7 +64,7 @@ class TestOperatorCollectionSignals():
         def my_operator(x):
             return x * 2
 
-        G._inline_module.remove_operator(my_operator)
+        G._inline_module.delete_operator(my_operator)
         assert len(spy) == 1, "operators_removed signal should have been emitted once"
         assert my_operator in spy[0][0], "operators_removed signal should contain the name of the removed operator"
 
@@ -79,7 +79,7 @@ class TestOperatorCollectionSignals():
         def new_function(x):
             return x + 1
         
-        G._inline_module.update_operator(my_node.get_operator(), FunctionOperator(new_function))
+        G._inline_module._update_operator(my_node.get_operator(), FunctionOperator(new_function))
 
         assert len(spy) == 1, "operators_changed signal should have been emitted once"
         assert my_node.get_operator() in spy[0][0], "operators_changed signal should contain the name of the changed operator"

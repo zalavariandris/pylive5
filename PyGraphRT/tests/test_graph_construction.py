@@ -3,6 +3,8 @@ import pytest
 import pygraphrt as rt
 from textwrap import dedent
 
+from PyGraphRT.tests.test_graph_serialization import graph
+
 def test_node_decorator():
     G = rt.GraphRT()
     
@@ -73,7 +75,7 @@ def test_generated_node_names_avoid_explicit_names():
     assert second.get_name() == "identity_1"
     assert len(graph.nodes()) == 3
 
-class Test_RegressionTests:
+class Test_NodeAndOperatorDecorators_REGRESSION_TESTS:
     def test_duplicated_operator_raises_value_error(self):
         graph = rt.GraphRT()
         
@@ -137,6 +139,8 @@ class Test_RegressionTests:
         def identity(value):
             return value
 
+        assert len(graph.inline().operators()) == 1
+
         try:
             # Attempt to create a node with a duplicate name, which should raise an error
             graph.node(10)(identity, name="SAME")
@@ -145,7 +149,19 @@ class Test_RegressionTests:
             pass
 
         # Ensure that the operator was not added to the graph due to the error
-        assert len(graph.nodes()) == 0
+        assert len(graph.nodes()) == 1
+        assert len(graph.inline().operators()) == 1
+
+    def test_node_decorator_with_same_function(self):
+        graph = rt.GraphRT()
+
+        def hello():
+            return "hello"
+
+        graph.node(hello)
+        graph.node(hello)
+ 
+
 
 
 if __name__ == "__main__":

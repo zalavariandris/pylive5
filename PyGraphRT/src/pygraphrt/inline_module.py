@@ -3,7 +3,6 @@ from .abstract_module_rt import (
     AbstractModule,
     OperatorRef,
     ParameterData,
-    MissingOperatorError
 )
 from types import MappingProxyType
 from typing import Callable, Mapping, Any
@@ -15,11 +14,17 @@ if sys.version_info >= (3, 14):
 
 from qtpy.QtCore import QObject
 
+class OperatorExistsError(Exception):
+    """Raised when attempting to create an operator that already exists."""
+    pass
 
+class MissingOperatorError(Exception):
+    pass
 
 class FunctionOperator(AbstractOperator):
     def __init__(self, func:callable):
         super().__init__()
+        assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
         self._func = func
 
     def _signature(self):
@@ -64,36 +69,49 @@ class InlineModuleRT(AbstractModule):
 
         self._operators:dict[OperatorRef, FunctionOperator] = dict()
 
+    def operators(self) -> list[OperatorRef]:
+        return list(self._operators.keys())
+
     def op(self) -> Callable[[Callable], OperatorRef]:
         def decorator(func: Callable) -> OperatorRef:
             # assert that func is not simply a callable, but a function
-            assert callable(func), "func must be a callable function"
+            assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
             
             ref = OperatorRef(self, func.__name__)
+
             if ref in self._operators:
-                raise ValueError(f"Operators must have unique names: {ref}.")
-            
-            data = FunctionOperator(func)
-            self._operators[ref] = data
-            self.operators_added.emit([ref])
+                self._update_operator(ref, FunctionOperator(func))
+            else:
+                ref = self._create_operator(func)
+
             return ref
         return decorator
 
-    def operators(self) -> list[OperatorRef]:
-        return list(self._operators.keys())
+    def _create_operator(self, func: Callable) -> OperatorRef:
+        assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
+        ref = OperatorRef(self, func.__name__)
+
+        if ref in self._operators:
+            raise OperatorExistsError(f"Operator {ref} already exists.")
+        
+        data = FunctionOperator(func)
+        self._operators[ref] = data
+        self.operators_added.emit([ref])
+        return ref
+
+    def _update_operator(self, op_ref: OperatorRef, func: callable) -> None:
+        assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
+        # todo: consider renaming to set_op
+        if op_ref not in self._operators:
+            raise MissingOperatorError(f"Operator {op_ref} does not exist in the graph.")
+        self._operators[op_ref] = FunctionOperator(func)
+        self.operators_changed.emit([op_ref])
     
-    def remove_operator(self, op_ref: OperatorRef) -> None:
+    def delete_operator(self, op_ref: OperatorRef) -> None:
         if op_ref in self._operators:
             del self._operators[op_ref]
             # emit a signal or perform additional cleanup if necessary
             self.operators_removed.emit([op_ref])
-
-    def update_operator(self, op_ref: OperatorRef, op_data: AbstractOperator) -> None:
-        # todo: consider renaming to set_op
-        if op_ref not in self._operators:
-            raise MissingOperatorError(f"Operator {op_ref} does not exist in the graph.")
-        self._operators[op_ref] = op_data
-        self.operators_changed.emit([op_ref])
 
     def get_operator(self, ref: OperatorRef) -> AbstractOperator | None:
         return self._operators.get(ref, None)

@@ -159,7 +159,7 @@ class PyFlowRTModel(AbstractDAGModel):
             node_ref = self.getNode(node_name)
             assert node_ref is not None, f"Node '{node_name}' not found"
 
-            self._rt.remove_node(node_ref)
+            self._rt.delete_node(node_ref)
             self._positions.pop(node_name, None)
         self._endRemoveNodes()
 
