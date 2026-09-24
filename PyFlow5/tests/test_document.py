@@ -43,11 +43,9 @@ def test_user_flow(qtbot: QtBot) -> None:
         document.modulesmodel.SourceRole
     )
 
-    # Keep the index payload alive explicitly for this document test.
-    # This bypasses the tree model's temporary-pointer bug in index().
-    operator = next(iter(document._G.local().operators()))
-    hello_operator_index = document.modulesmodel.createIndex(0, 0, operator)
-    assert hello_operator_index.data(document.modulesmodel.OperatorRole) is operator
+    hello_operator_index = document.modulesmodel.index(0, 0, local_module_index)
+    operator = hello_operator_index.data(document.modulesmodel.OperatorRole)
+    assert isinstance(operator, OperatorRef)
     assert operator.get_name() == "hello"
     assert hello_operator_index.parent() == local_module_index
 

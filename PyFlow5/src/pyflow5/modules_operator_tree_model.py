@@ -1,277 +1,196 @@
-from dataclasses import dataclass, field
-from typing import Iterable
-
+from pygraphrt.abstract_module_rt import AbstractModule, OperatorRef
 from pygraphrt.graph_rt import GraphRT
 from pygraphrt.import_module import ImportModuleRT
-from qtpy.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal, Slot
-from pygraphrt.abstract_module_rt import AbstractModule, OperatorRef
 from pygraphrt.script_module import ScriptModuleRT
-
-
-# @dataclass(eq=False)
-# class _ModuleItem:
-#     module: AbstractModule
-#     operators: list["_OperatorItem"] = field(default_factory=list)
-
-
-# @dataclass(eq=False)
-# class _OperatorItem:
-#     ref: OperatorRef
-#     parent: _ModuleItem
+from qtpy.QtCore import QAbstractItemModel, QModelIndex, QObject, Qt
 
 
 class ModulesOperatorsTreeModel(QAbstractItemModel):
-    """One-column module/operator browser, observing externally owned modules.
+    """One-column tree reading modules and operators from a graph runtime.
 
-    Rows are snapshots: runtime notifications arrive after changes, so Qt's
-    begin/end calls bracket changes to these snapshots rather than the runtime.
-    Modules and this model must be used on the same Qt thread.
+    Module indexes have internal ID zero. Operator indexes store their parent
+    module's row plus one. Mapping helpers are conveniences for callers; Qt
+    overrides do not depend on them.
     """
 
-    scriptSaveFailed = Signal(str)
-
     ModuleRole = int(Qt.ItemDataRole.UserRole) + 1
-    OperatorRole = ModuleRole + 1
-    NameRole = OperatorRole + 1
-    SourceRole = NameRole + 1
+    OperatorRole = int(Qt.ItemDataRole.UserRole) + 2
+    SourceRole = int(Qt.ItemDataRole.UserRole) + 4
 
-    def __init__(self, parent=None)->None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._graph:GraphRT|None = None
+        self._graph: GraphRT | None = None
 
-    # RESET
-    def setGraph(self, graph:GraphRT|None):
-        """Observe the runtime's module collection instead of maintaining our own."""
+    def setGraph(self, graph: GraphRT | None) -> None:
+        """Replace the runtime used by this model."""
         self.beginResetModel()
         self._graph = graph
         self.endResetModel()
 
-    # READ
-    def columnCount(self, parent=QModelIndex()):
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 1
 
-    def index(self, row, column, parent=QModelIndex()):
+    def index(
+        self,
+        row: int,
+        column: int,
+        parent: QModelIndex = QModelIndex(),
+    ) -> QModelIndex:
         if not self.hasIndex(row, column, parent):
             return QModelIndex()
-        
-        if not parent.isValid():
-            # Modules
-            if row == 0:
-                # return the index for the first module
-                local_module = self._graph.local()
-                return self.createIndex(row, column, local_module)
-            
-            elif row < len(self._graph.imports())+1:
-                import_module = self._graph.imports()[row-1]
-                return self.createIndex(row, column, import_module)
-            
-        elif parent.isValid() and parent.model() is self:
-            # Operators
-            module = parent.internalPointer()
-            assert isinstance(module, AbstractModule)
-            operator = list(module.operators())[row]
-            return self.createIndex(row, column, operator)
-        
-        else:
+
+        module_id = parent.row() + 1 if parent.isValid() else 0
+        return self.createIndex(row, column, module_id)
+
+    def parent(self, child: QModelIndex) -> QModelIndex:  # type: ignore
+        if self._graph is None or not child.isValid():
+            return QModelIndex()
+        if child.model() is not self or child.column() != 0:
             return QModelIndex()
 
-    def mapFromSource(self, source: OperatorRef|AbstractModule)->QModelIndex:
-        if source == self._graph.local():
-            return self.index(0, 0, QModelIndex())
-        elif isinstance(source, AbstractModule):
-            imports = self._graph.imports()
-            assert source in imports, "Source module not found in imports"
-            operator_idx = list(imports).index(source)
-            return self.index(operator_idx+1, 0, QModelIndex())
-        elif isinstance(source, OperatorRef):
-            module = source.module
-            if module == self._graph.local():
-                module_idx = self.mapFromSource(self._graph.local())
-                operator_idx = list(self._graph.local().operators()).index(source)
-                return self.index(operator_idx, 0, module_idx)
-            else:
-                assert module in self._graph.imports(), "Source module not found in imports"
-                module_idx = self.mapFromSource(module)
-                operator_idx = list(module.operators()).index(source)
-                return self.index(operator_idx, 0, module_idx)
+        module_id = child.internalId()
+        if module_id == 0:
+            return QModelIndex()
 
-        return QModelIndex() 
+        return self.index(module_id - 1, 0)
 
-    def mapToSource(self, index: QModelIndex) -> OperatorRef|AbstractModule|None:
-        if not index.isValid() or index.model() is not self:
-            return None
-
-        ...
-
-    def rowCount(self, parent=QModelIndex()):
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         if self._graph is None:
             return 0
 
+        modules = self._graph.modules()
         if not parent.isValid():
-            # list of modules
-            local_module = self._graph.local()
-            imports = self._graph.imports()
-            return len(imports) + 1
-        
-        elif parent.isValid() and parent.model() is self:
-            # list of operators within the module
-            module = parent.internalPointer()
-            assert isinstance(module, AbstractModule)
-            return len(list(module.operators()))
-        else:
+            return len(modules)
+
+        if parent.model() is not self or parent.column() != 0:
+            return 0
+        if parent.internalId() != 0:
             return 0
 
-    def parent(self, child:QModelIndex)->QModelIndex: # type: ignore
-        if self._graph is None:
-            return QModelIndex()
-        
-        if not child.isValid() or child.model() is not self:
-            return QModelIndex()
-        
-        data = child.internalPointer()
-        if isinstance(data, AbstractModule):
-            # A module has no parent in this tree
-            return QModelIndex()
-        
-        elif isinstance(data, OperatorRef):
-            # find the parent module of the operator
-            op = data
-            module = op.module
-            if module is not None:
-                if module is self._graph.local():
-                    row = 0
-                    return self.createIndex(0, 0, module)
-                else:
-                    idx = list(self._graph.imports()).index(module)
-                    return self.createIndex(idx+1, 0, module)
-            else:
-                return QModelIndex()
-        else:
-            return QModelIndex()
-            
-    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        if not index.isValid() or index.model() is not self:
+        module_row = parent.row()
+        if not 0 <= module_row < len(modules):
+            return 0
+
+        return len(list(modules[module_row].operators()))
+    
+    def data(
+        self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole
+    ) -> object | None:
+        if self._graph is None or not index.isValid():
             return None
-        data = index.internalPointer()
+        if index.model() is not self or index.column() != 0:
+            return None
 
-        match data:
-            case AbstractModule() as module:
-                match role:
-                    case self.ModuleRole:
-                        return module
-                    
-                    case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
-                        return module.get_name()
-                    
-                    case self.SourceRole:
-                        return module.get_script()
-                    
-                    case _:
-                        return None
-                    
-            case OperatorRef() as operator_ref:
-                match role:
-                    case self.OperatorRole:
-                        return operator_ref
+        modules = self._graph.modules()
+        module_id = index.internalId()
+        module_row = index.row() if module_id == 0 else module_id - 1
+        if not 0 <= module_row < len(modules):
+            return None
 
-                    case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
-                        return operator_ref.get_name()
-                    
-                    case _:
-                        return None
-            case _:
+        item: AbstractModule | OperatorRef = modules[module_row]
+        if module_id != 0:
+            operators = list(item.operators())
+            if not 0 <= index.row() < len(operators):
                 return None
+            item = operators[index.row()]
 
-    def flags(self, index:QModelIndex):
-        if not index.isValid() or index.model() is not self:
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
+            return item.get_name()
+        if role == self.ModuleRole and isinstance(item, AbstractModule):
+            return item
+        if role == self.OperatorRole and isinstance(item, OperatorRef):
+            return item
+        if role == self.SourceRole and isinstance(item, ScriptModuleRT):
+            return item.get_script()
+        return None
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
+        if (
+            self.data(index, self.ModuleRole) is None
+            and self.data(index, self.OperatorRole) is None
+        ):
             return Qt.ItemFlag.NoItemFlags
+        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
-        data = index.internalPointer()
-        match data:
-            case OperatorRef():
-                return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-            
-            case AbstractModule():
-                return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-            
-            case _:
-                return Qt.ItemFlag.NoItemFlags
-
-    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
-        if section == 0 and orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ) -> str | None:
+        if (
+            section == 0
+            and orientation == Qt.Orientation.Horizontal
+            and role == Qt.ItemDataRole.DisplayRole
+        ):
             return "Modules and operators"
         return None
 
-    # CREATE
+    def setData(
+        self,
+        index: QModelIndex,
+        value: object,
+        role: int = Qt.ItemDataRole.EditRole,
+    ) -> bool:
+        if role != self.SourceRole or not isinstance(value, str):
+            return False
+
+        module = self.data(index, self.ModuleRole)
+        if not isinstance(module, ScriptModuleRT):
+            return False
+
+        module.set_script(value)
+        return True
+
     def importModule(self, file_path: str) -> None:
         assert self._graph is not None, "Graph must be initialized before importing a module."
-        self.rowCount()
-        self.beginInsertRows(QModelIndex(), self.rowCount(), self.rowCount())
-        import_module = ImportModuleRT(file_path)
-        self._graph.add_import(import_module)
+        module = ImportModuleRT(file_path)
+        row = self.rowCount()
+        self.beginInsertRows(QModelIndex(), row, row)
+        self._graph.add_import(module)
         self.endInsertRows()
 
-    # UPDATE
-    def setData(self, index:QModelIndex, value, role=Qt.ItemDataRole.EditRole):
-        if not index.isValid() or index.model() is not self:
-            return False
-        data = index.internalPointer()
-
-        match data:
-            case AbstractModule() as module:
-                match role:
-                    case Qt.ItemDataRole.EditRole:
-                        print("cant set module name")
-                        return False
-                    case self.SourceRole:
-                        module.set_script(value)
-                        return True
-                    case _:
-                        return False
-                    
-            case OperatorRef() as operator_ref:
-                return False
-            case _:
-                return False
-    
-    # DELETE
-    def removeModule(self, index:QModelIndex)->bool:
+    def removeModule(self, index: QModelIndex) -> bool:
         if self._graph is None:
             return False
 
-        data = index.internalPointer()
-
-        if isinstance(data, AbstractModule):
-            row = index.row()
-            if row == 0:
-                print("cant remove definition module")
-                return False
-            
-            self.beginRemoveRows(QModelIndex(), row, row)
-            module = data
-            self._graph.remove_import(module)
-            self.endRemoveRows()
-            return True
-        else:
+        module = self.data(index, self.ModuleRole)
+        if not isinstance(module, ImportModuleRT):
             return False
 
-    # SYNC Data on change
-    def _getModule(self, index):
-        if not index.isValid() or index.model() is not self:
-            return None
-        
-        data = index.internalPointer()
-        if isinstance(data, AbstractModule):
-            return data
-        return None
+        row = index.row()
+        self.beginRemoveRows(QModelIndex(), row, row)
+        self._graph.remove_import(module)
+        self.endRemoveRows()
+        return True
 
-    def _getOperator(self, index):
-        if not index.isValid() or index.model() is not self:
-            return None
-        
-        data = index.internalPointer()
-        if isinstance(data, OperatorRef):
-            return data
-        
-        return None
-    
+    def mapToSource(
+        self, index: QModelIndex
+    ) -> AbstractModule | OperatorRef | None:
+        item = self.data(index, self.ModuleRole)
+        if item is None:
+            item = self.data(index, self.OperatorRole)
+        return item if isinstance(item, (AbstractModule, OperatorRef)) else None
+
+    def mapFromSource(
+        self, source: AbstractModule | OperatorRef
+    ) -> QModelIndex:
+        if self._graph is None:
+            return QModelIndex()
+
+        module = source.module if isinstance(source, OperatorRef) else source
+        try:
+            module_row = self._graph.modules().index(module)
+        except ValueError:
+            return QModelIndex()
+
+        module_index = self.index(module_row, 0)
+        if isinstance(source, AbstractModule):
+            return module_index
+
+        try:
+            operator_row = list(module.operators()).index(source)
+        except ValueError:
+            return QModelIndex()
+
+        return self.index(operator_row, 0, module_index)

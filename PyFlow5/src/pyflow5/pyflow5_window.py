@@ -142,9 +142,6 @@ class ModuleDetailsView(QWidget):
         return self._selection_model
 
     def _on_editor_text_changed(self):
-        if not self._current.isValid():
-            return
-
         current = self._selection_model.currentIndex()
         if not current.isValid():
             return
