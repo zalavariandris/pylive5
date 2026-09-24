@@ -14,6 +14,7 @@ from qtpy.QtCore import (
 )
 
 from qtpy.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QCheckBox,
     QFileDialog,
@@ -118,18 +119,24 @@ class ModuleDetailsView(QWidget):
         self._model = model
 
     def setSelectionModel(self, selection_model: QItemSelectionModel|None):
+        prev_current = QModelIndex()
         if self._selection_model:
             for signal, slot in self._selection_connections:
                 signal.disconnect(slot)
             self._selection_connections.clear()
+            prev_current = self._selection_model.currentIndex()
 
+        next_current = QModelIndex()
         if selection_model:
             self._selection_connections = [
-                (selection_model.currentChanged, self._on_current_changed)
+                (selection_model.currentChanged, self._on_current_changed),
+                (selection_model.selectionChanged, self._on_selection_changed)
             ]
             for signal, slot in self._selection_connections:
                 signal.connect(slot)
+            next_current = selection_model.currentIndex()
         self._selection_model = selection_model
+        self._on_current_changed(next_current, prev_current)
 
     def selectionModel(self):
         return self._selection_model
@@ -145,15 +152,27 @@ class ModuleDetailsView(QWidget):
         new_text = self._code_editor.toPlainText()
         self._model.setData(current, new_text, ModulesOperatorsTreeModel.SourceRole)
 
-    def _on_current_changed(self, current: QModelIndex, previous: QModelIndex)->bool:
+    def _on_current_changed(self, current: QModelIndex, previous: QModelIndex):
         if self._model is None:
-            return False
+            return
+        
+        index = self._selection_model.currentIndex()
+        self._show_index(index)
 
-        if current.isValid() and current.model() == self._model:
-            
-            self._title_label.setText(current.data(Qt.ItemDataRole.DisplayRole))
+    def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
+        if self._model is None:
+            return
+        
+        last_selected = selected.indexes()[-1] if selected.indexes() else QModelIndex()
+        
+        self._show_index(last_selected)
+        return True
+        
+    def _show_index(self, index: QModelIndex):
+        if index.isValid() and index.model() == self._model:
+            self._title_label.setText(index.data(Qt.ItemDataRole.DisplayRole))
             with myqtx.blockingSignals(self._code_editor):
-                text = current.data(ModulesOperatorsTreeModel.SourceRole)
+                text = index.data(ModulesOperatorsTreeModel.SourceRole)
                 self._code_editor.setPlainText(text)
                 self._code_editor.setEnabled(True)
         else:
@@ -223,10 +242,11 @@ class PyFlow5Window(QMainWindow):
         # - Setup modules view -
         self._module_list_view = QListView(self)
         self._module_list_view.setModel(self._document.modulesmodel)
+        self._module_list_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         module_selection_model = QItemSelectionModel(self._document.modulesmodel)
         self._module_list_view.setSelectionModel(module_selection_model)
 
-        # - Setup modules view -
+        # - Setup modules details view -
         self._module_details_view = ModuleDetailsView(self)
         self._module_details_view.setModel(self._document.modulesmodel)
         self._module_details_view.setSelectionModel(module_selection_model)

@@ -3,7 +3,7 @@ from typing import *
 from qtpy.QtCore import Qt, QEvent
 from qtpy.QtGui import QColor, QContextMenuEvent, QKeyEvent, QPalette, QFont, QTextOption
 from qtpy.QtWidgets import QMenu, QPlainTextEdit, QAction
-import re
+from qtpy.QtWidgets import QGraphicsOpacityEffect
 
 # components
 from .components.pygments_syntax_highlighter import PygmentsSyntaxHighlighter
@@ -80,12 +80,25 @@ class ScriptEditAdvanced(QPlainTextEdit):
         ### Edit Numbers ###
         self.number_editor = TextEditNumberEditor(self)
 
+        ### dim effect ###
+        self._dim_effect = QGraphicsOpacityEffect(self)
+        self._dim_effect.setOpacity(0.75)
+        self._dim_effect.setEnabled(not self.isEnabled())
+        self.setGraphicsEffect(self._dim_effect)
+
     # def sizeHint(self) -> QSize:
     #     width = self.fontMetrics().horizontalAdvance('O') * 70
     #     return QSize(width, int(width*8/7))
 
-    def contextMenuEvent(self, e: QContextMenuEvent|None):
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
 
+        if event.type() == QEvent.Type.EnabledChange:
+            effect = self.graphicsEffect()
+            if effect is not None:
+                effect.setEnabled(not self.isEnabled())
+
+    def contextMenuEvent(self, e: QContextMenuEvent|None):
         edit_menu = QMenu("Edit", self)
         edit_menu.addAction("Toggle Comment", lambda: self.toggleComment())
         edit_menu.addSeparator()

@@ -333,8 +333,8 @@ def test_changes_to_unrelated_branch_do_not_invalidate_cached_root(cache):
         calls.append(value)
         return value
 
-    first = G.node(1)(source)
-    second = G.node(2)(source)
+    first =  G.node(1)(source, name="first")
+    second = G.node(2)(source, name="second")
     assert G.execute(first) == 1
     assert G.execute(second) == 2
     second.set_inputs(3)
@@ -356,8 +356,8 @@ def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
         calls.append("source")
         return Result()
 
-    first = G.node()(source)
-    second = G.node()(source)
+    first =  G.node()(source, name="first")
+    second = G.node()(source, name="second")
     first_result = weakref.ref(G.execute(first))
     second_result = weakref.ref(G.execute(second))
     assert first_result() is not second_result()
@@ -542,7 +542,7 @@ def test_equivalent_nodes_do_not_share_results_in_one_execution(cache):
     def source():
         return []
 
-    first = G.node()(source)
+    first =  G.node()(source)
     second = G.node()(source)
 
     @G.node(first, second)

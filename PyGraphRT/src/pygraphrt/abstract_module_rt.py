@@ -56,6 +56,10 @@ class OperatorRef:
     def __hash__(self):
         return hash((self.module, self.name))
 
+    def __call__(self, *args, **kwargs):
+        value = self.get_value()
+        return value(*args, **kwargs)
+
     def get_name(self) -> str:
         return self.name
 

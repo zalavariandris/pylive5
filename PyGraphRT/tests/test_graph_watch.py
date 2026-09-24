@@ -16,8 +16,8 @@ def test_restarted_watcher_tracks_rewired_dependencies(
     old_module.set_script(source)
     new_module = ScriptModuleRT("new")
     new_module.set_script(source)
-    old_node = graph.node(1)(OperatorRef(old_module, "source"))
-    new_node = graph.node(2)(OperatorRef(new_module, "source"))
+    old_node = graph.node(1)(OperatorRef(old_module, "source"), name="old_node")
+    new_node = graph.node(2)(OperatorRef(new_module, "source"), name="new_node")
 
     @graph.node(old_node)
     def output(value: int) -> int:

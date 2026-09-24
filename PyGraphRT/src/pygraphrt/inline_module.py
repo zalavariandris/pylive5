@@ -1,3 +1,5 @@
+from pytools import UniqueNameGenerator
+
 from .abstract_module_rt import (
     AbstractOperator,
     AbstractModule,
@@ -78,7 +80,6 @@ class InlineModuleRT(AbstractModule):
             assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
             
             ref = OperatorRef(self, func.__name__)
-
             if ref in self._operators:
                 self._update_operator(ref, func)
             else:
@@ -89,17 +90,19 @@ class InlineModuleRT(AbstractModule):
 
     def _create_operator(self, func: Callable) -> OperatorRef:
         assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
-        ref = OperatorRef(self, func.__name__)
-
-        if ref in self._operators:
-            raise OperatorExistsError(f"Operator {ref} already exists.")
+        name = func.__name__
+        existing_names = {ref.get_name() for ref in self._operators.keys()}
+        if name in existing_names:
+            name = UniqueNameGenerator(existing_names)(name)
+        ref = OperatorRef(self, name)
         
         data = FunctionOperator(func)
         self._operators[ref] = data
         self.operators_added.emit([ref])
         return ref
 
-    def _update_operator(self, op_ref: OperatorRef, func: callable) -> None:
+    def _update_operator(self, op_ref: OperatorRef, func: Callable) -> None:
+        assert isinstance(op_ref, OperatorRef), "op_ref must be an instance of OperatorRef"
         assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
         # todo: consider renaming to set_op
         if op_ref not in self._operators:
@@ -108,10 +111,11 @@ class InlineModuleRT(AbstractModule):
         self.operators_changed.emit([op_ref])
     
     def delete_operator(self, op_ref: OperatorRef) -> None:
-        if op_ref in self._operators:
-            del self._operators[op_ref]
-            # emit a signal or perform additional cleanup if necessary
-            self.operators_removed.emit([op_ref])
+        if op_ref not in self._operators:
+            raise MissingOperatorError(f"Operator {op_ref} does not exist in the graph.")
+        del self._operators[op_ref]
+        # emit a signal or perform additional cleanup if necessary
+        self.operators_removed.emit([op_ref])
 
     def get_operator(self, ref: OperatorRef) -> AbstractOperator | None:
         if ref not in self._operators:

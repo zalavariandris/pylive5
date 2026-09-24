@@ -29,7 +29,6 @@ class PyFlowDocument(QObject):
         self.modulesmodel = ModulesOperatorsTreeModel(parent=self)
         self.modulesmodel.setGraph(self._G)
 
-
         self.operatorselectionmodel = QItemSelectionModel(self.modulesmodel)
         self.graphselectionmodel = GraphSelectionModel(self.graphmodel)
         self.graphdetailsmodel = GraphDetailsModel(self.graphmodel, self)

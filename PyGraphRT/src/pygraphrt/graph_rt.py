@@ -1,6 +1,7 @@
 from collections import deque, defaultdict
-from typing import TYPE_CHECKING, Any, Callable, Hashable, Callable, Any, Hashable, Iterable
-from dataclasses import dataclass
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Callable, Hashable, Callable, Any, Hashable, Iterable, Mapping
+from dataclasses import dataclass, field
 
 from qtpy.QtCore import (
     QObject, 
@@ -24,6 +25,9 @@ class NodeNameCollisionError(Exception):
     pass
 
 class OperatorNameCollisionError(Exception):
+    pass
+
+class DuplicateNodeError(Exception):
     pass
 
 @dataclass(frozen=True)
@@ -111,9 +115,10 @@ class NodeRef:
     def __repr__(self):
         return f"NodeRef('{self._name}')"
 
-    def __call__(self, *args, **kwargs) -> Any:
+    def __call__(self) -> Any:
         if operator_data:=self.get_operator().get_value():
-            return operator_data(*args, **kwargs)
+            data = self.get_value()
+            return operator_data(*data.args, **data.kwargs)
         else:
             raise MissingOperatorError(f"Operator {self.get_operator()} is missing from the graph")
         
@@ -139,8 +144,8 @@ class NodeRef:
     def set_inputs(self, *args, **kwargs) -> None:
         prev_data = self.get_value()
         self._graph._validate_inputs(*args, **kwargs)
-        next_data = NodeData(prev_data.get_operator(), args, dict(kwargs))
-        self._graph._update_node(self, next_data)
+        # next_data = NodeData(, args, dict(kwargs))
+        self._graph._update_node(self, prev_data.get_operator(), args, kwargs)
 
     def get_inputs(self) -> tuple[tuple[Value], dict[str, Value]]:
         node_data = self.get_value()
@@ -152,20 +157,19 @@ type Value = NodeRef | LiteralValue
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
 class NodeData:
     operator: OperatorRef
-    args: tuple[Value, ...]
-    kwargs: dict[str, Value]
+    args: tuple[Value, ...] = tuple()
+    kwargs: MappingProxyType[str, Value] = MappingProxyType({})
 
-    def get_inputs(self)->Iterable[tuple[tuple[Value, ...], dict[str, Value]]]:
-        return tuple(self.args), {
+    def get_inputs(self)->Iterable[tuple[tuple[Value, ...], MappingProxyType[str, Value]]]:
+        return tuple(self.args), MappingProxyType({
             k: v for k, v in self.kwargs.items()
-        } # todo: create a view
+        }) # todo: create a view
 
     def get_operator(self) -> OperatorRef:
         return self.operator
 
     def __call__(self, *args, **kwargs) -> Any:
         raise NotImplementedError("__call__ is not implemented for NodeRef")
-    
 
 
 class MissingNodeError(Exception):
@@ -379,23 +383,48 @@ class GraphRT(QObject):
 
             # Create or update the named node.
             node_ref = NodeRef(self, name)
-            node_data = NodeData(operator, args, dict(kwargs))
-
             if node_ref in self._nodes:
-                self._update_node(node_ref, node_data)
+                self._update_node(node_ref, operator, args, dict(kwargs))
             else:
-                # Create the new node to the graph
-                self._nodes[node_ref] = node_data
-                self.nodes_added.emit([node_ref])
+                node_ref = self._create_node(operator, args, dict(kwargs))
 
             return node_ref
+
         return decorator
 
-    def _update_node(self, node_ref: NodeRef, node_data: NodeData) -> None:
+    def _create_node(self, operator:OperatorRef|None=None, args: Iterable=(), kwargs: Mapping={}) -> NodeRef: 
+        assert isinstance(operator, OperatorRef) or operator is None, f"Expected an OperatorRef or None, got: {operator}"
+        # derive name from the operator
+        if isinstance(operator, OperatorRef):
+            name = operator.get_name()
+        else:
+            name = "node"
+
+        # ensure the node name is unique within the graph
+        existing_names = {node.get_name() for node in self._nodes.keys()}
+        if name in existing_names:
+            from pytools import UniqueNameGenerator
+            name = UniqueNameGenerator(existing_names)(name)
+
+        # create the node and store its data
+        node_ref = NodeRef(self, name)
+        node_data = NodeData(operator, tuple(args), MappingProxyType(kwargs))
+        self._nodes[node_ref] = node_data
+        self.nodes_added.emit([node_ref])
+        return node_ref
+
+    def _update_node(self, node_ref: NodeRef, op:OperatorRef, args: tuple, kwargs: dict) -> None:
         if node_ref not in self._nodes:
             raise MissingNodeError(f"Node {node_ref} does not exist in the graph.")
+        node_data = NodeData(op, args, dict(kwargs))
         self._nodes[node_ref] = node_data
         self.nodes_changed.emit([node_ref])
+
+    def _set_node(self, node_ref: NodeRef, node_data: NodeData) -> None:
+        if node_ref in self._nodes:
+            self._update_node(node_ref, node_data)
+        else:
+            self._create_node(node_data)
 
     def delete_node(self, node_ref: NodeRef) -> None:
         if node_ref not in self._nodes:

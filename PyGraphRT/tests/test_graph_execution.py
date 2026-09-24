@@ -3,6 +3,7 @@ import pygraphrt as rt
 from textwrap import dedent
 
 def test_operator_decorator():
+    # todo: consider moving this to the InlineModule tests
     graph = rt.GraphRT()
     
     @graph.op()
@@ -13,9 +14,9 @@ def test_operator_decorator():
     def mult(a:int, b:int) -> int:
         return a * b
 
-    add_node2 = graph.node(1,1)(add)
-    add_node3 = graph.node(3,5)(add)
-    mult_node = graph.node(add_node2, add_node3)(mult)
+    add_node2 = graph._create_node(add, [1,1])
+    add_node3 = graph._create_node(add, [3,5])
+    mult_node = graph._create_node(mult, [add_node2, add_node3])
 
     result = graph.execute(mult_node)
     assert result == 16, "Decorator should create an operator that computes (1 + 1) * (3 + 5) = 48"

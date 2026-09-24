@@ -33,8 +33,9 @@ def test_node_decorator_with_inputs():
     result = G.execute(n1)
     assert result == 3, "Node should compute 1 + 2 = 3"
 
-
-def test_nodes_sharing_operator_have_unique_names():
+def test_nodes_sharing_operators_are_unique():
+    # todo: I think this test is redundant now. 
+    #   NodeRef creation equality (is tested with CRUDtests), and execution should be tested seperatelly
     graph = rt.GraphRT()
 
     @graph.node()
@@ -42,7 +43,7 @@ def test_nodes_sharing_operator_have_unique_names():
         return value
 
     node_duplicates = [
-        graph.node(val)(identity.get_operator()) 
+        graph._create_node(identity.get_operator(), [val])
         for val in range(3)
     ]
 
@@ -60,7 +61,10 @@ def test_nodes_sharing_operator_have_unique_names():
         for node in node_duplicates
     ] == [0, 1, 2]
 
+@pytest.mark.xfail(reason="Specifying names are deprecated. At some point we might add it back")
 def test_generated_node_names_avoid_explicit_names():
+    # todo: consider manually specifying ndoe names especially for the UI.
+    #   keeping a unique name accross the nodes makes the Serialization human readable, which is desired.
     graph = rt.GraphRT()
 
     @graph._inline_module.op()

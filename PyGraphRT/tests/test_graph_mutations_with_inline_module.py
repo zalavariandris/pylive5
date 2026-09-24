@@ -159,7 +159,7 @@ def test_setting_output():
     result = G.execute(add)
     assert result == 5, "Node should compute 2 + 3 = 5"
 
-class TestUpdatingOperatorFunction:
+class TestUpdatingNodesOperator:
     def test_update_operator_body(self):
         G = rt.GraphRT()
 
@@ -174,7 +174,7 @@ class TestUpdatingOperatorFunction:
         def add(a:int, b:int) -> int:
             return a + b + 1
 
-        G._inline_module._update_operator(the_node.get_operator(), rt.FunctionOperator(add))
+        G._inline_module._update_operator(the_node.get_operator(), add)
 
         result = G.execute(the_node)
         assert result == 4, "Node should compute 1 + 2 + 1 = 4 after updating operator body"
@@ -193,7 +193,7 @@ class TestUpdatingOperatorFunction:
         def add_three(a:int, b:int, c:int) -> int:
             return a + b + c
 
-        G._inline_module._update_operator(the_node.get_operator(), rt.FunctionOperator(add_three))
+        G._inline_module._update_operator(the_node.get_operator(), add_three)
 
         with pytest.raises(TypeError):
             result = G.execute(the_node)
@@ -219,7 +219,7 @@ class TestUpdatingOperatorFunction:
         def divide(a:int, b:int) -> int:
             return a / b
 
-        G._inline_module._update_operator(mult_op, rt.FunctionOperator(divide))
+        G._inline_module._update_operator(mult_op, divide)
 
         result = G.execute(mult_node)
         assert result == 1, "Node should compute (1 + 2) / 3 = 1 after changing add to divide"
