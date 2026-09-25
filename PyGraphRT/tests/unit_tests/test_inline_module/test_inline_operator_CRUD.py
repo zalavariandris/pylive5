@@ -40,6 +40,7 @@ class Test_CreateOp:
         assert op1() == "LAMBDA1"
         assert op2() == "LAMBDA2"
 
+
 class Test_UpdateOp:
     def test_update_existing_operator(self, im):
         def hello():

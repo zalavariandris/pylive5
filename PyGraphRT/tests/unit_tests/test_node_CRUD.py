@@ -37,13 +37,19 @@ def graph(request: pytest.FixtureRequest) -> rt.GraphRT:
 def hello_node(hello_operator, graph: rt.GraphRT) -> rt.NodeRef:
     return graph._create_node(hello_operator)
 
-def execute_node(node: rt.NodeRef) -> None:
+
+def _execute_node(node: rt.NodeRef) -> None:
     """helper function to execute a node and return its result
     we keep this helper in case node execution api changes in the future."""
     return node()
 
 
+
 class Test_CreateNode:
+    def test_create_node_without_op(self, graph: rt.GraphRT) -> None:
+        node_ref = graph._create_node()
+        assert node_ref in graph.nodes()
+
     def test_create_node_with_op(self, graph: rt.GraphRT) -> None:
         im = InlineModuleRT()
         op = im._create_operator(lambda x: x)
@@ -69,6 +75,10 @@ class Test_CreateNode:
         with pytest.raises(AssertionError):
             graph._create_node(func)
 
+    @pytest.mark.skip(reason="not yet implemented")
+    def test_clear_node(self, graph: rt.GraphRT) -> None:
+        ...
+
 class Test_UpdateNode:
     def test_update_node_operator(self) -> None:
         graph = rt.GraphRT()
@@ -78,7 +88,7 @@ class Test_UpdateNode:
         op = im._create_operator(lambda: "Hello")
         graph._update_node(node, op, [], {})
 
-        assert execute_node(node) == "Hello"
+        assert _execute_node(node) == "Hello"
 
     def test_update_node_args(self) -> None:
         graph = rt.GraphRT()
@@ -90,7 +100,7 @@ class Test_UpdateNode:
         op = im._create_operator(func)
         graph._update_node(node, op, [42], {})
 
-        assert execute_node(node) == 42
+        assert _execute_node(node) == 42
 
     def test_update_node_kwargs(self) -> None:
         graph = rt.GraphRT()
@@ -102,4 +112,14 @@ class Test_UpdateNode:
         op = im._create_operator(func)
         graph._update_node(node, op, [1], {"y": 2})
 
-        assert execute_node(node) == 3
+        assert _execute_node(node) == 3
+
+
+class Test_DeleteNode:
+    def test_delete_node(self) -> None:
+        graph = rt.GraphRT()
+        node = graph._create_node()
+        assert node in graph.nodes()
+
+        graph._delete_node(node)
+        assert node not in graph.nodes()

@@ -42,8 +42,6 @@ def test_read_operator_parameter_objects_details():
     actual_parameters = list(op.get_parameters().values())
     assert actual_parameters == expected_parameters, f"Expected {expected_parameters}, but got {actual_parameters}"
 
-
-
 def test_function_operator_signatures():
     # todo: test multuple signatures, including return types.
     G = GraphRT()

@@ -236,7 +236,7 @@ def test_removing_node_releases_its_cached_result(cache):
     result_ref = weakref.ref(G.execute(source))
     assert result_ref() is not None
 
-    G.delete_node(source)
+    G._delete_node(source)
     gc.collect()
     assert result_ref() is None
 
@@ -365,12 +365,12 @@ def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
     assert G.execute(second) is second_result()
     assert calls == ["source", "source"]
 
-    G.delete_node(first)
+    G._delete_node(first)
     gc.collect()
     assert first_result() is None
     assert G.execute(second) is second_result()
     assert calls == ["source", "source"]
-    G.delete_node(second)
+    G._delete_node(second)
     gc.collect()
     assert second_result() is None
 

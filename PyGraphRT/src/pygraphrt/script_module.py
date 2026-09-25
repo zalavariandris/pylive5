@@ -14,16 +14,8 @@ from .inline_module import FunctionOperator
 
 from .abstract_module_rt import AbstractModule
 
-class RTModuleError(Exception):
-    """Custom exception for runtime module errors."""
-
-
-class ScriptEvaluationError(RTModuleError):
-    """The script could not be compiled, executed, or inspected."""
-
-    def __init__(self, error: Exception) -> None:
-        super().__init__(str(error))
-        self.error: Exception = error
+from .errors import ModuleError, ScriptSyntaxError
+from .errors import ScriptEvaluationError
 
 
 def _get_all_callables_from_script(
@@ -42,30 +34,32 @@ def _get_all_callables_from_script(
     Raises:
         ScriptEvaluationError: If the script cannot be compiled or executed.
     """
-    
+
     module = ModuleType(name)
     module.__package__ = ""
     namespace: dict[str, Any] = module.__dict__
     try:
         code = compile(script, f"<script:{name}>", "exec")
         exec(code, namespace)
+    except SyntaxError as error:
+        raise ScriptSyntaxError(str(error)) from error
     except Exception as error:
-        raise ScriptEvaluationError(error) from error
+        raise ScriptEvaluationError(str(error)) from error
 
     # if __all__ export names is present, validate it before using
     _export_names: set[str] = set()
     if "__all__" in namespace:
         names_in_all = namespace["__all__"]
         if type(names_in_all) not in (list, tuple):
-            raise ScriptEvaluationError(TypeError("__all__ must be a list or tuple of strings"))
+            raise ScriptEvaluationError("__all__ must be a list or tuple of strings")
         
         for key in names_in_all:
             if type(key) is not str:
-                raise ScriptEvaluationError(TypeError("__all__ entries must be strings"))
+                raise ScriptEvaluationError("__all__ entries must be strings")
 
         for key in names_in_all:
             if key not in namespace:
-                raise ScriptEvaluationError(AttributeError(f"__all__ references undefined name {key!r}"))
+                raise ScriptEvaluationError(f"__all__ references undefined name {key!r}")
         _export_names = set(names_in_all)
 
     def is_exported(item: tuple[str, Any]) -> bool:
@@ -141,6 +135,9 @@ class ScriptModuleRT(AbstractModule):
         except ScriptEvaluationError as error:
             new_state = error.error
             new_functions = {}
+        except ModuleError as error:
+            new_state = error
+            new_functions = {}
         else:
             new_state = "VALID"
 
@@ -186,5 +183,12 @@ class ScriptModuleRT(AbstractModule):
             for k in self._operators_cache.keys()
         ] # todo: use a dictionary view (or a frozendict) instead of a copy
 
-    def get_operator(self, ref: OperatorRef) -> AbstractOperator | None:
-        return self._operators_cache.get(ref.name, None)
+    def get_operator(self, ref: OperatorRef, default=None) -> AbstractOperator | None:
+        return self._operators_cache.get(ref.name, default)
+
+    def __getitem__(self, key: OperatorRef) -> AbstractOperator:
+        try:
+            return self._operators_cache[key.name]
+        except KeyError as err:
+            raise ModuleError(f"Operator {key.name!r} not found", self) from err
+        

@@ -28,7 +28,7 @@ class TestNodeCollectionSignals():
         def my_node(x):
             return x * 2
 
-        G.delete_node(my_node)
+        G._delete_node(my_node)
         assert len(spy) == 1, "nodes_removed signal should have been emitted once"
         assert my_node in spy[0][0], "nodes_removed signal should contain the name of the removed node"
 

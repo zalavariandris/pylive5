@@ -1,10 +1,9 @@
 from pathlib import Path
 from qtpy.QtCore import QObject
-from .script_module import RTModuleError
 from .script_module import ScriptModuleRT
 
-class ImportModuleRTError(RTModuleError):
-    """Custom exception for import module errors."""
+from .errors import ModuleError, ImportModuleNotFoundError
+
 
 class ImportModuleRT(ScriptModuleRT):
     """A script module whose edits are written back to its source file."""
@@ -22,13 +21,22 @@ class ImportModuleRT(ScriptModuleRT):
 
     def save_file(self) -> None:
         """Save the current script to the source file."""
-        if self._path is None:
-            raise ImportModuleRTError("Cannot save file: path is None")
-        Path(self._path).write_text(self.get_script(), encoding="utf-8")
+        try:
+            Path(self._path).write_text(self.get_script(), encoding="utf-8")
+        except FileNotFoundError as error:
+            raise ImportModuleNotFoundError("Cannot save file: path is None") from error
 
     def reload_file(self)-> None:
         """raises FileNotFoundError, if the source file does not exist."""
         if self._path is None:
             return
-        text = Path(self._path).read_text(encoding="utf-8")
-        super().set_script(text)
+        try:
+            text = Path(self._path).read_text(encoding="utf-8")
+        except FileNotFoundError as error:
+            raise ImportModuleNotFoundError("Cannot reload file: path does not exist") from error
+        else:
+            # called if no exception occurred
+            super().set_script(text)
+        finally:
+            # called when the try block is exited, regardless of whether an exception occurred
+            ...

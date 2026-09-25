@@ -55,7 +55,7 @@ def test_remove_node_from_graph():
     assert result == 9, "Node should compute (1 + 2) * 3 = 9"
 
     # now remove the node
-    G.delete_node(add)
+    G._delete_node(add)
     assert mult.get_inputs() == ((), {"b": 3})
     with pytest.raises(TypeError):
         result = G.execute(mult)
@@ -75,7 +75,7 @@ def test_removing_nodes_cleanup_dependent_inputs():
     def collect(*args, **kwargs):
         return args, kwargs
 
-    G.delete_node(source)
+    G._delete_node(source)
 
     assert collect.get_inputs() == ((10, other), {"kept": other, "literal": 4})
     assert G.execute(collect) == ((10, 3), {"kept": 3, "literal": 4})
@@ -108,7 +108,7 @@ def test_removing_node_updates_dependents_and_their_cached_results(cache_type):
     G.nodes_changed.connect(changes.extend)
     G.nodes_removed.connect(removals.extend)
 
-    G.delete_node(source)
+    G._delete_node(source)
 
     assert first.get_inputs() == ((), {})
     assert second.get_inputs() == ((), {})

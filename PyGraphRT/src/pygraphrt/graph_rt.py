@@ -20,15 +20,14 @@ from .graph_schema import validate_graph_data
 from .abstract_module_rt import OperatorRef
 from .abstract_module_rt import AbstractOperator
 
+from .errors import (
+    NodeNameCollisionError, 
+    GraphExecutionError, 
+    OperatorNameCollisionError, 
+    DuplicateNodeError,
+)
 
-class NodeNameCollisionError(Exception):
-    pass
 
-class OperatorNameCollisionError(Exception):
-    pass
-
-class DuplicateNodeError(Exception):
-    pass
 
 @dataclass(frozen=True)
 class CacheEntry:
@@ -120,7 +119,7 @@ class NodeRef:
             data = self.get_value()
             return operator_data(*data.args, **data.kwargs)
         else:
-            raise MissingOperatorError(f"Operator {self.get_operator()} is missing from the graph")
+            raise GraphExecutionError(f"Operator {self.get_operator()} is missing from the graph")
         
     def __hash__(self):
         return hash((self._graph, self._name))
@@ -171,9 +170,6 @@ class NodeData:
     def __call__(self, *args, **kwargs) -> Any:
         raise NotImplementedError("__call__ is not implemented for NodeRef")
 
-
-class MissingNodeError(Exception):
-    pass
 
 
 def freeze(value, active=None) -> tuple:
@@ -415,8 +411,7 @@ class GraphRT(QObject):
         return node_ref
 
     def _update_node(self, node_ref: NodeRef, op:OperatorRef=None, args: tuple=(), kwargs: dict={}) -> None:
-        if node_ref not in self._nodes:
-            raise MissingNodeError(f"Node {node_ref} does not exist in the graph.")
+        assert node_ref in self._nodes, "Node does not exist in the graph." # todo: Api misuse: raise standard python errors
         if op is None:
             op = self._nodes[node_ref].get_operator()
         node_data = NodeData(op, tuple(args), MappingProxyType(kwargs))
@@ -430,10 +425,9 @@ class GraphRT(QObject):
     #     else:
     #         self._create_node(node_data.get_operator(), node_data.get_inputs()[0], node_data.get_inputs()[1])
 
-    def delete_node(self, node_ref: NodeRef) -> None:
-        if node_ref not in self._nodes:
-            raise MissingNodeError(f"Node {node_ref} does not exist in the graph.")
-        
+    def _delete_node(self, node_ref: NodeRef) -> None:
+        assert node_ref in self._nodes, "Node does not exist in the graph."
+
         del self._nodes[node_ref]
         self.cache.remove(node_ref)
 
@@ -583,9 +577,12 @@ class GraphRT(QObject):
                 operator_ref = node_data.get_operator()
                 with self._profiler.profile(node_ref):
                     if operator := operator_ref.get_value():
-                        value = operator(*resolved_args, **resolved_kwargs)
+                        try:
+                            value = operator(*resolved_args, **resolved_kwargs)
+                        except Exception as error:
+                            raise GraphExecutionError(str(error), node_ref) from error
                     else:
-                        raise MissingOperatorError(f"Operator for node {node_ref} is missing.")
+                        raise GraphExecutionError("Node cannot be executed because its operator is missing.", node_ref)
 
                 ancestors_output[node_ref] = value
                 entry = self.cache.save(node_ref, fingerprints[node_ref], value)

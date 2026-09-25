@@ -1,5 +1,6 @@
 from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.inline_module import MissingOperatorError
+from pygraphrt.errors import GraphExecutionError, ModuleError
+
 import pytest
 from pygraphrt import GraphRT, ImportModuleRT
 from textwrap import dedent
@@ -58,7 +59,7 @@ def test_smoke_hello_world():
     # brake the hello op
     im.set_script("def hello( ") 
     assert 'hello' not in [op.name for op in im.operators()], "The broken 'hello' operator should not exist yet."
-    with pytest.raises(MissingOperatorError): #todo: we need to review this behaviour. if modules report errors, instead of raising them we might want similar behaviour for the graph as well.
+    with pytest.raises(GraphExecutionError): #todo: we need to review this behaviour. if modules report errors, instead of raising them we might want similar behaviour for the graph as well.
         assert G.execute(hello_node)
 
     # fix the hello op
@@ -95,14 +96,18 @@ def test_smoke_hello_world():
             return f"{greeting} {name}!"
     """))
 
-    with pytest.raises(ValueError):
-        assert G.execute(hello_node)
+    with pytest.raises(GraphExecutionError):
+        G.execute(hello_node)
 
     # Connect the_name 
     G._update_node(hello_node, hello_op, kwargs={"name": the_name_node})
-    # ... check watch. it should say 'Hello Mása!'
+
+    # Execute the hello node after connecting the_name
+    assert G.execute(hello_node) == 'Hello Mása!', "The 'hello' node should execute successfully with the_name connected."
     # Connect the_greeting
     G._update_node(hello_node, hello_op, kwargs={"name": the_name_node, "greeting": the_greeting_node})
+    # Execute the hello node after connecting the_greeting
+    assert G.execute(hello_node) == 'Hey Mása!', "The 'hello' node should execute successfully with both the_name and the_greeting connected."
 
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"])

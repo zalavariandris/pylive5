@@ -3,7 +3,6 @@ import pytest
 import pygraphrt as rt
 from textwrap import dedent
 
-from PyGraphRT.tests.test_graph_serialization import graph
 
 def test_node_decorator():
     G = rt.GraphRT()
