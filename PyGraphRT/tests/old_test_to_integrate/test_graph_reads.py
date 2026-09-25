@@ -3,10 +3,14 @@ from pygraphrt.graph_rt import GraphRT
 from pygraphrt.abstract_module_rt import OperatorRef, ParameterData
 
 
+# REVIEW UNNECESSARY / REMOVE: construction and a non-None instance are already
+# exercised by every graph test; this checks no additional behavior.
 def test_graph_initialization():
     G = GraphRT()
     assert G is not None
 
+# REVIEW UNNECESSARY / MERGE: overlaps the parameter-details test below.
+# Keep its ordered-key assertion there when consolidating introspection tests.
 def test_read_operator_parameter_names():
     G = GraphRT()
 

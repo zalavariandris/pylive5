@@ -49,6 +49,8 @@ def test_update_operator_triggers_watcher():
     G.inline()._update_operator(output.get_operator(), lambda: 4)
     assert len(tracker) == 2, "Watcher callback should not be triggered after watcher is stopped"
 
+# REVIEW UNNECESSARY / REMOVE: commented-out, uncollected draft. Active input
+# watcher and dependency-rewiring tests cover its intended behavior.
 # def test_watch_node_changes():
 #     # setup
 #     G = rt.GraphRT()
@@ -97,6 +99,8 @@ def test_update_operator_triggers_watcher():
 
 
 
+# REVIEW OUTDATED / REMOVE: uncollected draft uses removed G.module() API;
+# test_unrelated_operator_update_and_watcher_restart covers stop/start behavior.
 # def test_watch_local_operator_changes_after_stop_and_restart():
 #     G = rt.GraphRT()
 
@@ -126,6 +130,9 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
 
+# REVIEW SIMPLIFY: _running is private and does not prove restoration works.
+# Keep removal notification; verify a callback after restoring the operator
+# when migrating, as the script ancestor restoration test already does.
 def test_operator_removal_keeps_watcher_for_restoration():
     graph = rt.GraphRT()
     node = graph.node()(lambda: 1)
@@ -159,6 +166,9 @@ def test_unrelated_operator_update_and_watcher_restart():
         watcher.stop()
 
 
+# REVIEW UNNECESSARY / MERGE: script-change/removal notifications are covered
+# more fully in test_graph_watch_with_scriptmodule (including restoration).
+# Its _running assertion additionally couples the test to watcher internals.
 def test_script_operator_notifications():
     from pygraphrt.abstract_module_rt import OperatorRef
     from pygraphrt.script_module import ScriptModuleRT

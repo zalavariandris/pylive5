@@ -1,3 +1,7 @@
+# REVIEW: keep round-trip execution, values, references, and editable broken
+# source. Exact dictionary snapshots below can be relaxed during format design.
+# Integration blocker, not grounds for removal: node(..., name=...) currently
+# ignores the requested name when creating a node, affecting aliased fixtures.
 import copy
 import json
 import math
@@ -11,6 +15,8 @@ from pygraphrt import GraphRT, OperatorRef
 from textwrap import dedent
 import pprint
 
+# REVIEW SIMPLIFY: keep the executable round trip; the full expected dictionary
+# and exact top-level key set unnecessarily freeze optional-field omission.
 def test_strictly_the_hello_world_graph_serialization() -> None:
     local_definitions = dedent("""\
         def the_name():
@@ -66,6 +72,9 @@ def test_strictly_the_hello_world_graph_serialization() -> None:
     assert loaded_graph.execute(loaded_graph.nodes()[-1]) == G.execute(hello_world) == "Hey Masa!"
 
 
+# REVIEW OUTDATED SETUP / SIMPLIFY: ImportModuleRT currently accepts str/None,
+# not Path. Keep imported-operator round trips, but relax the full dictionary
+# snapshot and exact empty-field omission while the format is being developed.
 def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Path) -> None:
     # create the hello_world_operator.py file in pytest temp folder
     source = dedent("""\
@@ -176,6 +185,9 @@ def test_runtime_round_trip_preserves_values_and_forward_references(graph):
     assert loaded.todict() == data
 
 
+# REVIEW UNNECESSARY / DEFER: checks only the exact representation of empty
+# inputs in explicit mode. Empty-graph and executable round trips provide the
+# important behavior without making this output-format choice permanent.
 def test_explicit_empty_node_inputs():
     graph = GraphRT()
     graph.setLocalDefinitions("def one(): return 1")
@@ -186,6 +198,8 @@ def test_explicit_empty_node_inputs():
     assert explicit_data["args"] == []
     assert explicit_data["kwargs"] == {}
 
+# REVIEW OUTDATED SETUP / KEEP: ImportModuleRT(path) now needs str(path).
+# Module-qualified identity is essential; same names must not select the wrong op.
 def test_imports_and_local_disambiguate_operator_names(tmp_path):
     path = tmp_path / "tools.py"
     path.write_text("def op(): return 42", encoding="utf-8")
@@ -248,6 +262,8 @@ def test_duplicate_import_paths_cannot_be_saved() -> None:
         graph.todict()
 
 
+# REVIEW OUTDATED SETUP / KEEP: use a string path when migrating. Preserving
+# unused imports protects editable documents from losing user-added modules.
 def test_unused_imports_survive(tmp_path):
     path = tmp_path / "unused.py"
     path.write_text("def unused(): return 1", encoding="utf-8")
@@ -271,6 +287,9 @@ def test_nonfinite_floats_use_json_tags(value):
     assert math.isnan(restored) if math.isnan(value) else restored == value
 
 
+# REVIEW UNNECESSARY CASES / MERGE: version, _local_, imports, node, args, and
+# value repeat the structural validation/import-path matrices. Keep module and
+# reference cases: undeclared modules and dangling links need semantic checks.
 @pytest.mark.parametrize("damage", ["version", "_local_", "imports", "node", "module", "reference", "args", "value"])
 def test_malformed_runtime_data_is_rejected(graph, damage):
     data = graph.todict()
@@ -322,6 +341,8 @@ def test_opaque_values_and_inline_functions_fail_explicitly(graph):
         inline.todict()
 
 
+# REVIEW UNNECESSARY / DEFER: fixes subclass-preserving construction without a
+# concrete subclass use case here. Base GraphRT round trips cover current needs.
 def test_fromdict_constructs_subclass(graph):
     class CustomGraph(GraphRT):
         pass

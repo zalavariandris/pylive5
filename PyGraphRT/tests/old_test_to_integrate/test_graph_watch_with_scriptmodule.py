@@ -86,6 +86,10 @@ def ancestor_graph():
         watcher.stop()
 
 
+# REVIEW KEEP / SIMPLIFY: removal and recovery during editing are core behavior.
+# Successful callbacks after restoration prove liveness; private _running checks
+# are unnecessary. Script-error cases currently encounter the module error
+# handling inconsistency noted in test_scriptmodule.py; do not delete them for it.
 @pytest.mark.parametrize("script", [
     "", "def other(): return 0", "def value(:", "raise RuntimeError('broken')",
 ], ids=["removed", "replaced", "syntax-error", "execution-error"])

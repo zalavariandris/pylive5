@@ -1,3 +1,8 @@
+# REVIEW: edits and persistence are now separate: set_script() changes memory,
+# save_file() writes, and reload_file() reads. Error handling is still evolving:
+# reload wraps missing files in ImportModuleNotFoundError (not FileNotFoundError),
+# and script error wrappers no longer match several builtin-error expectations.
+# Preserve reload/recovery behavior; do not treat implementation bugs as specs.
 from pathlib import Path
 from textwrap import dedent
 
@@ -13,6 +18,9 @@ from pygraphrt.abstract_module_rt import ParameterData
     (ScriptModuleRT, None), 
     (ImportModuleRT, None)
 ])
+# REVIEW OUTDATED SETUP / KEEP: the named ImportModuleRT case opens a relative
+# file named "import". A missing file now raises ImportModuleNotFoundError;
+# migrate to a temp file or an unnamed module, retaining shared module coverage.
 def test_initialization(ModuleClass, name):
     im = ModuleClass(name)
     im.set_script("def hello(): return 'Hello!'")
@@ -41,6 +49,8 @@ def test_initialization(ModuleClass, name):
     assert actual_parameters == expected_parameters
 
 
+# REVIEW OUTDATED / REMOVE: requires set_script() to autosave, but persistence
+# now uses save_file(). It would prevent editing unsaved or invalid source.
 def test_edits_write_source_before_notifying_observers(tmp_path):
     path = tmp_path / "tools.py"
     path.write_text("def op(): return 1", encoding="utf-8")
@@ -74,6 +84,9 @@ def test_reload_does_not_write_to_the_file(tmp_path, monkeypatch):
     module.set_script(source)
 
 
+# REVIEW OUTDATED / REMOVE: set_script() no longer writes the file, so a disk
+# write failure should not block an in-memory edit or its change notification.
+# A future save_file() failure test belongs to the explicit-save contract.
 def test_failed_write_does_not_change_runtime_or_emit_success(tmp_path, monkeypatch):
     path = tmp_path / "tools.py"
     source = "def op(): return 1"
@@ -93,6 +106,9 @@ def test_failed_write_does_not_change_runtime_or_emit_success(tmp_path, monkeypa
     assert changes == []
 
 
+# REVIEW UNNECESSARY / SIMPLIFY: after autosave removal, file contents cannot
+# change through set_script(). Keep basic invalid-argument coverage once in
+# shared ScriptModuleRT tests rather than a file-persistence scenario.
 def test_invalid_value_does_not_touch_file(tmp_path):
     path = tmp_path / "tools.py"
     path.write_text("original", encoding="utf-8")
@@ -101,6 +117,9 @@ def test_invalid_value_does_not_touch_file(tmp_path):
         module.set_script(None)
     assert path.read_text(encoding="utf-8") == "original"
 
+# REVIEW OUTDATED / MERGE: reload now wraps FileNotFoundError, and the title
+# says "no operators" while the assertion requires retained operators. Merge
+# this missing-file case into the read-failure preservation test below.
 def test_file_missing_reload_reports_no_operators(tmp_path):
     path = tmp_path / "tools.py"
     source = "def op(): return 1"
@@ -115,6 +134,9 @@ def test_file_missing_reload_reports_no_operators(tmp_path):
         module.reload_file()
     assert len(list(module.operators())) > 0
 
+# REVIEW UNNECESSARY / MERGE: invalid exports use inherited ScriptModuleRT
+# handling, already exercised by test_invalid_all_records_failure_and_removes_operators.
+# The specific AttributeError expectation also predates ScriptEvaluationError.
 def test_reading_script_with_inconsistent__all__(monkeypatch: pytest.MonkeyPatch) -> None:
     source = dedent("""\
         def op(): return 0
@@ -157,6 +179,9 @@ def test_reload_records_script_errors(
     assert observed == [source]
 
 
+# REVIEW OUTDATED / SIMPLIFY: missing files are wrapped in
+# ImportModuleNotFoundError; original exception identity is not the contract.
+# Keep unchanged source/operators and no success notification on failed reads.
 @pytest.mark.parametrize("error_type", [FileNotFoundError, PermissionError])
 def test_reload_read_errors_propagate_without_committing(
     monkeypatch: pytest.MonkeyPatch, error_type: type[OSError]

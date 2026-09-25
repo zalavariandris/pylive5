@@ -3,6 +3,7 @@ import math
 from pathlib import Path
 import traceback
 
+from pygraphrt.errors import GraphExecutionError
 from pygraphrt.script_module import ScriptModuleRT
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
@@ -104,7 +105,7 @@ class PyFlowDocument(QObject):
             self._output_value = result
             self.output_value_changed.emit()
 
-        except Exception as err:
+        except GraphExecutionError as err:
             traceback.print_exc()
             self._output_value = err
             self.output_value_changed.emit()

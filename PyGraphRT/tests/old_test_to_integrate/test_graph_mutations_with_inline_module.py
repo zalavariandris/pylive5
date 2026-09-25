@@ -1,6 +1,5 @@
 from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.inline_module import MissingOperatorError
-from pygraphrt.script_module import ScriptModuleRT
+from pygraphrt.errors import ModuleError, GraphExecutionError
 import pytest
 
 import pygraphrt as rt
@@ -36,6 +35,8 @@ def test_set_node_inputs_to_nodes():
     result = G.execute(n1)
     assert result == 10, "Node should compute 2 * 5 = 10"
 
+# REVIEW OUTDATED / UPDATE: execute() wraps the missing-argument TypeError in
+# GraphExecutionError. Keep dependent-input cleanup coverage; it is useful.
 def test_remove_node_from_graph():
     G = rt.GraphRT()
 
@@ -81,6 +82,8 @@ def test_removing_nodes_cleanup_dependent_inputs():
     assert G.execute(collect) == ((10, 3), {"kept": 3, "literal": 4})
 
 
+# REVIEW SIMPLIFY: keep removal, dependent notifications, and fresh results
+# across caches; the order of independent nodes in changes need not be fixed.
 @pytest.mark.parametrize("cache_type", [rt.DummyCache, rt.MemoryCache, rt.HistoryMemoryCache])
 def test_removing_node_updates_dependents_and_their_cached_results(cache_type):
     G = rt.GraphRT()
@@ -141,9 +144,12 @@ def test_remove_operator_from_graph_throws_missing_operator_error():
 
     # now remove the node
     G._inline_module.delete_operator(add_op)
-    with pytest.raises(MissingOperatorError):
+    with pytest.raises(GraphExecutionError):
         result = G.execute(mult)
 
+# REVIEW OUTDATED / REMOVE: GraphRT has no output property contract; this adds
+# an unused attribute. execute(add) selects the root explicitly and the result
+# duplicates basic execution coverage.
 def test_setting_output():
     G = rt.GraphRT()
 
@@ -179,6 +185,8 @@ class TestUpdatingNodesOperator:
         result = G.execute(the_node)
         assert result == 4, "Node should compute 1 + 2 + 1 = 4 after updating operator body"
 
+    # REVIEW OUTDATED / UPDATE: operator argument errors are wrapped in
+    # GraphExecutionError. Preserve the incompatible-signature scenario.
     def test_execute_raises_type_error_after_operator_update_adds_required_parameter(self):
         G = rt.GraphRT()
 
@@ -225,6 +233,8 @@ class TestUpdatingNodesOperator:
         assert result == 1, "Node should compute (1 + 2) / 3 = 1 after changing add to divide"
 
 
+# REVIEW KEEP: helper edits leaving callers stale is a real correctness gap,
+# not an unnecessary restriction. The existing xfail records the limitation.
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,

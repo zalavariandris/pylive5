@@ -1,3 +1,5 @@
+# REVIEW KEEP: restart must track newly wired dependencies and avoid duplicate
+# subscriptions. These observable callbacks protect live execution, not internals.
 from typing import Literal
 
 import pytest

@@ -1,3 +1,7 @@
+# REVIEW KEEP: node/operator lifecycle notifications and execution results drive
+# observers. A single notification per simple edit is useful correctness coverage.
+# Operator signal cases can later live with InlineModuleRT tests; they are not
+# duplicates of CRUD tests that never inspect emitted signals.
 from pygraphrt.inline_module import FunctionOperator
 import pytest
 import pygraphrt as rt

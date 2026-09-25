@@ -1,3 +1,8 @@
+# REVIEW ERROR CONTRACT: builtin SyntaxError/AttributeError/TypeError assertions
+# predate the current ScriptSyntaxError/ScriptEvaluationError wrappers. Keep
+# invalid-source storage, operator removal, notification, and recovery coverage.
+# set_script() also reads error.error, absent on ScriptEvaluationError: that is
+# an implementation inconsistency, not a reason to remove recovery tests.
 import pytest
 
 import pygraphrt.script_module as script_module
@@ -7,6 +12,8 @@ from pygraphrt.script_module import ScriptModuleRT
 from pygraphrt.import_module import ImportModuleRT
 from pygraphrt.abstract_module_rt import ParameterData
 
+# REVIEW UNNECESSARY / MERGE: repeats export discovery and parameter details
+# in test_importmodule.test_initialization, which already covers both classes.
 def test_initialization():
     sm = ScriptModuleRT("mathy")
     sm.set_script(dedent("""\
@@ -54,6 +61,9 @@ def test_changing_all_updates_exports_and_signals():
     assert removed == [[OperatorRef(module, "_private")]]
 
 
+# REVIEW SIMPLIFY: keep missing/invalid exports and operator removal. The
+# exhaustive container/subclass exclusions fix a narrow __all__ type policy
+# before it is needed; exception classes also need the error-contract review.
 @pytest.mark.parametrize("exports, error_type", [
     ("['missing']", AttributeError),
     ("['public', 'missing']", AttributeError),
@@ -95,6 +105,9 @@ def test_explicit_exports_allow_private_names_and_empty_containers(exports: str)
     assert [ref.name for ref in module.operators()] == expected
 
 
+# REVIEW UNNECESSARY / DEFER: module-level dynamic __getattr__ is a specialized
+# discovery policy beyond ordinary exports. Revisit if dynamic exports become
+# supported; the "dynamic" case also expects an obsolete AttributeError.
 @pytest.mark.parametrize("exports", ["", "__all__ = ['op']", "__all__ = ['dynamic']"])
 def test_export_discovery_does_not_call_module_getattr(exports: str) -> None:
     module = ScriptModuleRT()
@@ -112,6 +125,9 @@ def test_export_discovery_does_not_call_module_getattr(exports: str) -> None:
         assert [ref.name for ref in module.operators()] == ["op"]
 
 
+# REVIEW SIMPLIFY: discovering locally defined functions is useful, but blanket
+# rejection of callable objects/builtins freezes a current limitation; callable
+# object support is already a TODO. Defer the hostile __getattribute__ edge case.
 @pytest.mark.parametrize("explicit", [False, True])
 def test_only_python_functions_become_operators(explicit: bool) -> None:
     source = dedent("""\
@@ -134,6 +150,9 @@ def test_only_python_functions_become_operators(explicit: bool) -> None:
     assert OperatorRef(module, "op")() == 1
 
 
+# REVIEW UNNECESSARY / DEFER: exercises a private helper's defined_only=False
+# mode, which ScriptModuleRT.set_script() never uses. Integrate when there is
+# a public imported-function export workflow to protect.
 def test_imported_python_functions_can_be_included_explicitly() -> None:
     functions = script_module._get_all_callables_from_script(
         "from textwrap import dedent\n__all__ = ['dedent']",
@@ -144,6 +163,8 @@ def test_imported_python_functions_can_be_included_explicitly() -> None:
 
 
 
+# REVIEW UNNECESSARY / MERGE: repeats the same edit as test_updating_script_signals;
+# move its final export-set assertion there when consolidating.
 def test_updating_script():
     sm = ScriptModuleRT("mathy")
     sm.set_script(dedent("""\
@@ -171,6 +192,9 @@ def test_updating_script():
 
     assert set([op.name for op in sm.operators()]) == {"two", "pow", "mult"}
 
+# REVIEW UNNECESSARY / MERGE: two invalid scripts are only compared for equal
+# operator lists, so both could be wrong. Keep the explicit removed-operator
+# and recovery assertions in the later error tests instead.
 def test_updating_script_with_syntaxerror():
     """Script module should be deterministic.
     therefore a script with a syntax error should return the 
@@ -257,14 +281,6 @@ def test_updating_script_signals():
     assert changed == [OperatorRef(sm, "pow")]
 
 
-def test_syntax_errors_use_module_name():
-    invalid_source = "def broken(:\n"
-    invalid_module = ScriptModuleRT("tools")
-    invalid_module.set_script(invalid_source)
-    assert invalid_module.get_script() == invalid_source
-    assert len(invalid_module.operators()) == 0
-    assert isinstance(invalid_module.get_state(), SyntaxError)
-    assert invalid_module.get_state().filename == "<script:tools>"
 
 
 @pytest.mark.parametrize("source, expected_state", [
@@ -277,12 +293,18 @@ def test_initial_module_state(source, expected_state):
     module.set_script(source)
     assert module.get_state() == expected_state, f"Expected state {expected_state}, but got {module.get_state()}"
 
+# REVIEW UNNECESSARY / REMOVE: the syntax-diagnostic test above already sets
+# invalid source on a fresh module and checks the same error-state expectation.
 def test_initial_module_state_with_error():
     module = ScriptModuleRT("tools")
     module.set_script("broken(:")
     assert isinstance(module.get_state(), SyntaxError)
 
 from collections import Counter
+# REVIEW SIMPLIFY: keep valid/error/recovery transitions. Repeated valid edits
+# and exact counts for successive error objects prescribe a notification policy.
+# Despite its name, this test reads state after the call, not inside the observer;
+# observer-visible committed state is covered by the later observer test.
 def test_state_changed_reports_committed_state_only_on_transitions():
     valid_source = "def one(): return 1"
     module = ScriptModuleRT("tools")
@@ -333,6 +355,9 @@ def test_failed_script_emits_removed_operator_refs(invalid_script):
     ("__all__ = ['missing']", AttributeError),
     ("__all__ = None", TypeError),
 ])
+# REVIEW SIMPLIFY: retain committed state visible to every observer and recovery;
+# exact state/removed/script signal order unnecessarily constrains implementation.
+# Specific error classes need review, not deletion of this live-editing scenario.
 def test_script_errors_notify_observers_after_committing(
     module_class: type[ScriptModuleRT], source: str, error_type: type[Exception]
 ) -> None:
@@ -357,6 +382,9 @@ def test_script_errors_notify_observers_after_committing(
     assert OperatorRef(module, "recovered")() == 2
 
 
+# REVIEW UNNECESSARY / DEFER: monkeypatches four internal components and demands
+# transaction-like rollback for arbitrary implementation bugs. This couples the
+# suite to the architecture; retain public script-error/recovery tests instead.
 @pytest.mark.parametrize("component", [
     "ModuleType", "_get_all_callables_from_script", "ast_functions_diff", "FunctionOperator",
 ])
@@ -389,6 +417,8 @@ def test_runtime_bugs_propagate_without_committing(
     assert notifications == []
 
 
+# REVIEW SIMPLIFY: propagating interrupts is useful; complete rollback of all
+# module state on process-control exceptions need not be a development contract.
 @pytest.mark.parametrize("exception_name", ["KeyboardInterrupt", "SystemExit"])
 def test_script_interrupts_propagate_without_committing(exception_name: str) -> None:
     module = ScriptModuleRT()

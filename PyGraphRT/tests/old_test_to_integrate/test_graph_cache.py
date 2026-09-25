@@ -50,6 +50,8 @@ def test_upstream_input_change_invalidates_doWwnstream_cache(cache):
     result = G.execute(mult_node)
     assert result == 18, "should compute (4 + 2) * 3 = 18 after changing add_node input"
 
+# REVIEW OUTDATED / UPDATE: _update_operator() now takes a Python function,
+# not a FunctionOperator wrapper. Keep this direct invalidation regression.
 def test_operator_function_change_invalidates_cache(cache):
     G = rt.GraphRT()
     G.cache = cache
@@ -71,6 +73,9 @@ def test_operator_function_change_invalidates_cache(cache):
     result = G.execute(node)
     assert result == 12, "should compute 3 * 4 = 12 after swapping add to multiply"
 
+# REVIEW OUTDATED / UPDATE: pass a function to _update_operator() when migrating;
+# its current function-only contract rejects the wrapper used here. Keep the
+# downstream invalidation assertion; correct results are essential even now.
 def test_upstream_operator_function_change_invalidates_downstream_cache(cache):
     G = rt.GraphRT()
     G.cache = cache
@@ -156,6 +161,9 @@ def test_cached_dependency_invalidates_other_execution_roots(cache):
     assert G.execute(doubled) == 2
 
 
+# REVIEW UNNECESSARY / DEFER: exact recomputation counts after partial eviction
+# prescribe an optimization strategy. Correct results and cache eviction are
+# covered elsewhere; add this performance contract only if it becomes required.
 @pytest.mark.parametrize("cache_action", ["clear", "remove"])
 def test_eviction_does_not_change_computation_fingerprints(cache_action, cache):
     G = rt.GraphRT()
@@ -241,6 +249,10 @@ def test_removing_node_releases_its_cached_result(cache):
     assert result_ref() is None
 
 
+# REVIEW OUTDATED / DEFER: wrapper injection is unsupported, and repeated
+# node()(add_op) calls now rebind one node instead of building this DAG.
+# The arbitrary 6 * node_count hash-call bound couples tests to internals.
+# Later retain a shared-DAG correctness case and measure performance separately.
 def test_shared_dependencies_do_not_repeat_fingerprinting(cache):
     G = rt.GraphRT()
     G.cache = cache
@@ -270,6 +282,8 @@ def test_shared_dependencies_do_not_repeat_fingerprinting(cache):
     assert len(calls) == node_count
 
 
+# REVIEW OUTDATED / UPDATE: execute() wraps RuntimeError in GraphExecutionError.
+# Keep retry-after-failure coverage; caching a failed result is a correctness bug.
 def test_failed_execution_is_retried_and_only_success_is_cached(cache):
     G = rt.GraphRT()
     G.cache = cache
@@ -290,6 +304,9 @@ def test_failed_execution_is_retried_and_only_success_is_cached(cache):
     assert call_count == 2
 
 
+# REVIEW UNNECESSARY / DEFER: equivalent pure inputs give the same result;
+# requiring downstream recomputation rules out valid cache sharing strategies.
+# Keep rewiring-to-different-values coverage instead of fixing this call count.
 @pytest.mark.parametrize("keyword_dependency", [False, True])
 def test_rewiring_to_equivalent_node_recomputes_downstream(keyword_dependency, cache):
     G = rt.GraphRT()
@@ -343,6 +360,10 @@ def test_changes_to_unrelated_branch_do_not_invalidate_cached_root(cache):
     assert calls == [1, 2, 3]
 
 
+# REVIEW SIMPLIFY: cache.remove() isolation is already covered by
+# test_cache_lookup_hit_and_eviction. Separate result object identities and
+# immediate collection impose an extra ownership policy; defer those assertions
+# until mutable-result ownership is defined. Preserve node-deletion cleanup.
 def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
     G = rt.GraphRT()
     G.cache = cache
@@ -375,6 +396,9 @@ def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
     assert second_result() is None
 
 
+# REVIEW OUTDATED / REMOVE: restoring a saved FunctionOperator object through
+# _update_operator() is no longer supported. History policy already has coverage
+# in test_reverting_inputs_respects_cache_history_policy and cache unit checks.
 def test_operator_replacement_respects_cache_history_policy(cache):
     G = rt.GraphRT()
     G.cache = cache
@@ -421,6 +445,9 @@ def test_argument_positions_names_and_keyword_order_are_significant(cache):
     assert G.execute(arguments) == ((), (("c", 2), ("a", 1)))
 
 
+# REVIEW UNNECESSARY / DEFER: requiring a hit for equal, separately allocated
+# containers fixes value-based caching as the only strategy. Recomputing the
+# correct value is acceptable while the supported literal policy is evolving.
 @pytest.mark.parametrize("first,second", [
     ([1, {"value": (True, None)}], [1, {"value": (True, None)}]),
     ({"value": [1, 2]}, {"value": [1, 2]}),
@@ -487,6 +514,8 @@ def test_custom_literal_objects_use_identity_without_requiring_hashability(cache
     assert G.execute(identity) is first
 
 
+# REVIEW SIMPLIFY: verify DummyCache explicitly; requiring it to remain the
+# GraphRT default unnecessarily prevents changing the default cache policy.
 def test_default_dummy_cache_still_executes_every_time():
     G = rt.GraphRT()
     calls = []
@@ -501,6 +530,9 @@ def test_default_dummy_cache_still_executes_every_time():
     assert calls == ["source", "source"]
 
 
+# REVIEW UNNECESSARY / DEFER: a 16,001-bit integer is a narrow edge case beyond
+# the basic literal/invalidation checks. Retain only if huge integer inputs are
+# a supported use case or this guards an actual user regression.
 @pytest.mark.parametrize("value", [1 << 16000, -(1 << 16000)], ids=["positive", "negative"])
 def test_large_integer_literals_do_not_require_decimal_conversion(value, cache):
     G = rt.GraphRT()
@@ -517,6 +549,9 @@ def test_large_integer_literals_do_not_require_decimal_conversion(value, cache):
     assert calls == ["identity"]
 
 
+# REVIEW OUTDATED / REMOVE: InlineModuleRT._update_operator() accepts functions,
+# not custom FunctionOperator instances. This tests an unsupported extension
+# route; reconsider when a public custom-operator API exists.
 def test_custom_operator_behavior_contributes_to_identity(cache):
     G = rt.GraphRT()
     G.cache = cache
@@ -534,6 +569,9 @@ def test_custom_operator_behavior_contributes_to_identity(cache):
     assert G.execute(node) == 6
 
 
+# REVIEW OUTDATED / REMOVE: both node()(source) calls now return equal node
+# references, so this does not construct two nodes. Mutable-result isolation
+# also adds an unsettled ownership contract beyond pure graph execution.
 def test_equivalent_nodes_do_not_share_results_in_one_execution(cache):
     G = rt.GraphRT()
     G.cache = cache
@@ -617,6 +655,9 @@ def test_cache_policy_controls_retention_of_previous_results(cache):
     assert latest() is None
 
 
+# REVIEW OUTDATED SETUP / KEEP REGRESSION: source is a NodeRef, which node()
+# cannot use as an operator. Execute source directly when migrating this test.
+# The -1/-2 collision can return stale values; do not discard it as overstrict.
 def test_cache_collisions_with_minus_1(cache):
     """this is a regression test
     turnes out hash(-1) == hash(-2) which messes with the cache using hash for fingerprints"""

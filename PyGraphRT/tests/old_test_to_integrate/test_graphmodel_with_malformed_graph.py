@@ -1,4 +1,6 @@
 
+# REVIEW KEEP: rejecting a foreign graph's NodeRef prevents invalid dependencies.
+# This is a graph-integrity check, not a premature API restriction.
 from types import MappingProxyType
 from typing import Callable, Mapping, Any
 import inspect

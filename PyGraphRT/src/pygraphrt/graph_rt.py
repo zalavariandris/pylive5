@@ -13,7 +13,7 @@ from myutils.profiler import Profiler
 if TYPE_CHECKING:
     from .abstract_module_rt import AbstractOperator, OperatorRef
 
-from .inline_module import InlineModuleRT, MissingOperatorError
+from .inline_module import InlineModuleRT
 from .import_module import ImportModuleRT
 from .script_module import ScriptModuleRT
 from .graph_schema import validate_graph_data
@@ -21,10 +21,8 @@ from .abstract_module_rt import OperatorRef
 from .abstract_module_rt import AbstractOperator
 
 from .errors import (
-    NodeNameCollisionError, 
-    GraphExecutionError, 
-    OperatorNameCollisionError, 
-    DuplicateNodeError,
+    ModuleError,
+    GraphExecutionError
 )
 
 
@@ -341,7 +339,7 @@ class GraphRT(QObject):
 
     def get_operator(self, op_ref: OperatorRef) -> AbstractOperator:
         if op_ref not in self._inline_module._operators:
-            raise MissingOperatorError(f"Operator {op_ref} does not exist in the graph.")
+            raise ModuleError(f"Operator {op_ref} does not exist in the graph.")
         return self._inline_module._operators[op_ref]
 
     def _validate_inputs(self, *args: Value, **kwargs: Value) -> None:
@@ -379,9 +377,12 @@ class GraphRT(QObject):
                 name = operator.get_name()
 
             # Create or update the named node.
+            # NOTE: for now, we want the create unique operator behaviour. See test for decorator behaviours
+                    #       todo: write this down somewhere. what create and rebind behaviour means here.
             node_ref = NodeRef(self, name)
             if node_ref in self._nodes:
-                self._update_node(node_ref, operator, args, dict(kwargs))
+                # self._update_node(node_ref, operator, args, dict(kwargs))
+                node_ref = self._create_node(operator, args, dict(kwargs))
             else:
                 node_ref = self._create_node(operator, args, dict(kwargs))
 

@@ -6,6 +6,9 @@ import pytest
 from pygraphrt import GraphRT
 
 
+# REVIEW SIMPLIFY: keep representative malformed structures and versions;
+# rejecting every extra field (including legacy "definitions") fixes an evolving
+# compatibility policy. Exact error-message text is unnecessary for rejection.
 @pytest.mark.parametrize("data", [
     None,
     [],
@@ -27,6 +30,10 @@ def test_invalid_graph_structure_is_rejected(data: Any) -> None:
         GraphRT.fromdict(data)
 
 
+# REVIEW SIMPLIFY: retain malformed operator/input coverage, but reduce the
+# exhaustive schema matrix, especially unknown-field restrictions. The custom
+# constructor sentinel imposes validation timing; rejecting before executing
+# user source matters more than whether a QObject has been allocated.
 @pytest.mark.parametrize("record", [
     None,
     {},
@@ -70,6 +77,9 @@ def test_invalid_node_structure_is_rejected_before_runtime_creation(record: Any)
     {"type": "dict", "items": []},
     {"type": "dict", "items": [["empty", []], ["flag", False]]},
 ])
+# REVIEW SIMPLIFY: nonmutation and preserving falsy values are useful. Exact
+# reserialization equality additionally freezes normalization/omission rules;
+# prefer decoded values when integrating with serialization round-trip coverage.
 def test_input_validation_preserves_values_and_input_data(value: Any) -> None:
     data = {
         "version": 1,

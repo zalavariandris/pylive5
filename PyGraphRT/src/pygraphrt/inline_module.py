@@ -20,8 +20,6 @@ class OperatorExistsError(Exception):
     """Raised when attempting to create an operator that already exists."""
     pass
 
-class MissingOperatorError(Exception):
-    pass
 
 class FunctionOperator(AbstractOperator):
     def __init__(self, func:callable):
@@ -78,10 +76,13 @@ class InlineModuleRT(AbstractModule):
         def decorator(func: Callable) -> OperatorRef:
             # assert that func is not simply a callable, but a function
             assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
-            
+
+            # NOTE: for now, we want the create unique operator behaviour. See test for decorator behaviours
+            #       todo: write this down somewhere. what create and rebind behaviour means here.
             ref = OperatorRef(self, func.__name__)
             if ref in self._operators:
-                self._update_operator(ref, func)
+                # self._update_operator(ref, func)
+                ref = self._create_operator(func)
             else:
                 ref = self._create_operator(func)
 
@@ -105,19 +106,16 @@ class InlineModuleRT(AbstractModule):
         assert isinstance(op_ref, OperatorRef), "op_ref must be an instance of OperatorRef"
         assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
         # todo: consider renaming to set_op
-        if op_ref not in self._operators:
-            raise MissingOperatorError(f"Operator {op_ref} does not exist in the graph.")
+        assert op_ref in self._operators, f"Operator {op_ref} does not exist in the graph."
         self._operators[op_ref] = FunctionOperator(func)
         self.operators_changed.emit([op_ref])
     
     def delete_operator(self, op_ref: OperatorRef) -> None:
-        if op_ref not in self._operators:
-            raise MissingOperatorError(f"Operator {op_ref} does not exist in the graph.")
+        assert op_ref in self._operators, f"Operator {op_ref} does not exist in the graph."
         del self._operators[op_ref]
         # emit a signal or perform additional cleanup if necessary
         self.operators_removed.emit([op_ref])
 
     def get_operator(self, ref: OperatorRef) -> AbstractOperator | None:
-        if ref not in self._operators:
-            raise MissingOperatorError(f"Operator {ref} does not exist in the graph.")
+        assert ref in self._operators, f"Operator {ref} does not exist in the graph."
         return self._operators.get(ref, None)

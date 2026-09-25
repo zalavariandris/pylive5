@@ -1,14 +1,21 @@
+# REVIEW: OUTDATED means an obsolete expectation/setup; REMOVE is a removal
+# candidate; SIMPLIFY targets unnecessary restrictions, not the core behavior.
+# Unmarked tests remain useful. These comments do not alter pytest behavior.
+# OUTDATED documentation below: decorators already replace values by name.
 """Decorator contract: references follow names; redefinition replaces values.
 
 These specifications intentionally require behavior beyond the current
 implementation, which rejects duplicate operator names.
 """
 
+from pygraphrt.errors import GraphExecutionError
 from pygraphrt.inline_module import InlineModuleRT
 import pytest
 import pygraphrt as rt
 
 
+# REVIEW SIMPLIFY: cache variants add no coverage to tests that never execute
+# nodes. Reserve the cache matrix for execution/invalidation scenarios.
 @pytest.fixture(
     params=[rt.DummyCache, rt.MemoryCache, rt.HistoryMemoryCache],
     ids=["uncached", "memory", "history"],
@@ -20,6 +27,9 @@ def graph(request: pytest.FixtureRequest) -> rt.GraphRT:
 
 
 class Test_InlineOperatorCRUD():
+    # REVIEW UNNECESSARY / REMOVE: uncollected placeholder (_test_ prefix),
+    # missing arguments, and obsolete _set_operator/_delete_operator methods.
+    # Working CRUD coverage exists in unit_tests/test_inline_module.
     def _test_create(self):
         im = InlineModuleRT()
 
@@ -30,6 +40,8 @@ class Test_InlineOperatorCRUD():
 
 
 class Test_OperatorRebinding():
+    # REVIEW UNNECESSARY / REMOVE: reference equality is also asserted by
+    # test_op_redefinition_rebinds_existing_references_without_creating_nodes.
     def test_rebind(self, graph: rt.GraphRT) -> None:
         @graph.op()
         def greet() -> str:
@@ -45,6 +57,9 @@ class Test_OperatorRebinding():
 
         assert A==B
 
+    # REVIEW SIMPLIFY: keep reference stability, updated behavior, and no nodes;
+    # old/new FunctionOperator identity and retained wrapper snapshots need not
+    # constrain how operator storage is implemented during development.
     def test_op_redefinition_rebinds_existing_references_without_creating_nodes(
         self,
         graph: rt.GraphRT,
@@ -113,6 +128,7 @@ class Test_OperatorRebinding():
         assert graph.execute(second) == 20
         assert graph.execute(total) == 26
 
+    # fine for now.
     def test_incompatible_op_redefinition_reports_argument_error_without_rewiring(
         self, graph: rt.GraphRT,
     ) -> None:
@@ -125,7 +141,7 @@ class Test_OperatorRebinding():
         assert graph.execute(node) == 4
 
         # The contract allows validation at registration or at execution.
-        with pytest.raises(TypeError):
+        with pytest.raises(GraphExecutionError):
             @graph.op()
             def transform(value: int, extra: int) -> int:
                 return value + extra
@@ -137,6 +153,8 @@ class Test_OperatorRebinding():
 
 
 class Test_OperatorDecorator_Creates_Behaviour():
+    # REVIEW OUTDATED / REMOVE: expects a fresh reference on redefinition,
+    # contradicting the implemented op() rebinding behavior and tests above.
     def test_create_operator(self, graph: rt.GraphRT) -> None:
         @graph.op()
         def add(a: int, b: int) -> int:
@@ -152,8 +170,11 @@ class Test_OperatorDecorator_Creates_Behaviour():
 
         assert A != B
 
+
 class Test_NodeDecorator_Rebind_Behaviour():
     """node decorator behaves as a dictionary set_item"""
+    # REVIEW UNNECESSARY / REMOVE: equality is covered by the next test, which
+    # also verifies that saved references execute the updated function.
     def test_node_equality(self, graph: rt.GraphRT) -> None:
         @graph.node()
         def hello() -> int:
@@ -169,6 +190,8 @@ class Test_NodeDecorator_Rebind_Behaviour():
 
         assert A == B
 
+    # REVIEW SIMPLIFY: keep stable references and updated execution; requiring
+    # a newly allocated NodeData object unnecessarily fixes the storage strategy.
     def test_node_redefinition_rebinds_existing_references(self, graph: rt.GraphRT) -> None:
         @graph.node()
         def hello() -> str:
@@ -192,6 +215,8 @@ class Test_NodeDecorator_Rebind_Behaviour():
         assert graph.execute(hello) == "boom2"
 
 
+    # REVIEW SIMPLIFY: keep new connections, ancestors, and execution; retaining
+    # an immutable previous_data snapshot is an additional storage contract.
     def test_node_redefinition_replaces_declared_connections(self, graph: rt.GraphRT) -> None:
         @graph.node()
         def old_source() -> int:
@@ -287,8 +312,11 @@ class Test_NodeDecorator_Rebind_Behaviour():
         assert graph.execute(first_node) == 20
         assert graph.execute(second_node) == 20
 
+
 class Test_NodeDecorator_Creates_Behaviour():
     """node decorator behaves as a list add_item"""
+    # REVIEW OUTDATED / REMOVE: node() rebinds by name, so A and B are equal.
+    # _create_node() is the separate API for allocating distinct nodes.
     def test_unique_nodes(self, graph: rt.GraphRT) -> None:
         @graph.node()
         def hello() -> int:

@@ -53,11 +53,5 @@ class GraphPreparationError(GraphExecutionError):
 # these errors are invalid api use. 
 # maybe these should be caught during graph construction
 # rather than execution, and treated differently
-class NodeNameCollisionError(GraphExecutionError):
-    pass
 
-class OperatorNameCollisionError(GraphExecutionError):
-    pass
 
-class DuplicateNodeError(GraphExecutionError):
-    pass
