@@ -93,7 +93,7 @@ class GraphDetailsModel(QAbstractListModel):
         operator = node.get_operator()
         available = operator is not None and operator.get_value() is not None
         description = (
-            f"{operator.module.get_name()}.{operator.name}"
+            f"{operator.module.get_display_name()}.{operator.name}"
             if operator is not None else "No operator"
         )
         if not available:

@@ -81,19 +81,19 @@ class AbstractModule(QObject, metaclass=_AbstractQObjectMeta):
     operators_removed = Signal(list) # list[OperatorRef]
     operators_changed = Signal(list) # list[OperatorRef]
 
-    def __init__(self, name: str, parent: QObject | None = None):
+    def __init__(self, name: str|None=None, parent: QObject | None = None):
         super().__init__(parent=parent)
-        self._name = name
+        self._display_name = name
 
-    def get_name(self) -> str:
-        return self._name
+    def get_display_name(self) -> str|None:
+        return self._display_name
 
-    def set_name(self, name: str)->bool:
-        self._name = name
+    def set_display_name(self, name: str|None)->bool:
+        self._display_name = name
         return True
     
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self._name!r})"
+        return f"{self.__class__.__name__}(name={self._display_name!r})"
     
     @abstractmethod
     def operators(self) -> Iterable[OperatorRef]:

@@ -340,6 +340,7 @@ class GraphRT(QObject):
         return self._inline_module.op()
 
     def operators(self) -> list[OperatorRef]:
+        # todo: this method is misleading; it only returns inline module operators, not all operators in the graph.
         return list(self._inline_module._operators.keys())
 
     def get_operator(self, op_ref: OperatorRef) -> AbstractOperator:
@@ -413,18 +414,21 @@ class GraphRT(QObject):
         self.nodes_added.emit([node_ref])
         return node_ref
 
-    def _update_node(self, node_ref: NodeRef, op:OperatorRef, args: tuple, kwargs: dict) -> None:
+    def _update_node(self, node_ref: NodeRef, op:OperatorRef=None, args: tuple=(), kwargs: dict={}) -> None:
         if node_ref not in self._nodes:
             raise MissingNodeError(f"Node {node_ref} does not exist in the graph.")
-        node_data = NodeData(op, args, dict(kwargs))
+        if op is None:
+            op = self._nodes[node_ref].get_operator()
+        node_data = NodeData(op, tuple(args), MappingProxyType(kwargs))
         self._nodes[node_ref] = node_data
         self.nodes_changed.emit([node_ref])
 
-    def _set_node(self, node_ref: NodeRef, node_data: NodeData) -> None:
-        if node_ref in self._nodes:
-            self._update_node(node_ref, node_data)
-        else:
-            self._create_node(node_data)
+    # deprecated for now
+    # def _set_node(self, node_ref: NodeRef, node_data: NodeData) -> None:
+    #     if node_ref in self._nodes:
+    #         self._update_node(node_ref, node_data.get_operator(), node_data.get_inputs()[0], node_data.get_inputs()[1])
+    #     else:
+    #         self._create_node(node_data.get_operator(), node_data.get_inputs()[0], node_data.get_inputs()[1])
 
     def delete_node(self, node_ref: NodeRef) -> None:
         if node_ref not in self._nodes:
@@ -541,6 +545,7 @@ class GraphRT(QObject):
         Upstream signatures are reduced to Python hashes, so dependency hash
         collisions are possible. Cache lookups compare full local signatures.
         """
+        assert isinstance(root, NodeRef), f"root must be an instance of NodeRef, got: {root}"
         if root is None:
             raise ValueError("No output node specified.")
 

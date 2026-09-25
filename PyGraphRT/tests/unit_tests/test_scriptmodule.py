@@ -1,12 +1,35 @@
-from pygraphrt.abstract_module_rt import OperatorRef
 import pytest
-import sys
-import traceback
+
+import pygraphrt.script_module as script_module
+from pygraphrt.abstract_module_rt import OperatorRef
 from textwrap import dedent
-from types import ModuleType
 from pygraphrt.script_module import ScriptModuleRT
+from pygraphrt.import_module import ImportModuleRT
 from pygraphrt.abstract_module_rt import ParameterData
 
+def test_initialization():
+    sm = ScriptModuleRT("mathy")
+    sm.set_script(dedent("""\
+    def one():
+        return 1
+
+    def pow(x):
+        return x ** 2
+
+    def mult(a, b):
+        return a * b
+    """))
+    assert sm is not None
+
+    assert set(op.name for op in sm.operators()) == {"one", "pow", "mult"}
+
+    mult_op = next(op for op in sm.operators() if op.name == 'mult')
+    actual_parameters = list(mult_op.get_parameters().values())
+    expected_parameters = [
+        ParameterData("a"), 
+        ParameterData("b")
+    ]
+    assert actual_parameters == expected_parameters
 
 
 def test_changing_all_updates_exports_and_signals():
@@ -33,10 +56,19 @@ def test_changing_all_updates_exports_and_signals():
 
 @pytest.mark.parametrize("exports, error_type", [
     ("['missing']", AttributeError),
+    ("['public', 'missing']", AttributeError),
     ("[1]", TypeError),
     ("None", TypeError),
+    ("'public'", TypeError),
+    ("{'public'}", TypeError),
+    ("{'public': 1}", TypeError),
+    ("iter(['public'])", TypeError),
+    ("type('Names', (list,), {})(['public'])", TypeError),
+    ("[type('Name', (str,), {})('public')]", TypeError),
 ])
-def test_invalid_all_records_failure_and_removes_operators(exports, error_type):
+def test_invalid_all_records_failure_and_removes_operators(
+    exports: str, error_type: type[Exception]
+) -> None:
     source = "def public(): return 1\n"
     invalid_source = source + f"__all__ = {exports}"
     initial = ScriptModuleRT("tools")
@@ -54,29 +86,62 @@ def test_invalid_all_records_failure_and_removes_operators(exports, error_type):
     assert removed == [[OperatorRef(module, "public")]]
 
 
-def test_initialization():
-    sm = ScriptModuleRT("mathy")
-    sm.set_script(dedent("""\
-    def one():
-        return 1
+@pytest.mark.parametrize("exports", ["['_private']", "('_private',)", "[]", "()"])
+def test_explicit_exports_allow_private_names_and_empty_containers(exports: str) -> None:
+    module = ScriptModuleRT()
+    module.set_script("def _private(): return 1\n" + f"__all__ = {exports}")
+    assert module.get_state() == "VALID"
+    expected = ["_private"] if "_private" in exports else []
+    assert [ref.name for ref in module.operators()] == expected
 
-    def pow(x):
-        return x ** 2
 
-    def mult(a, b):
-        return a * b
-    """))
-    assert sm is not None
+@pytest.mark.parametrize("exports", ["", "__all__ = ['op']", "__all__ = ['dynamic']"])
+def test_export_discovery_does_not_call_module_getattr(exports: str) -> None:
+    module = ScriptModuleRT()
+    module.set_script(dedent("""\
+        def op(): return 1
+        def __getattr__(name):
+            raise RuntimeError('Export discovery must not call this')
+    """) + exports)
+    if "dynamic" in exports:
+        assert isinstance(module.get_state(), AttributeError)
+        assert "dynamic" in str(module.get_state())
+        assert list(module.operators()) == []
+    else:
+        assert module.get_state() == "VALID"
+        assert [ref.name for ref in module.operators()] == ["op"]
 
-    assert set(op.name for op in sm.operators()) == {"one", "pow", "mult"}
 
-    mult_op = next(op for op in sm.operators() if op.name == 'mult')
-    actual_parameters = list(mult_op.get_parameters().values())
-    expected_parameters = [
-        ParameterData("a"), 
-        ParameterData("b")
-    ]
-    assert actual_parameters == expected_parameters
+@pytest.mark.parametrize("explicit", [False, True])
+def test_only_python_functions_become_operators(explicit: bool) -> None:
+    source = dedent("""\
+        from textwrap import dedent
+        class CallableObject:
+            def __getattribute__(self, name):
+                raise RuntimeError('Do not inspect callable objects')
+            def __call__(self): return 0
+        instance = CallableObject()
+        constant = 42
+        builtin = len
+        def op(): return 1
+    """)
+    if explicit:
+        source += "__all__ = ['CallableObject', 'instance', 'constant', 'builtin', 'dedent', 'op']"
+    module = ScriptModuleRT()
+    module.set_script(source)
+    assert module.get_state() == "VALID"
+    assert [ref.name for ref in module.operators()] == ["op"]
+    assert OperatorRef(module, "op")() == 1
+
+
+def test_imported_python_functions_can_be_included_explicitly() -> None:
+    functions = script_module._get_all_callables_from_script(
+        "from textwrap import dedent\n__all__ = ['dedent']",
+        name="tools", defined_only=False,
+    )
+    assert functions == {"dedent": dedent}
+
+
 
 
 def test_updating_script():
@@ -251,9 +316,6 @@ def test_state_changed_reports_committed_state_only_on_transitions():
     assert counter == 3, f"Expected counter to be 2, but got {counter}"
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
-
 @pytest.mark.parametrize("invalid_script", ["def broken(:", "raise RuntimeError('broken')"])
 def test_failed_script_emits_removed_operator_refs(invalid_script):
     module = ScriptModuleRT("tools")
@@ -263,3 +325,84 @@ def test_failed_script_emits_removed_operator_refs(invalid_script):
     module.set_script(invalid_script)
     assert removed == [[OperatorRef(module, "one")]]
     assert removed[0][0].get_value() is None
+
+@pytest.mark.parametrize("module_class", [ScriptModuleRT, ImportModuleRT])
+@pytest.mark.parametrize("source, error_type", [
+    ("def broken(:", SyntaxError),
+    ("raise RuntimeError('broken')", RuntimeError),
+    ("__all__ = ['missing']", AttributeError),
+    ("__all__ = None", TypeError),
+])
+def test_script_errors_notify_observers_after_committing(
+    module_class: type[ScriptModuleRT], source: str, error_type: type[Exception]
+) -> None:
+    module = module_class()
+    module.set_script("def one(): return 1")
+    observed: list[tuple[str, str, object, list[OperatorRef]]] = []
+
+    def record(signal: str) -> None:
+        observed.append((signal, module.get_script(), module.get_state(), list(module.operators())))
+
+    module.state_changed.connect(lambda: record("state"))
+    module.operators_removed.connect(lambda _: record("removed"))
+    module.script_changed.connect(lambda: record("script"))
+    module.set_script(source)
+
+    error = module.get_state()
+    assert isinstance(error, error_type)
+    assert observed == [(signal, source, error, []) for signal in ("state", "removed", "script")]
+
+    module.set_script("def recovered(): return 2")
+    assert module.get_state() == "VALID"
+    assert OperatorRef(module, "recovered")() == 2
+
+
+@pytest.mark.parametrize("component", [
+    "ModuleType", "_get_all_callables_from_script", "ast_functions_diff", "FunctionOperator",
+])
+def test_runtime_bugs_propagate_without_committing(
+    monkeypatch: pytest.MonkeyPatch, component: str
+) -> None:
+    module = ScriptModuleRT()
+    source = "def one(): return 1\ndef two(): return 2"
+    module.set_script(source)
+    operators = {ref.name: ref.get_value() for ref in module.operators()}
+    notifications: list[str] = []
+    module.state_changed.connect(lambda: notifications.append("state"))
+    module.script_changed.connect(lambda: notifications.append("script"))
+    module.operators_added.connect(lambda _: notifications.append("added"))
+    module.operators_removed.connect(lambda _: notifications.append("removed"))
+    module.operators_changed.connect(lambda _: notifications.append("changed"))
+    bug = RuntimeError("runtime implementation bug")
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise bug
+
+    monkeypatch.setattr(script_module, component, fail)
+    with pytest.raises(RuntimeError) as caught:
+        module.set_script("def two(): return 3")
+
+    assert caught.value is bug
+    assert module.get_script() == source
+    assert module.get_state() == "VALID"
+    assert {ref.name: ref.get_value() for ref in module.operators()} == operators
+    assert notifications == []
+
+
+@pytest.mark.parametrize("exception_name", ["KeyboardInterrupt", "SystemExit"])
+def test_script_interrupts_propagate_without_committing(exception_name: str) -> None:
+    module = ScriptModuleRT()
+    source = "def one(): return 1"
+    module.set_script(source)
+    exception_type = KeyboardInterrupt if exception_name == "KeyboardInterrupt" else SystemExit
+
+    with pytest.raises(exception_type):
+        module.set_script(f"raise {exception_name}()")
+
+    assert module.get_script() == source
+    assert module.get_state() == "VALID"
+    assert OperatorRef(module, "one")() == 1
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

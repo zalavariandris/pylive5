@@ -1,4 +1,8 @@
 # GraphRT
+- [x] support untitled ImportModule
+
+- [ ] review PyGraphRT error handling and reporting
+
 
 - [ ] review parameters and getters semantic. whic one to use where and why.
 

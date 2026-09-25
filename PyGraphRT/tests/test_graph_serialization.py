@@ -215,7 +215,7 @@ def test_same_basename_imports_round_trip(tmp_path: Path, explicit: bool) -> Non
         path = directory / "tools.py"
         path.write_text(f"def value(): return {index}", encoding="utf-8")
         module = ImportModuleRT(str(path))
-        module.set_name("display label")
+        module.set_display_name("display label")
         graph.add_import(module)
         graph.node()(OperatorRef(module, "value"), name=folder)
         paths.append(str(path))

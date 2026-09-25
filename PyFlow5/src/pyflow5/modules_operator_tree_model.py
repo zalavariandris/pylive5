@@ -95,7 +95,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             item = operators[index.row()]
 
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            return item.get_name()
+            return item.get_display_name()
         if role == self.ModuleRole and isinstance(item, AbstractModule):
             return item
         if role == self.OperatorRole and isinstance(item, OperatorRef):
