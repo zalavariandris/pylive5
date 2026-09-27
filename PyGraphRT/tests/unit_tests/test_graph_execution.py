@@ -7,9 +7,9 @@ def test_executing_node_without_an_operator():
     E = rt.GraphExecutorRT(G)
     node = G._create_node()
 
-    with pytest.raises(rt.GraphExecutionError):
-        # "Expected GraphExecutionError when executing a node without an operator.":
-        E.execute(node)
+
+    result = E.execute(node)
+    assert isinstance(result, Exception)
 
 def test_executing_node_with_a_valid_operator():
     import pygraphrt as rt

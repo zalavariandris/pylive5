@@ -1,7 +1,7 @@
 from textwrap import dedent
 
 import pytest
-from pygraphrt.graph_rt import GraphStateRT
+from pygraphrt.graph_state_rt import GraphStateRT
 from pygraphrt.script_module import ScriptModuleRT
 from pygraphrt.watch import Watcher
 

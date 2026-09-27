@@ -4,7 +4,7 @@ from pathlib import Path
 import traceback
 
 from pygraphrt.errors import GraphExecutionError
-from pygraphrt.script_module import ScriptModuleRT
+from pygraphrt import ScriptModuleRT
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
 

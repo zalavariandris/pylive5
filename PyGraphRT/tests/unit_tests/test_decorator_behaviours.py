@@ -57,6 +57,8 @@ class Test_OperatorRebinding():
 
         assert A==B
 
+        
+
     # REVIEW SIMPLIFY: keep reference stability, updated behavior, and no nodes;
     # old/new FunctionOperator identity and retained wrapper snapshots need not
     # constrain how operator storage is implemented during development.

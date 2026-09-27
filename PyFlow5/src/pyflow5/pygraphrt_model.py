@@ -1,8 +1,15 @@
 from collections import defaultdict
 
+import pygraphrt as rt
+
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.abstract_module_rt import AbstractModule
-from pygraphrt.graph_rt import GraphExecutorRT, NodeRef
+from pygraphrt import (
+    GraphStateRT, 
+    NodeRef, 
+    GraphExecutorRT
+
+)
 from pytools import UniqueNameGenerator
 from qtpy.QtCore import QPointF, Slot
 from typing import Iterable, override
@@ -29,16 +36,16 @@ from typing import Any
 class PyFlowRTModel(AbstractDAGModel):
     ResultsRole = Qt.ItemDataRole.UserRole+1
 
-    def __init__(self, rt: rt.GraphStateRT, executor: GraphExecutorRT): 
+    def __init__(self, rt: rt.GraphStateRT, executor: rt.GraphExecutorRT): 
         super().__init__()
-        self._rt = rt
+        self._rt: rt.GraphStateRT = rt
         self._executor: GraphExecutorRT = executor
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
         self._observed_modules:set[AbstractModule] = set()
         self._connect_runtime()
         self._results: dict[NodeName, Any] = {}
 
-    def setRT(self, rt: rt.GraphStateRT, positions=None):
+    def setRT(self, rt: GraphStateRT, positions=None):
         self._beginResetModel()
         self._disconnect_runtime()
         self._rt = rt
@@ -186,7 +193,7 @@ class PyFlowRTModel(AbstractDAGModel):
         self._endRemoveNodes()
 
     # ports
-    def _node_inlets(self, node_ref: NodeRef):
+    def _node_inlets(self, node_ref: rt.NodeRef):
         """Return declared inlets and actual bindings, including invalid extras."""
         op = node_ref.get_operator()
         parameters = list(op.get_parameters()) if op is not None else []

@@ -2,8 +2,8 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .graph_rt import NodeRef
-    from .graph_rt import OperatorRef
+    from .graph_definition_rt import NodeRef
+    from .graph_definition_rt import OperatorRef
     from .abstract_module_rt import AbstractModuleRef
 
 class ModuleError(Exception):

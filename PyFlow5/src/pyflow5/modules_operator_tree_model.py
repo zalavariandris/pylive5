@@ -1,7 +1,10 @@
-from pygraphrt.abstract_module_rt import AbstractModule, OperatorRef
-from pygraphrt.graph_rt import GraphStateRT
-from pygraphrt.import_module import ImportModuleRT
-from pygraphrt.script_module import ScriptModuleRT
+from pygraphrt import (
+    AbstractModule,
+    OperatorRef,
+    GraphStateRT,
+    ImportModuleRT,
+    ScriptModuleRT
+)
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, QObject, Qt
 
 

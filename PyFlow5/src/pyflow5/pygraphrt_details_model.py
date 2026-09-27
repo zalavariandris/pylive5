@@ -7,7 +7,7 @@ from qtpy.QtCore import QAbstractListModel, QModelIndex, Qt
 
 from pyflow5.inspector_roles import InspectorRole, UNSET
 from pygraphrt.abstract_module_rt import ParameterData
-from pygraphrt.graph_rt import NodeRef
+from pygraphrt import NodeRef
 
 from .pygraphrt_model import PyFlowRTModel
 

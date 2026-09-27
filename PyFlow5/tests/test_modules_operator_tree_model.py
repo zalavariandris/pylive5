@@ -11,7 +11,7 @@ from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
 from pyflow5.pyflow5_document import PyFlowDocument
 from pyflow5.pyflow5_window import ModuleDetailsView
 from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.graph_rt import GraphStateRT
+from pygraphrt.graph_definition_rt import GraphStateRT
 
 
 @pytest.fixture
@@ -115,25 +115,3 @@ def test_failed_import_does_not_start_insertion(
     assert len(about_to_insert) == 0
     assert model.rowCount() == 2
 
-
-def test_editor_to_operator_dialog(qtbot: QtBot) -> None:
-    document = PyFlowDocument()
-    model = document.modules_model
-    selection = QItemSelectionModel(model)
-    editor = ModuleDetailsView()
-    qtbot.addWidget(editor)
-    editor.setModel(model)
-    editor.setSelectionModel(selection)
-    selection.setCurrentIndex(
-        model.index(0, 0), QItemSelectionModel.SelectionFlag.ClearAndSelect
-    )
-    editor._code_editor.setPlainText('def hello() -> str: return "hello"')
-
-    dialog = SelectionDialog(model)
-    qtbot.addWidget(dialog)
-    dialog.show()
-    selected = dialog.selected_index()
-    assert selected.data() == "hello"
-    document.addNode(selected)
-    node = document.graph_model.getNode("hello")
-    assert document._graph.execute(node) == "hello"

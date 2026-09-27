@@ -1,4 +1,4 @@
-from .graph_rt import GraphStateRT, NodeRef
+from .graph_definition_rt import GraphStateRT, NodeRef
 from .abstract_module_rt import OperatorRef
 from typing import Callable, Iterable
 import weakref

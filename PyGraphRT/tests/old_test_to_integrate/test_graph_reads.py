@@ -1,5 +1,5 @@
 import pytest
-from pygraphrt.graph_rt import GraphStateRT
+from pygraphrt.graph_definition_rt import GraphStateRT
 from pygraphrt.abstract_module_rt import OperatorRef, ParameterData
 
 

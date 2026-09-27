@@ -12,6 +12,7 @@ from pygraphrt.script_module import ScriptModuleRT
 from pygraphrt.import_module import ImportModuleRT
 from pygraphrt.abstract_module_rt import ParameterData
 
+
 @pytest.mark.parametrize("ModuleClass, name", [
     (ScriptModuleRT, "script"), 
     (ImportModuleRT, "import"),

@@ -1,9 +1,8 @@
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.errors import GraphExecutionError, ModuleError
 
-from pygraphrt.graph_rt import GraphExecutorRT
 import pytest
-from pygraphrt import GraphStateRT, ImportModuleRT
+from pygraphrt import GraphStateRT, ImportModuleRT, GraphExecutorRT
 from textwrap import dedent
 
 

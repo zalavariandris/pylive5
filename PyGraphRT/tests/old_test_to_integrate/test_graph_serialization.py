@@ -7,11 +7,15 @@ import json
 import math
 from pathlib import Path
 
-from pygraphrt.graph_rt import GraphExecutorRT
-from pygraphrt.import_module import ImportModuleRT
+from pygraphrt import (
+    GraphExecutorRT, 
+    ImportModuleRT,
+    GraphStateRT, 
+    OperatorRef
+)
+
 import pytest
 
-from pygraphrt import GraphStateRT, OperatorRef
 
 from textwrap import dedent
 import pprint
