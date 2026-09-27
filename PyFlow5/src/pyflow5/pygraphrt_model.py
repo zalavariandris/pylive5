@@ -5,7 +5,7 @@ import pygraphrt as rt
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.abstract_module_rt import AbstractModule
 from pygraphrt import (
-    GraphStateRT, 
+    GraphDefinitionRT, 
     NodeRef, 
     GraphExecutorRT
 
@@ -36,16 +36,16 @@ from typing import Any
 class PyFlowRTModel(AbstractDAGModel):
     ResultsRole = Qt.ItemDataRole.UserRole+1
 
-    def __init__(self, rt: rt.GraphStateRT, executor: rt.GraphExecutorRT): 
+    def __init__(self, rt: rt.GraphDefinitionRT, executor: rt.GraphExecutorRT): 
         super().__init__()
-        self._rt: rt.GraphStateRT = rt
+        self._rt: rt.GraphDefinitionRT = rt
         self._executor: GraphExecutorRT = executor
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
         self._observed_modules:set[AbstractModule] = set()
         self._connect_runtime()
         self._results: dict[NodeName, Any] = {}
 
-    def setRT(self, rt: GraphStateRT, positions=None):
+    def setRT(self, rt: GraphDefinitionRT, positions=None):
         self._beginResetModel()
         self._disconnect_runtime()
         self._rt = rt

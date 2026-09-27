@@ -9,7 +9,7 @@ from textwrap import dedent
 def test_nodes_sharing_operators_are_unique():
     # todo: I think this test is redundant now. 
     #   NodeRef creation equality (is tested with CRUDtests), and execution should be tested seperatelly
-    graph = rt.GraphStateRT()
+    graph = rt.GraphDefinitionRT()
     executor = rt.GraphExecutorRT(graph)
 
     @graph.node()
@@ -42,7 +42,7 @@ def test_nodes_sharing_operators_are_unique():
 def test_generated_node_names_avoid_explicit_names():
     # todo: consider manually specifying ndoe names especially for the UI.
     #   keeping a unique name accross the nodes makes the Serialization human readable, which is desired.
-    graph = rt.GraphStateRT()
+    graph = rt.GraphDefinitionRT()
 
     @graph._inline_module.op()
     def identity(value):
@@ -60,7 +60,7 @@ class Test_NodeAndOperatorDecorators_REGRESSION_TESTS:
     # REVIEW OUTDATED / REMOVE: op() replaces an existing named operator;
     # rejection contradicts the rebinding tests in test_decorators_behaviour.py.
     def test_duplicated_operator_raises_value_error(self):
-        graph = rt.GraphStateRT()
+        graph = rt.GraphDefinitionRT()
         
         @graph.op()
         def identity(value):
@@ -74,7 +74,7 @@ class Test_NodeAndOperatorDecorators_REGRESSION_TESTS:
     # REVIEW OUTDATED / REMOVE: node() updates an existing named node rather
     # than enforcing the old duplicate-name rejection rule.
     def test_duplicated_node_names_raises(self):
-        graph = rt.GraphStateRT()
+        graph = rt.GraphDefinitionRT()
 
         @graph.op()
         def identity(value):
@@ -88,7 +88,7 @@ class Test_NodeAndOperatorDecorators_REGRESSION_TESTS:
     # REVIEW OUTDATED / REMOVE: repeated node()(operator) rebinds the same node.
     # Distinct-node allocation is covered by test_nodes_sharing_operators_are_unique.
     def test_unique_node_name_generation_with_identical_op(self):
-        graph = rt.GraphStateRT()
+        graph = rt.GraphDefinitionRT()
 
         @graph.op()
         def identity(value):
@@ -113,7 +113,7 @@ class Test_NodeAndOperatorDecorators_REGRESSION_TESTS:
         # on the other hand, inline functions are currently just a fancy way to define operators within the graph.
         # its not used by the application, and not serialized.
         
-        graph = rt.GraphStateRT()
+        graph = rt.GraphDefinitionRT()
 
         def identity(value):
             return value
@@ -125,7 +125,7 @@ class Test_NodeAndOperatorDecorators_REGRESSION_TESTS:
     # The caught exception is optional and no new operator is registered here,
     # so this does not verify the claimed rollback behavior.
     def test_node_decorator_on_fail_should_not_add_operator(self):
-        graph = rt.GraphStateRT()
+        graph = rt.GraphDefinitionRT()
 
         @graph.op()
         def identity(value):
@@ -147,7 +147,7 @@ class Test_NodeAndOperatorDecorators_REGRESSION_TESTS:
     # REVIEW UNNECESSARY / REMOVE: graph.node(hello) only returns an unapplied
     # decorator; no nodes are created and nothing is asserted.
     def test_node_decorator_with_same_function(self):
-        graph = rt.GraphStateRT()
+        graph = rt.GraphDefinitionRT()
 
         def hello():
             return "hello"

@@ -3,7 +3,7 @@ import pygraphrt as rt
 from textwrap import dedent
 
 def test_setinput_triggers_watcher():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
 
     @G.node()
     def mult(x, y):
@@ -28,7 +28,7 @@ def test_setinput_triggers_watcher():
     assert len(track_changes) == 4, "Watcher callback should be triggered when mult node input changes" 
 
 def test_update_operator_triggers_watcher():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
 
     @G.node()
     def output():
@@ -134,7 +134,7 @@ if __name__ == "__main__":
 # Keep removal notification; verify a callback after restoring the operator
 # when migrating, as the script ancestor restoration test already does.
 def test_operator_removal_keeps_watcher_for_restoration():
-    graph = rt.GraphStateRT()
+    graph = rt.GraphDefinitionRT()
     node = graph.node()(lambda: 1)
     changes = []
     watcher = rt.watch(graph, node, lambda: changes.append(True))
@@ -145,7 +145,7 @@ def test_operator_removal_keeps_watcher_for_restoration():
 
 
 def test_unrelated_operator_update_and_watcher_restart():
-    graph = rt.GraphStateRT()
+    graph = rt.GraphDefinitionRT()
     def output():
         return 1
     def unrelated():
@@ -175,7 +175,7 @@ def test_script_operator_notifications():
 
     module = ScriptModuleRT("example")
     module.set_script("def output(): return 1")
-    graph = rt.GraphStateRT()
+    graph = rt.GraphDefinitionRT()
     node = graph.node()(OperatorRef(module, "output"))
     changes = []
     watcher = rt.watch(graph, node, lambda: changes.append(True))

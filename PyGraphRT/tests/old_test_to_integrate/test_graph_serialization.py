@@ -10,7 +10,7 @@ from pathlib import Path
 from pygraphrt import (
     GraphExecutorRT, 
     ImportModuleRT,
-    GraphStateRT, 
+    GraphDefinitionRT, 
     OperatorRef
 )
 
@@ -33,7 +33,7 @@ def test_strictly_the_hello_world_graph_serialization() -> None:
         def hello_world(name:str, greeting:str='Hello'):
             return f"{greeting} {name}!"
         """)
-    G = GraphStateRT()
+    G = GraphDefinitionRT()
     G.setLocalDefinitions(local_definitions)
 
     operators_by_name = {
@@ -70,7 +70,7 @@ def test_strictly_the_hello_world_graph_serialization() -> None:
         }
     }
 
-    loaded_graph = GraphStateRT.fromdict(data)
+    loaded_graph = GraphDefinitionRT.fromdict(data)
     loaded_data = loaded_graph.todict()
     import json
     assert loaded_data == data, f"Loaded data does not match original data: {json.dumps(loaded_data, indent=2)} != {json.dumps(data, indent=2)}"
@@ -96,7 +96,7 @@ def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Pat
     import_module_path.write_text(source, encoding="utf-8")
 
     # create the runtime graph and add the imported module
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     import_module = ImportModuleRT(import_module_path)
     graph.add_import(import_module)
 
@@ -138,7 +138,7 @@ def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Pat
         }
     }
 
-    loaded = GraphStateRT.fromdict(json.loads(json.dumps(data)))
+    loaded = GraphDefinitionRT.fromdict(json.loads(json.dumps(data)))
     assert loaded.todict() == data
     assert loaded.local().get_script() == ""
     assert all(node.get_operator().module is loaded.imports()[0] for node in loaded.nodes())
@@ -148,18 +148,18 @@ def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Pat
 
 @pytest.mark.parametrize("explicit", [False, True])
 def test_empty_graph_round_trip(explicit: bool) -> None:
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     data = graph.todict(explicit=explicit)
     expected: dict[str, object] = {"version": 1}
     if explicit:
         expected.update(imports=[], _local_="", graph={"nodes": {}})
     assert data == expected
-    assert GraphStateRT.fromdict(data).todict(explicit=explicit) == data
+    assert GraphDefinitionRT.fromdict(data).todict(explicit=explicit) == data
 
 
 @pytest.fixture
 def graph():
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     graph.setLocalDefinitions("def op(*args, **kwargs): return args, kwargs")
     operator = OperatorRef(graph.local(), "op")
     source = graph.node(42)(operator, name="source")
@@ -177,7 +177,7 @@ def test_runtime_round_trip_preserves_values_and_forward_references(graph):
     assert all("position" not in record for record in records.values())
     data["graph"]["nodes"] = dict(reversed(list(records.items())))
     original = copy.deepcopy(data)
-    loaded = GraphStateRT.fromdict(copy.deepcopy(data))
+    loaded = GraphDefinitionRT.fromdict(copy.deepcopy(data))
     assert data == original
     nodes = {node.get_name(): node for node in loaded.nodes()}
     args, kwargs = nodes["target"].get_inputs()
@@ -194,7 +194,7 @@ def test_runtime_round_trip_preserves_values_and_forward_references(graph):
 # inputs in explicit mode. Empty-graph and executable round trips provide the
 # important behavior without making this output-format choice permanent.
 def test_explicit_empty_node_inputs():
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     graph.setLocalDefinitions("def one(): return 1")
     one_op = list(graph.local().operators())[0]
     graph.node()(one_op, name="one")
@@ -208,7 +208,7 @@ def test_explicit_empty_node_inputs():
 def test_imports_and_local_disambiguate_operator_names(tmp_path):
     path = tmp_path / "tools.py"
     path.write_text("def op(): return 42", encoding="utf-8")
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     graph.setLocalDefinitions("def op(value): return value * 2")
     import_module = ImportModuleRT(path)
     graph.add_import(import_module)
@@ -218,7 +218,7 @@ def test_imports_and_local_disambiguate_operator_names(tmp_path):
     records = graph.todict()["graph"]["nodes"]
     assert records["source"]["operator"] == {"module": str(path), "name": "op"}
     assert records["target"]["operator"] == "op"
-    loaded = GraphStateRT.fromdict(graph.todict())
+    loaded = GraphDefinitionRT.fromdict(graph.todict())
     assert GraphExecutorRT(loaded).execute(loaded.nodes()[1]) == 84
     assert loaded.nodes()[0].get_operator().module is loaded.imports()[0]
     assert loaded.nodes()[1].get_operator().module is loaded.local()
@@ -226,7 +226,7 @@ def test_imports_and_local_disambiguate_operator_names(tmp_path):
 
 @pytest.mark.parametrize("explicit", [False, True])
 def test_same_basename_imports_round_trip(tmp_path: Path, explicit: bool) -> None:
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     paths: list[str] = []
     for index, folder in enumerate(("first", "second")):
         directory = tmp_path / folder
@@ -245,7 +245,7 @@ def test_same_basename_imports_round_trip(tmp_path: Path, explicit: bool) -> Non
         assert data["graph"]["nodes"][name]["operator"] == {
             "module": path, "name": "value"
         }
-    loaded = GraphStateRT.fromdict(json.loads(json.dumps(data)))
+    loaded = GraphDefinitionRT.fromdict(json.loads(json.dumps(data)))
     assert loaded.todict(explicit=explicit) == data
     assert [GraphExecutorRT(loaded).execute(node) for node in loaded.nodes()] == [0, 1]
 
@@ -256,11 +256,11 @@ def test_same_basename_imports_round_trip(tmp_path: Path, explicit: bool) -> Non
 ])
 def test_invalid_import_paths_are_rejected(imports: object) -> None:
     with pytest.raises(ValueError):
-        GraphStateRT.fromdict({"version": 1, "imports": imports})
+        GraphDefinitionRT.fromdict({"version": 1, "imports": imports})
 
 
 def test_duplicate_import_paths_cannot_be_saved() -> None:
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     for _ in range(2):
         graph.add_import(ImportModuleRT("tools.py"))
     with pytest.raises(ValueError, match="unique"):
@@ -272,10 +272,10 @@ def test_duplicate_import_paths_cannot_be_saved() -> None:
 def test_unused_imports_survive(tmp_path):
     path = tmp_path / "unused.py"
     path.write_text("def unused(): return 1", encoding="utf-8")
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     import_module = ImportModuleRT(path)
     graph.add_import(import_module)
-    loaded = GraphStateRT.fromdict(graph.todict())
+    loaded = GraphDefinitionRT.fromdict(graph.todict())
     assert len(loaded.imports()) == 1
     assert loaded.imports()[0].path() == str(path)
     assert loaded.nodes() == []
@@ -283,11 +283,11 @@ def test_unused_imports_survive(tmp_path):
 
 @pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan")])
 def test_nonfinite_floats_use_json_tags(value):
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     graph.setLocalDefinitions("def op(value): return value")
     graph.node(value)(OperatorRef(graph.local(), "op"))
     encoded = json.dumps(graph.todict(), allow_nan=False)
-    loaded = GraphStateRT.fromdict(json.loads(encoded))
+    loaded = GraphDefinitionRT.fromdict(json.loads(encoded))
     restored = loaded.nodes()[0].get_inputs()[0][0]
     assert math.isnan(restored) if math.isnan(value) else restored == value
 
@@ -316,16 +316,16 @@ def test_malformed_runtime_data_is_rejected(graph, damage):
     else:
         record["args"] = [{"type": "unknown"}]
     with pytest.raises(ValueError):
-        GraphStateRT.fromdict(data)
+        GraphDefinitionRT.fromdict(data)
 
 
 def test_invalid_source_and_missing_operator_stay_editable():
-    graph = GraphStateRT()
+    graph = GraphDefinitionRT()
     graph.setLocalDefinitions("def op(:")
     
     
     graph.node()(OperatorRef(graph.local(), "op"))
-    loaded = GraphStateRT.fromdict(graph.todict())
+    loaded = GraphDefinitionRT.fromdict(graph.todict())
     assert loaded.local().get_script() == "def op(:"
     assert loaded.nodes()[0].get_operator().get_value() is None
     loaded.local().set_script("def op(): return 7")
@@ -336,7 +336,7 @@ def test_opaque_values_and_inline_functions_fail_explicitly(graph):
     graph.nodes()[0].set_inputs(object())
     with pytest.raises(TypeError, match="Cannot save input"):
         graph.todict()
-    inline = GraphStateRT()
+    inline = GraphDefinitionRT()
 
     @inline.node()
     def op():
@@ -349,7 +349,7 @@ def test_opaque_values_and_inline_functions_fail_explicitly(graph):
 # REVIEW UNNECESSARY / DEFER: fixes subclass-preserving construction without a
 # concrete subclass use case here. Base GraphRT round trips cover current needs.
 def test_fromdict_constructs_subclass(graph):
-    class CustomGraph(GraphStateRT):
+    class CustomGraph(GraphDefinitionRT):
         pass
 
     assert isinstance(CustomGraph.fromdict(graph.todict()), CustomGraph)

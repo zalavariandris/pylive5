@@ -20,7 +20,7 @@ from .pygraphrt_model import PyFlowRTModel
 class PyFlowDocument(QObject):
     def __init__(self, parent:QObject|None=None):
         super().__init__(parent=parent)
-        self._graph = rt.GraphStateRT()
+        self._graph = rt.GraphDefinitionRT()
         self._executor = rt.GraphExecutorRT(self._graph)
 
         self.graph_model = PyFlowRTModel(self._graph, self._executor)
@@ -116,7 +116,7 @@ class PyFlowDocument(QObject):
     def open(self, file_path: str | Path) -> None:
         """Load a JSON file, retaining the document and its models."""
         data = json.loads(Path(file_path).read_text(encoding="utf-8"))
-        new_graph_rt = rt.GraphStateRT.fromdict(data)
+        new_graph_rt = rt.GraphDefinitionRT.fromdict(data)
         positions: dict[str, tuple[float, float]] = {}
         for name, record in data.get("graph", {}).get("nodes", {}).items():
             position = record.get("position", [0, 0])

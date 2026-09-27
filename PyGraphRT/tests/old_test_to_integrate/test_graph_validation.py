@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from pygraphrt import GraphStateRT
+from pygraphrt import GraphDefinitionRT
 
 
 # REVIEW SIMPLIFY: keep representative malformed structures and versions;
@@ -27,7 +27,7 @@ from pygraphrt import GraphStateRT
 ])
 def test_invalid_graph_structure_is_rejected(data: Any) -> None:
     with pytest.raises(ValueError, match="Invalid graph format"):
-        GraphStateRT.fromdict(data)
+        GraphDefinitionRT.fromdict(data)
 
 
 # REVIEW SIMPLIFY: retain malformed operator/input coverage, but reduce the
@@ -57,7 +57,7 @@ def test_invalid_graph_structure_is_rejected(data: Any) -> None:
     {"operator": "op", "kwargs": {"nested": [[{"type": "node", "name": 42}]]}},
 ])
 def test_invalid_node_structure_is_rejected_before_runtime_creation(record: Any) -> None:
-    class UnconstructedGraph(GraphStateRT):
+    class UnconstructedGraph(GraphDefinitionRT):
         def __init__(self) -> None:
             pytest.fail("Malformed input must be rejected before constructing a runtime")
 
@@ -90,7 +90,7 @@ def test_input_validation_preserves_values_and_input_data(value: Any) -> None:
         }}},
     }
     original = copy.deepcopy(data)
-    loaded = GraphStateRT.fromdict(data)
+    loaded = GraphDefinitionRT.fromdict(data)
     assert data == original
     assert loaded.todict() == original
 
@@ -104,7 +104,7 @@ def test_runtime_accepts_document_positions_without_serializing_them() -> None:
         }}},
     }
     original = copy.deepcopy(data)
-    loaded = GraphStateRT.fromdict(data)
+    loaded = GraphDefinitionRT.fromdict(data)
     assert data == original
     assert loaded.nodes()[0].get_name() == "op"
     assert "position" not in loaded.todict()["graph"]["nodes"]["op"]

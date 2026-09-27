@@ -2,7 +2,7 @@ from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.errors import GraphExecutionError, ModuleError
 
 import pytest
-from pygraphrt import GraphStateRT, ImportModuleRT, GraphExecutorRT
+from pygraphrt import GraphDefinitionRT, ImportModuleRT, GraphExecutorRT
 from textwrap import dedent
 
 
@@ -39,7 +39,7 @@ def find_operator_by_name(im, name)->OperatorRef|None:
     return next((op for op in im.operators() if op.get_name() == name), None)
 
 def test_smoke_hello_world():
-    G = GraphStateRT()
+    G = GraphDefinitionRT()
     E = GraphExecutorRT(G)
     im = ImportModuleRT()
     G.add_import(im)

@@ -8,13 +8,13 @@ import inspect
 import pytest
 from qtpy.QtCore import QObject
 
-from pygraphrt.graph_definition_rt import GraphStateRT
+from pygraphrt.graph_definition_rt import GraphDefinitionRT
 from pygraphrt.graph_definition_rt import NodeRef
 
 
 def test_setting_inputs_from_other_graphs_raise_value_error():
-    G1 = GraphStateRT()
-    G2 = GraphStateRT()
+    G1 = GraphDefinitionRT()
+    G2 = GraphDefinitionRT()
 
     @G1.node()
     def node_in_G1():

@@ -28,7 +28,7 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
         return 0
     """))
 
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G)
     operators = {operator.name: operator for operator in sm.operators()}
 
@@ -70,7 +70,7 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
 @pytest.fixture
 def ancestor_graph():
     """The output is local; its ancestor comes from an independently edited script."""
-    graph = rt.GraphStateRT()
+    graph = rt.GraphDefinitionRT()
     module = ScriptModuleRT("source")
     module.set_script("def value(): return 1")
     ancestor = graph.node()(OperatorRef(module, "value"))

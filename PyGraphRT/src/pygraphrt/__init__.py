@@ -1,5 +1,5 @@
 from .graph_definition_rt import (
-    GraphStateRT, 
+    GraphDefinitionRT, 
     NodeRef,
 )
 
@@ -27,7 +27,7 @@ from .errors import GraphExecutionError
 __all__ = [
     "AbstractModule",
     "NodeRef",
-    "GraphStateRT",
+    "GraphDefinitionRT",
     "FunctionOperator",
     "MemoryCache",
     "HistoryMemoryCache",

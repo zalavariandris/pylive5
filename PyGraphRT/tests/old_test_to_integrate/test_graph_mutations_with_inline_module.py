@@ -6,7 +6,7 @@ import pygraphrt as rt
 
 
 def test_set_node_inputs_to_raw_values():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G)
 
     @G.node(a=2, b=3)
@@ -21,7 +21,7 @@ def test_set_node_inputs_to_raw_values():
     assert result == 8, "Node should compute 5 + 3 = 8 after changing input a to 5"
 
 def test_set_node_inputs_to_nodes():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G)
 
     @G.node()
@@ -40,7 +40,7 @@ def test_set_node_inputs_to_nodes():
 # REVIEW OUTDATED / UPDATE: execute() wraps the missing-argument TypeError in
 # GraphExecutionError. Keep dependent-input cleanup coverage; it is useful.
 def test_remove_node_from_graph():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G)
 
     @G.node()
@@ -65,7 +65,7 @@ def test_remove_node_from_graph():
         result = E.execute(mult)
 
 def test_removing_nodes_cleanup_dependent_inputs():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G)
 
     @G.node()
@@ -90,7 +90,7 @@ def test_removing_nodes_cleanup_dependent_inputs():
 # across caches; the order of independent nodes in changes need not be fixed.
 @pytest.mark.parametrize("cache_type", [rt.DummyCache, rt.MemoryCache, rt.HistoryMemoryCache])
 def test_removing_node_updates_dependents_and_their_cached_results(cache_type):
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G, cache_type())
 
     @G.node()
@@ -127,7 +127,7 @@ def test_removing_node_updates_dependents_and_their_cached_results(cache_type):
 
 
 def test_remove_operator_from_graph_throws_missing_operator_error():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G)
     
     @G.node()
@@ -156,7 +156,7 @@ def test_remove_operator_from_graph_throws_missing_operator_error():
 # an unused attribute. execute(add) selects the root explicitly and the result
 # duplicates basic execution coverage.
 def test_setting_output():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G)
 
     @G.node()
@@ -173,7 +173,7 @@ def test_setting_output():
 
 class TestUpdatingNodesOperator:
     def test_update_operator_body(self):
-        G = rt.GraphStateRT()
+        G = rt.GraphDefinitionRT()
         E = rt.GraphExecutorRT(G)
 
         @G.node(1, 2)
@@ -195,7 +195,7 @@ class TestUpdatingNodesOperator:
     # REVIEW OUTDATED / UPDATE: operator argument errors are wrapped in
     # GraphExecutionError. Preserve the incompatible-signature scenario.
     def test_execute_raises_type_error_after_operator_update_adds_required_parameter(self):
-        G = rt.GraphStateRT()
+        G = rt.GraphDefinitionRT()
         E = rt.GraphExecutorRT(G)
 
         @G.node(1, 2)
@@ -215,7 +215,7 @@ class TestUpdatingNodesOperator:
             result = E.execute(the_node)
 
     def test_set_operator_function_with_same_signature(self):
-        G = rt.GraphStateRT()
+        G = rt.GraphDefinitionRT()
         E = rt.GraphExecutorRT(G)
 
         @G.op()

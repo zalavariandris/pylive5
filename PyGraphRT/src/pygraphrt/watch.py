@@ -1,4 +1,4 @@
-from .graph_definition_rt import GraphStateRT, NodeRef
+from .graph_definition_rt import GraphDefinitionRT, NodeRef
 from .abstract_module_rt import OperatorRef
 from typing import Callable, Iterable
 import weakref
@@ -6,8 +6,8 @@ from qtpy.QtCore import Signal
 
 
 class Watcher:
-	def __init__(self, graph: GraphStateRT, node: NodeRef, callback: Callable[[], None]):
-		assert isinstance(graph, GraphStateRT), f"graph must be an instance of GraphRT got {graph}"
+	def __init__(self, graph: GraphDefinitionRT, node: NodeRef, callback: Callable[[], None]):
+		assert isinstance(graph, GraphDefinitionRT), f"graph must be an instance of GraphRT got {graph}"
 		assert isinstance(node, NodeRef), f"node must be an instance of NodeRef got {node}"
 		assert callable(callback), f"callback must be callable got {callback}"
 		
@@ -113,8 +113,8 @@ class Watcher:
 			# Qt may already have disconnected slots or destroyed their senders.
 			pass
 
-def watch(graph:GraphStateRT, node:NodeRef|None, callback: Callable):
+def watch(graph:GraphDefinitionRT, node:NodeRef|None, callback: Callable):
 	"""Watches the given graph for changes and calls the callback with the change details."""
-	assert isinstance(graph, GraphStateRT)
+	assert isinstance(graph, GraphDefinitionRT)
 	assert isinstance(node, NodeRef), f"node must be an instance of NodeRef got {node}"
 	return Watcher(graph, node, callback)

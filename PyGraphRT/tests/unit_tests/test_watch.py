@@ -1,7 +1,7 @@
 from textwrap import dedent
 
 import pytest
-from pygraphrt.graph_state_rt import GraphStateRT
+from pygraphrt.graph_definition_rt import GraphDefinitionRT
 from pygraphrt.script_module import ScriptModuleRT
 from pygraphrt.watch import Watcher
 
@@ -15,7 +15,7 @@ def test_watch_triggers_when_scriptmodule_update():
     sm._evaluate()
     op  =sm.get_operator_by_name("foo")
 
-    G = GraphStateRT()
+    G = GraphDefinitionRT()
     node = G._create_node(op)
 
     counter = 0

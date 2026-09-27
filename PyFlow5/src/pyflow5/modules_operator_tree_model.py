@@ -1,7 +1,7 @@
 from pygraphrt import (
     AbstractModule,
     OperatorRef,
-    GraphStateRT,
+    GraphDefinitionRT,
     ImportModuleRT,
     ScriptModuleRT
 )
@@ -22,9 +22,9 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._graph: GraphStateRT | None = None
+        self._graph: GraphDefinitionRT | None = None
 
-    def setGraph(self, graph: GraphStateRT | None) -> None:
+    def setGraph(self, graph: GraphDefinitionRT | None) -> None:
         """Replace the runtime used by this model."""
         self.beginResetModel()
         self._graph = graph

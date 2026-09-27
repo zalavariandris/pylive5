@@ -8,7 +8,7 @@ from qtpy.QtCore import (
 from qtpy.QtTest import QSignalSpy
 
 def test_operator_changed_signal():
-    G = rt.GraphStateRT()
+    G = rt.GraphDefinitionRT()
     spy = QSignalSpy(G._inline_module.operators_changed)
 
     @G.node()

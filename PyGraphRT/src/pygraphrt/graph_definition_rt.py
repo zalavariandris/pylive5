@@ -26,10 +26,9 @@ from .errors import (
 )
 
 
-
 @dataclass
 class NodeRef:
-    _graph: 'GraphStateRT'
+    _graph: 'GraphDefinitionRT'
     _name: str
 
     def __repr__(self):
@@ -163,7 +162,7 @@ def _decode_value(value, nodes):
     raise ValueError(f"Invalid tagged input: {value!r}")
 
 
-class GraphStateRT(QObject):
+class GraphDefinitionRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
     nodes_changed = Signal(list) # list[NodeRef]
     nodes_removed = Signal(list) # list[NodeRef]
@@ -437,7 +436,7 @@ class GraphStateRT(QObject):
         return data
 
     @classmethod
-    def fromdict(cls, data: dict[str, Any]) -> "GraphStateRT":
+    def fromdict(cls, data: dict[str, Any]) -> "GraphDefinitionRT":
         """Build a new runtime. Unknown operators and invalid scripts stay editable."""
 
         validate_graph_data(data)
@@ -481,7 +480,7 @@ class GraphStateRT(QObject):
 
 
 if __name__ == "__main__":
-    G = GraphStateRT()
+    G = GraphDefinitionRT()
 
     @G.node()
     def A():
