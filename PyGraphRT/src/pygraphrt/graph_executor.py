@@ -61,6 +61,7 @@ NodeExecution = (
 class GraphExecution:
     nodes: dict[NodeRef, NodeExecution]
 
+
 class GraphExecutorRT(QObject):
     executed = Signal(dict) # dict[NodeRef, Any]
     def __init__(self, graph: GraphDefinitionRT, cache: MemoryCache|HistoryMemoryCache|None=None):
