@@ -10,8 +10,8 @@ def cache(request):
     return request.param()
 
 def test_if_cache_is_used(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     call_count = 0
 
     @G.op()
@@ -22,16 +22,15 @@ def test_if_cache_is_used(cache):
 
     node = G.node(1, 2)(add_op)
 
-    G.execute(node)
+    E.execute(node)
     assert call_count == 1, "first execution should call the function"
 
-    G.execute(node)
+    E.execute(node)
     assert call_count == 1, "second execution should use cache, not call the function again"
 
 def test_upstream_input_change_invalidates_doWwnstream_cache(cache):
-    G = rt.GraphRT()
-    G.cache = cache
-
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     @G.op()
     def add_op(a: int, b: int) -> int:
         return a + b
@@ -43,18 +42,18 @@ def test_upstream_input_change_invalidates_doWwnstream_cache(cache):
     add_node = G.node(1, 2)(add_op)
     mult_node = G.node(add_node, 3)(mult_op)
 
-    result = G.execute(mult_node)
+    result = E.execute(mult_node)
     assert result == 9, "should compute (1 + 2) * 3 = 9"
 
     add_node.set_inputs(4, 2)
-    result = G.execute(mult_node)
+    result = E.execute(mult_node)
     assert result == 18, "should compute (4 + 2) * 3 = 18 after changing add_node input"
 
 # REVIEW OUTDATED / UPDATE: _update_operator() now takes a Python function,
 # not a FunctionOperator wrapper. Keep this direct invalidation regression.
 def test_operator_function_change_invalidates_cache(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache) 
 
     @G.op()
     def func(a: int, b: int) -> int:
@@ -62,7 +61,7 @@ def test_operator_function_change_invalidates_cache(cache):
 
     node = G.node(3, 4)(func)
 
-    result = G.execute(node)
+    result = E.execute(node)
     assert result == 7, "should compute 3 + 4 = 7"
 
     def func(a: int, b: int) -> int:
@@ -70,15 +69,15 @@ def test_operator_function_change_invalidates_cache(cache):
 
     G._inline_module._update_operator(node.get_operator(), rt.FunctionOperator(func))
 
-    result = G.execute(node)
+    result = E.execute(node)
     assert result == 12, "should compute 3 * 4 = 12 after swapping add to multiply"
 
 # REVIEW OUTDATED / UPDATE: pass a function to _update_operator() when migrating;
 # its current function-only contract rejects the wrapper used here. Keep the
 # downstream invalidation assertion; correct results are essential even now.
 def test_upstream_operator_function_change_invalidates_downstream_cache(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache) 
 
     @G.node(3, 4)
     def add_node(a: int, b: int) -> int:
@@ -97,14 +96,14 @@ def test_upstream_operator_function_change_invalidates_downstream_cache(cache):
 
     G._inline_module._update_operator(add_node.get_operator(), rt.FunctionOperator(subtract))
 
-    result = G.execute(mult_node)
+    result = E.execute(mult_node)
     assert result == -2, "should compute (3 - 4) * 2 = -2 after swapping add to subtract"
 
 
 @pytest.mark.parametrize("keyword_dependency", [False, True])
 def test_reverting_inputs_respects_cache_history_policy(keyword_dependency, cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache) 
     calls = []
 
     @G.node(1)
@@ -127,13 +126,13 @@ def test_reverting_inputs_respects_cache_history_policy(keyword_dependency, cach
 
     executions = 2 if isinstance(cache, rt.HistoryMemoryCache) else 3
     assert calls == ["source", "times_ten"] * executions
-    assert G.execute(downstream) == 10
+    assert E.execute(downstream) == 10
     assert calls == ["source", "times_ten"] * executions
 
 
 def test_cached_dependency_invalidates_other_execution_roots(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache) 
 
     @G.node(1)
     def source(value):
@@ -147,18 +146,18 @@ def test_cached_dependency_invalidates_other_execution_roots(cache):
     def tripled(value):
         return value * 3
 
-    assert G.execute(doubled) == 2
-    assert G.execute(tripled) == 3
+    assert E.execute(doubled) == 2
+    assert E.execute(tripled) == 3
 
     source.set_inputs(2)
-    assert G.execute(source) == 2
-    assert G.execute(doubled) == 4
-    assert G.execute(tripled) == 6
+    assert E.execute(source) == 2
+    assert E.execute(doubled) == 4
+    assert E.execute(tripled) == 6
 
     source.set_inputs(1)
-    assert G.execute(source) == 1
-    assert G.execute(tripled) == 3
-    assert G.execute(doubled) == 2
+    assert E.execute(source) == 1
+    assert E.execute(tripled) == 3
+    assert E.execute(doubled) == 2
 
 
 # REVIEW UNNECESSARY / DEFER: exact recomputation counts after partial eviction
@@ -166,8 +165,8 @@ def test_cached_dependency_invalidates_other_execution_roots(cache):
 # covered elsewhere; add this performance contract only if it becomes required.
 @pytest.mark.parametrize("cache_action", ["clear", "remove"])
 def test_eviction_does_not_change_computation_fingerprints(cache_action, cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache) 
     calls = []
 
     @G.node()
@@ -180,23 +179,23 @@ def test_eviction_does_not_change_computation_fingerprints(cache_action, cache):
         calls.append("doubled")
         return value * 2
 
-    assert G.execute(doubled) == 6
-    assert G.execute(doubled) == 6
+    assert E.execute(doubled) == 6
+    assert E.execute(doubled) == 6
     assert calls == ["source", "doubled"]
 
     if cache_action == "clear":
-        G.cache.clear()
+        E._cache.clear()
     else:
-        G.cache.remove(source)
+        E._cache.remove(source)
 
-    assert G.execute(doubled) == 6
+    assert E.execute(doubled) == 6
     expected = ["source", "doubled"] * 2 if cache_action == "clear" else ["source", "doubled", "source"]
     assert calls == expected
 
 
 def test_none_results_are_cached(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache) 
     calls = []
 
     @G.node()
@@ -209,15 +208,15 @@ def test_none_results_are_cached(cache):
         calls.append("is_none")
         return value is None
 
-    assert G.execute(is_none) is True
-    assert G.execute(is_none) is True
+    assert E.execute(is_none) is True
+    assert E.execute(is_none) is True
     assert calls == ["source", "is_none"]
 
 
 @pytest.mark.parametrize("keyword_input", [False, True])
 def test_equal_literal_values_with_different_types_invalidate_cache(keyword_input, cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache) 
 
     @G.node(1)
     def input_type(value):
@@ -228,11 +227,11 @@ def test_equal_literal_values_with_different_types_invalidate_cache(keyword_inpu
             input_type.set_inputs(value=value)
         else:
             input_type.set_inputs(value)
-        assert G.execute(input_type) is type(value)
+        assert E.execute(input_type) is type(value)
 
 def test_removing_node_releases_its_cached_result(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
 
     class Result:
         pass
@@ -241,7 +240,7 @@ def test_removing_node_releases_its_cached_result(cache):
     def source():
         return Result()
 
-    result_ref = weakref.ref(G.execute(source))
+    result_ref = weakref.ref(E.execute(source))
     assert result_ref() is not None
 
     G._delete_node(source)
@@ -254,8 +253,9 @@ def test_removing_node_releases_its_cached_result(cache):
 # The arbitrary 6 * node_count hash-call bound couples tests to internals.
 # Later retain a shared-DAG correctness case and measure performance separately.
 def test_shared_dependencies_do_not_repeat_fingerprinting(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
+
     calls = []
     hash_calls = 0
     node_count = 20
@@ -277,16 +277,16 @@ def test_shared_dependencies_do_not_repeat_fingerprinting(cache):
     for _ in range(node_count - 1):
         root = G.node(root, root)(add_op)
 
-    assert G.execute(root) == 2 ** node_count
-    assert G.execute(root) == 2 ** node_count
+    assert E.execute(root) == 2 ** node_count
+    assert E.execute(root) == 2 ** node_count
     assert len(calls) == node_count
 
 
 # REVIEW OUTDATED / UPDATE: execute() wraps RuntimeError in GraphExecutionError.
 # Keep retry-after-failure coverage; caching a failed result is a correctness bug.
 def test_failed_execution_is_retried_and_only_success_is_cached(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     call_count = 0
 
     @G.node()
@@ -298,9 +298,9 @@ def test_failed_execution_is_retried_and_only_success_is_cached(cache):
         return 42
 
     with pytest.raises(RuntimeError, match="First attempt failed"):
-        G.execute(flaky)
-    assert G.execute(flaky) == 42
-    assert G.execute(flaky) == 42
+        E.execute(flaky)
+    assert E.execute(flaky) == 42
+    assert E.execute(flaky) == 42
     assert call_count == 2
 
 
@@ -309,8 +309,8 @@ def test_failed_execution_is_retried_and_only_success_is_cached(cache):
 # Keep rewiring-to-different-values coverage instead of fixing this call count.
 @pytest.mark.parametrize("keyword_dependency", [False, True])
 def test_rewiring_to_equivalent_node_recomputes_downstream(keyword_dependency, cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     calls = []
 
     @G.op()
@@ -329,20 +329,20 @@ def test_rewiring_to_equivalent_node_recomputes_downstream(keyword_dependency, c
     # Keep the calling convention the same when changing the connection.
     if not keyword_dependency:
         doubled.set_inputs(first)
-    assert G.execute(doubled) == 6
+    assert E.execute(doubled) == 6
     if keyword_dependency:
         doubled.set_inputs(value=second)
     else:
         doubled.set_inputs(second)
-    assert G.execute(doubled) == 6
+    assert E.execute(doubled) == 6
     assert calls == ["source", "doubled", "source", "doubled"]
-    assert G.execute(doubled) == 6
+    assert E.execute(doubled) == 6
     assert calls == ["source", "doubled", "source", "doubled"]
 
 
 def test_changes_to_unrelated_branch_do_not_invalidate_cached_root(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     calls = []
 
     @G.op()
@@ -352,11 +352,11 @@ def test_changes_to_unrelated_branch_do_not_invalidate_cached_root(cache):
 
     first =  G.node(1)(source, name="first")
     second = G.node(2)(source, name="second")
-    assert G.execute(first) == 1
-    assert G.execute(second) == 2
+    assert E.execute(first) == 1
+    assert E.execute(second) == 2
     second.set_inputs(3)
-    assert G.execute(second) == 3
-    assert G.execute(first) == 1
+    assert E.execute(second) == 3
+    assert E.execute(first) == 1
     assert calls == [1, 2, 3]
 
 
@@ -365,8 +365,8 @@ def test_changes_to_unrelated_branch_do_not_invalidate_cached_root(cache):
 # immediate collection impose an extra ownership policy; defer those assertions
 # until mutable-result ownership is defined. Preserve node-deletion cleanup.
 def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     calls = []
 
     class Result:
@@ -379,17 +379,17 @@ def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
 
     first =  G.node()(source, name="first")
     second = G.node()(source, name="second")
-    first_result = weakref.ref(G.execute(first))
-    second_result = weakref.ref(G.execute(second))
+    first_result =  weakref.ref(E.execute(first))
+    second_result = weakref.ref(E.execute(second))
     assert first_result() is not second_result()
-    assert G.execute(first) is first_result()
-    assert G.execute(second) is second_result()
+    assert E.execute(first) is first_result()
+    assert E.execute(second) is second_result()
     assert calls == ["source", "source"]
 
     G._delete_node(first)
     gc.collect()
     assert first_result() is None
-    assert G.execute(second) is second_result()
+    assert E.execute(second) is second_result()
     assert calls == ["source", "source"]
     G._delete_node(second)
     gc.collect()
@@ -400,8 +400,8 @@ def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
 # _update_operator() is no longer supported. History policy already has coverage
 # in test_reverting_inputs_respects_cache_history_policy and cache unit checks.
 def test_operator_replacement_respects_cache_history_policy(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     calls = []
 
     def original(value):
@@ -415,11 +415,11 @@ def test_operator_replacement_respects_cache_history_policy(cache):
     node = G.node(1)(original)
     original_data = rt.FunctionOperator(original)
     G._inline_module._update_operator(node.get_operator(), original_data)
-    assert G.execute(node) == 2
+    assert E.execute(node) == 2
     G._inline_module._update_operator(node.get_operator(), rt.FunctionOperator(replacement))
-    assert G.execute(node) == 3
+    assert E.execute(node) == 3
     G._inline_module._update_operator(node.get_operator(), original_data)
-    assert G.execute(node) == 2
+    assert E.execute(node) == 2
     expected = ["original", "replacement"]
     if isinstance(cache, rt.MemoryCache):
         expected.append("original")
@@ -427,22 +427,22 @@ def test_operator_replacement_respects_cache_history_policy(cache):
 
 
 def test_argument_positions_names_and_keyword_order_are_significant(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
 
     @G.node(1, 2)
     def arguments(*args, **kwargs):
         return args, tuple(kwargs.items())
 
-    assert G.execute(arguments) == ((1, 2), ())
+    assert E.execute(arguments) == ((1, 2), ())
     arguments.set_inputs(2, 1)
-    assert G.execute(arguments) == ((2, 1), ())
+    assert E.execute(arguments) == ((2, 1), ())
     arguments.set_inputs(a=1, b=2)
-    assert G.execute(arguments) == ((), (("a", 1), ("b", 2)))
+    assert E.execute(arguments) == ((), (("a", 1), ("b", 2)))
     arguments.set_inputs(b=2, a=1)
-    assert G.execute(arguments) == ((), (("b", 2), ("a", 1)))
+    assert E.execute(arguments) == ((), (("b", 2), ("a", 1)))
     arguments.set_inputs(c=2, a=1)
-    assert G.execute(arguments) == ((), (("c", 2), ("a", 1)))
+    assert E.execute(arguments) == ((), (("c", 2), ("a", 1)))
 
 
 # REVIEW UNNECESSARY / DEFER: requiring a hit for equal, separately allocated
@@ -453,8 +453,8 @@ def test_argument_positions_names_and_keyword_order_are_significant(cache):
     ({"value": [1, 2]}, {"value": [1, 2]}),
 ])
 def test_equal_container_literals_reuse_same_node_result(first, second, cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     calls = []
 
     @G.node(first)
@@ -462,9 +462,9 @@ def test_equal_container_literals_reuse_same_node_result(first, second, cache):
         calls.append("identity")
         return value
 
-    G.execute(identity)
+    E.execute(identity)
     identity.set_inputs(second)
-    assert G.execute(identity) == second
+    assert E.execute(identity) == second
     assert calls == ["identity"]
 
 
@@ -476,8 +476,8 @@ def test_equal_container_literals_reuse_same_node_result(first, second, cache):
     ({"a": 1, "b": 2}, {"b": 2, "a": 1}),
 ])
 def test_observable_literal_differences_get_distinct_keys(first, second, cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     calls = []
 
     @G.node(first)
@@ -485,15 +485,15 @@ def test_observable_literal_differences_get_distinct_keys(first, second, cache):
         calls.append("describe")
         return repr(value)
 
-    assert G.execute(describe) == repr(first)
+    assert E.execute(describe) == repr(first)
     describe.set_inputs(second)
-    assert G.execute(describe) == repr(second)
+    assert E.execute(describe) == repr(second)
     assert calls == ["describe", "describe"]
 
 
 def test_custom_literal_objects_use_identity_without_requiring_hashability(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
 
     class Value:
         __hash__ = None
@@ -507,17 +507,18 @@ def test_custom_literal_objects_use_identity_without_requiring_hashability(cache
     def identity(value):
         return value
 
-    assert G.execute(identity) is first
+    assert E.execute(identity) is first
     identity.set_inputs(second)
-    assert G.execute(identity) is second
+    assert E.execute(identity) is second
     identity.set_inputs(first)
-    assert G.execute(identity) is first
+    assert E.execute(identity) is first
 
 
 # REVIEW SIMPLIFY: verify DummyCache explicitly; requiring it to remain the
 # GraphRT default unnecessarily prevents changing the default cache policy.
 def test_default_dummy_cache_still_executes_every_time():
-    G = rt.GraphRT()
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G)
     calls = []
 
     @G.node()
@@ -525,8 +526,8 @@ def test_default_dummy_cache_still_executes_every_time():
         calls.append("source")
         return 1
 
-    assert G.execute(source) == 1
-    assert G.execute(source) == 1
+    assert E.execute(source) == 1
+    assert E.execute(source) == 1
     assert calls == ["source", "source"]
 
 
@@ -535,8 +536,8 @@ def test_default_dummy_cache_still_executes_every_time():
 # a supported use case or this guards an actual user regression.
 @pytest.mark.parametrize("value", [1 << 16000, -(1 << 16000)], ids=["positive", "negative"])
 def test_large_integer_literals_do_not_require_decimal_conversion(value, cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
     calls = []
 
     @G.node(value)
@@ -544,8 +545,8 @@ def test_large_integer_literals_do_not_require_decimal_conversion(value, cache):
         calls.append("identity")
         return value
 
-    assert G.execute(identity) == value
-    assert G.execute(identity) == value
+    assert E.execute(identity) == value
+    assert E.execute(identity) == value
     assert calls == ["identity"]
 
 
@@ -553,8 +554,8 @@ def test_large_integer_literals_do_not_require_decimal_conversion(value, cache):
 # not custom FunctionOperator instances. This tests an unsupported extension
 # route; reconsider when a public custom-operator API exists.
 def test_custom_operator_behavior_contributes_to_identity(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
 
     def original(value):
         return value
@@ -564,17 +565,17 @@ def test_custom_operator_behavior_contributes_to_identity(cache):
             return super().__call__(value) * 2
 
     node = G.node(3)(original)
-    assert G.execute(node) == 3
+    assert E.execute(node) == 3
     G._inline_module._update_operator(node.get_operator(), DoubledOperator(original))
-    assert G.execute(node) == 6
+    assert E.execute(node) == 6
 
 
 # REVIEW OUTDATED / REMOVE: both node()(source) calls now return equal node
 # references, so this does not construct two nodes. Mutable-result isolation
 # also adds an unsettled ownership contract beyond pure graph execution.
 def test_equivalent_nodes_do_not_share_results_in_one_execution(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
 
     @G.op()
     def source():
@@ -587,17 +588,17 @@ def test_equivalent_nodes_do_not_share_results_in_one_execution(cache):
     def pair(left, right):
         return left, right
 
-    left, right = G.execute(pair)
+    left, right = E.execute(pair)
     assert left is not right
     left.append("first only")
     assert right == []
-    assert G.execute(first) is left
-    assert G.execute(second) is right
+    assert E.execute(first) is left
+    assert E.execute(second) is right
 
 
 @pytest.mark.parametrize("eviction", ["remove", "clear"])
 def test_cache_lookup_hit_and_eviction(cache, eviction):
-    G = rt.GraphRT()
+    G = rt.GraphStateRT()
 
     @G.node()
     def node():
@@ -632,8 +633,8 @@ def test_cache_lookup_hit_and_eviction(cache, eviction):
 
 
 def test_cache_policy_controls_retention_of_previous_results(cache):
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
 
     class Result:
         pass
@@ -642,9 +643,9 @@ def test_cache_policy_controls_retention_of_previous_results(cache):
     def source(value):
         return Result()
 
-    first = weakref.ref(G.execute(source))
+    first = weakref.ref(E.execute(source))
     source.set_inputs(2)
-    latest = weakref.ref(G.execute(source))
+    latest = weakref.ref(E.execute(source))
     gc.collect()
     assert (first() is not None) is isinstance(cache, rt.HistoryMemoryCache)
     assert latest() is not None
@@ -661,17 +662,17 @@ def test_cache_policy_controls_retention_of_previous_results(cache):
 def test_cache_collisions_with_minus_1(cache):
     """this is a regression test
     turnes out hash(-1) == hash(-2) which messes with the cache using hash for fingerprints"""
-    G = rt.GraphRT()
-    G.cache = cache
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G, cache)
 
     @G.node(-1)
     def source(value):
         return value
 
     node = G.node()(source)
-    assert G.execute(node) == -1
+    assert E.execute(node) == -1
     source.set_inputs(-2)
-    assert G.execute(node) == -2
+    assert E.execute(node) == -2
 
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"]) 

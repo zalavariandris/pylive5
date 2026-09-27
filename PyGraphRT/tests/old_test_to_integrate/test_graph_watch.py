@@ -4,7 +4,7 @@ from typing import Literal
 
 import pytest
 
-from pygraphrt import GraphRT, OperatorRef, watch
+from pygraphrt import GraphStateRT, OperatorRef, watch, GraphExecutorRT
 from pygraphrt.script_module import ScriptModuleRT
 
 
@@ -12,7 +12,8 @@ from pygraphrt.script_module import ScriptModuleRT
 def test_restarted_watcher_tracks_rewired_dependencies(
     change: Literal["input", "operator"],
 ) -> None:
-    graph = GraphRT()
+    graph = GraphStateRT()
+    E = GraphExecutorRT(graph)
     source = "def source(value: int) -> int: return value"
     old_module = ScriptModuleRT("old")
     old_module.set_script(source)
@@ -28,7 +29,7 @@ def test_restarted_watcher_tracks_rewired_dependencies(
     results: list[int] = []
 
     def on_change() -> None:
-        results.append(graph.execute(output))
+        results.append(E.execute(output))
 
     watcher = watch(graph, output, on_change)
     try:

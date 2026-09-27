@@ -45,8 +45,12 @@ class OperatorRef:
     module: 'AbstractModule'
     name: str
 
-    def _post_init__(self):
+    def __post_init__(self):
         assert isinstance(self.module, AbstractModule), "module must be an instance of AbstractModule"
+
+    def fingerprint(self) -> int:
+        the_function = self.module.get_operator(self)
+        return hash(the_function)
 
     def __eq__(self, other):
         if not isinstance(other, OperatorRef):

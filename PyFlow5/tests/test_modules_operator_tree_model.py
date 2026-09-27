@@ -11,12 +11,12 @@ from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
 from pyflow5.pyflow5_document import PyFlowDocument
 from pyflow5.pyflow5_window import ModuleDetailsView
 from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.graph_rt import GraphRT
+from pygraphrt.graph_rt import GraphStateRT
 
 
 @pytest.fixture
 def model(qtbot: QtBot, tmp_path: Path) -> ModulesOperatorsTreeModel:
-    graph = GraphRT()
+    graph = GraphStateRT()
     graph.local().set_script("def same() -> int: return 1")
     model = ModulesOperatorsTreeModel()
     model.setGraph(graph)
@@ -72,7 +72,7 @@ def test_mapping_round_trips_and_invalid_indexes(
             assert model.mapFromSource(operator) == operator_index
 
     foreign = ModulesOperatorsTreeModel()
-    foreign.setGraph(GraphRT())
+    foreign.setGraph(GraphStateRT())
     for index in [
         QModelIndex(),
         foreign.index(0, 0),
@@ -118,7 +118,7 @@ def test_failed_import_does_not_start_insertion(
 
 def test_editor_to_operator_dialog(qtbot: QtBot) -> None:
     document = PyFlowDocument()
-    model = document.modulesmodel
+    model = document.modules_model
     selection = QItemSelectionModel(model)
     editor = ModuleDetailsView()
     qtbot.addWidget(editor)
@@ -135,5 +135,5 @@ def test_editor_to_operator_dialog(qtbot: QtBot) -> None:
     selected = dialog.selected_index()
     assert selected.data() == "hello"
     document.addNode(selected)
-    node = document.graphmodel.getNode("hello")
-    assert document._G.execute(node) == "hello"
+    node = document.graph_model.getNode("hello")
+    assert document._graph.execute(node) == "hello"

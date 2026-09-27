@@ -1,10 +1,13 @@
 from .graph_rt import (
-    GraphRT, 
+    GraphStateRT, 
     MemoryCache, 
     HistoryMemoryCache,
     DummyCache,
     NodeRef,
+    GraphExecutorRT,
 )
+
+
 
 from .abstract_module_rt import (
     AbstractOperator,
@@ -15,11 +18,11 @@ from .inline_module import InlineModuleRT, FunctionOperator
 from .script_module import ScriptModuleRT
 from .import_module import ImportModuleRT
 from .watch import watch
-
+from .errors import GraphExecutionError
 
 __all__ = [
     "NodeRef",
-    "GraphRT",
+    "GraphStateRT",
     "FunctionOperator",
     "MemoryCache",
     "HistoryMemoryCache",
@@ -27,5 +30,7 @@ __all__ = [
     "InlineModuleRT",
     "ScriptModuleRT",
     "ImportModuleRT",
-    "watch"
+    "watch",
+    "GraphExecutionError",
+    "GraphExecutorRT"
 ]

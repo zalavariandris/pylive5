@@ -21,17 +21,17 @@ class DisplayWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        self.label = QLabel("Viewer")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
-        layout.addWidget(self.label)
+        self._label = QLabel("Viewer")
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        layout.addWidget(self._label)
 
     def _update_label_font_size(self):
         min_font_size = 10
-        text = self.label.text()
+        text = self._label.text()
         if not text:
             return
-        font = QFont(self.label.font())
+        font = QFont(self._label.font())
         font.setPointSize(min_font_size)
         fm = QFontMetrics(font)
         text_rect = fm.boundingRect(text)
@@ -41,31 +41,34 @@ class DisplayWidget(QWidget):
         margin=50
         scale = min((self.width() - margin) / text_width, (self.height() - margin) / text_height)
         font.setPointSize(max(min_font_size, int(min_font_size * scale)))
-        self.label.setFont(font)
+        self._label.setFont(font)
 
     def resizeEvent(self, event):
         # set label font size, so text fits right in the widget
         self._update_label_font_size()
+
+    def clear(self):
+        self._label.clear()
         
     def display(self, data:Any):
         match data:
             case str() | int() | float() | bool():
-                self.label.setStyleSheet("color: black")
-                self.label.setText(str(data))
+                self._label.setStyleSheet("color: black")
+                self._label.setText(str(data))
                 self._update_label_font_size()
 
             case list() | tuple():
-                self.label.setStyleSheet("color: black")
-                self.label.setText(f"Output: {data}")
+                self._label.setStyleSheet("color: black")
+                self._label.setText(f"Output: {data}")
                 self._update_label_font_size()
 
             case dict():
-                self.label.setStyleSheet("color: black")
-                self.label.setText(f"Output: {data}")
+                self._label.setStyleSheet("color: black")
+                self._label.setText(f"Output: {data}")
                 self._update_label_font_size()
 
             case np.ndarray():
-                self.label.setStyleSheet("color: black")
+                self._label.setStyleSheet("color: black")
                 # Accept grayscale (H, W) or channel-last (H, W, C) images.
                 if data.ndim == 2:
                     channels = 1
@@ -87,16 +90,16 @@ class DisplayWidget(QWidget):
                     4: QImage.Format.Format_RGBA8888,
                 }[channels]
                 qimg = QImage(data.data, data.shape[1], data.shape[0], data.strides[0], image_format)
-                self.label.setPixmap(QPixmap(qimg))
+                self._label.setPixmap(QPixmap(qimg))
                 self._update_label_font_size()
 
             case BaseException():
-                self.label.setStyleSheet("color: red")
-                self.label.setText(f"Exception: {data}")
+                self._label.setStyleSheet("color: red")
+                self._label.setText(f"Exception: {data}")
                 self._update_label_font_size()
                 
 
             case _:
-                self.label.setStyleSheet("color: orange")
-                self.label.setText(f"Unsupported output type: {type(data)}")
+                self._label.setStyleSheet("color: orange")
+                self._label.setText(f"Unsupported output type: {type(data)}")
                 self._update_label_font_size()

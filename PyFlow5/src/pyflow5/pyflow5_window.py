@@ -2,6 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
+from pyflow5.viewer_view import Viewer
 from qtpy.QtCore import QAbstractItemModel, QItemSelection, QItemSelectionModel, QModelIndex
 
 from qtpy.QtCore import (
@@ -84,9 +85,7 @@ class ModuleDetailsView(QWidget):
         self._model:QAbstractItemModel = None
         self._model_connections = []
 
-        self._selection_model: QItemSelectionModel = None
-        self._selection_connections = []
-        self._current: QModelIndex = QModelIndex()
+        self._current_index: QModelIndex = QModelIndex()
 
         # self._code_editor = ScriptEdit2(self)
         self._title_label = QLabel(self)
@@ -100,6 +99,9 @@ class ModuleDetailsView(QWidget):
         layout.addWidget(self._title_label)
         layout.addWidget(self._code_editor)
         self.setLayout(layout)
+
+        self._update_display()
+
 
     def model(self):
         return self._model
@@ -117,70 +119,86 @@ class ModuleDetailsView(QWidget):
                 (model.rowsRemoved, self._on_rows_removed)
             ]
         self._model = model
+        self.setCurrentIndex(QModelIndex())
 
-    def setSelectionModel(self, selection_model: QItemSelectionModel|None):
-        prev_current = QModelIndex()
-        if self._selection_model:
-            for signal, slot in self._selection_connections:
-                signal.disconnect(slot)
-            self._selection_connections.clear()
-            prev_current = self._selection_model.currentIndex()
+    # def setSelectionModel(self, selection_model: QItemSelectionModel|None):
+    #     prev_current = QModelIndex()
+    #     if self._selection_model:
+    #         for signal, slot in self._selection_connections:
+    #             signal.disconnect(slot)
+    #         self._selection_connections.clear()
+    #         prev_current = self._selection_model.currentIndex()
 
-        next_current = QModelIndex()
-        if selection_model:
-            self._selection_connections = [
-                (selection_model.currentChanged, self._on_current_changed),
-                (selection_model.selectionChanged, self._on_selection_changed)
-            ]
-            for signal, slot in self._selection_connections:
-                signal.connect(slot)
-            next_current = selection_model.currentIndex()
-        self._selection_model = selection_model
-        self._on_current_changed(next_current, prev_current)
+    #     next_current = QModelIndex()
+    #     if selection_model:
+    #         self._selection_connections = [
+    #             (selection_model.currentChanged, self._on_current_changed),
+    #             (selection_model.selectionChanged, self._on_selection_changed)
+    #         ]
+    #         for signal, slot in self._selection_connections:
+    #             signal.connect(slot)
+    #         next_current = selection_model.currentIndex()
+    #     self._selection_model = selection_model
+    #     self._on_current_changed(next_current, prev_current)
 
-    def selectionModel(self):
-        return self._selection_model
+    # def selectionModel(self):
+    #     return self._selection_model
 
     def _on_editor_text_changed(self):
-        current = self._selection_model.currentIndex()
-        if not current.isValid():
+        if not self._current_index.isValid():
             return
+
+        assert self._current_index.model() is self._model
 
         new_text = self._code_editor.toPlainText()
-        self._model.setData(current, new_text, ModulesOperatorsTreeModel.SourceRole)
+        self._model.setData(self._current_index, new_text, ModulesOperatorsTreeModel.SourceRole)
 
-    def _on_current_changed(self, current: QModelIndex, previous: QModelIndex):
-        if self._model is None:
+    # def _on_current_changed(self, current: QModelIndex, previous: QModelIndex):
+    #     if self._model is None:
+    #         return
+        
+    #     index = self._selection_model.currentIndex()
+    #     self._show_index(index)
+
+    # def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
+    #     if self._model is None:
+    #         return
+        
+    #     last_selected = selected.indexes()[-1] if selected.indexes() else QModelIndex()
+        
+    #     self._show_index(last_selected)
+    #     return True
+        
+    def setCurrentIndex(self, index: QModelIndex):
+        if index == self._current_index:
             return
         
-        index = self._selection_model.currentIndex()
-        self._show_index(index)
-
-    def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
-        if self._model is None:
+        if index.model() != self._model:
             return
         
-        last_selected = selected.indexes()[-1] if selected.indexes() else QModelIndex()
-        
-        self._show_index(last_selected)
-        return True
-        
-    def _show_index(self, index: QModelIndex):
-        if index.isValid() and index.model() == self._model:
-            self._title_label.setText(index.data(Qt.ItemDataRole.DisplayRole))
-            with myqtx.blockingSignals(self._code_editor):
-                text = index.data(ModulesOperatorsTreeModel.SourceRole)
-                self._code_editor.setPlainText(text)
-                self._code_editor.setEnabled(True)
-        else:
+        self._current_index = index
+        self._update_display()
+
+    def _update_display(self):
+        if not self._current_index.isValid():
             self._title_label.setText("<No Selection>")
             with myqtx.blockingSignals(self._code_editor):
                 self._code_editor.clear()
                 self._code_editor.setEnabled(False)
+            return
+
+        self._title_label.setText(self._current_index.data(Qt.ItemDataRole.DisplayRole))
+        with myqtx.blockingSignals(self._code_editor):
+            text = self._current_index.data(ModulesOperatorsTreeModel.SourceRole)
+            self._code_editor.setPlainText(text)
+            self._code_editor.setEnabled(True)
+
+    def currentIndex(self) -> QModelIndex:
+        return self._current_index
 
     @Slot()
     def _on_model_reset(self):
-        if not self._current.isValid():
+        if not self._current_index.isValid():
             return
 
         current = self._selection_model.currentIndex()
@@ -195,7 +213,7 @@ class ModuleDetailsView(QWidget):
 
     @Slot()
     def _on_data_changed(self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list[int] = []):
-        if not self._current.isValid():
+        if not self._current_index.isValid():
             return
 
         current = self._selection_model.currentIndex()
@@ -211,7 +229,7 @@ class ModuleDetailsView(QWidget):
     
     @Slot()
     def _on_rows_removed(self, parent: QModelIndex, start: int, end: int):
-        if not self._current.isValid():
+        if not self._current_index.isValid():
             return
 
         current = self._selection_model.currentIndex()
@@ -231,27 +249,31 @@ class PyFlow5Window(QMainWindow):
         self.setWindowTitle("PyFlow5")
 
         # setup Model
-        self._document = PyFlowDocument()
+        self._document:PyFlowDocument = PyFlowDocument()
 
         # Setup UI
         # self.setupActions()
 
         # - Setup modules view -
-        self._module_list_view = QListView(self)
-        self._module_list_view.setModel(self._document.modulesmodel)
-        self._module_list_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        module_selection_model = QItemSelectionModel(self._document.modulesmodel)
-        self._module_list_view.setSelectionModel(module_selection_model)
+        self._modules_listview = QListView(self)
+        self._modules_listview.setModel(self._document.modules_model)
+        self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._modules_listview.setSelectionModel(self._document.modulesselection_model)
 
         # - Setup modules details view -
         self._module_details_view = ModuleDetailsView(self)
-        self._module_details_view.setModel(self._document.modulesmodel)
-        self._module_details_view.setSelectionModel(module_selection_model)
+        self._module_details_view.setModel(self._document.modules_model)
+        self._document.modulesselection_model.selectionChanged.connect(
+            lambda selected, deselected: 
+            self._module_details_view.setCurrentIndex(
+                selected.indexes()[0] if selected.indexes() else QModelIndex())
+        )
+        self._module_details_view
 
         # - Setup graphview -
         self._graph_view = DirectionalGraphView5(self)
-        self._graph_view.setModel(self._document.graphmodel)
-        self._graph_view.setSelectionModel(self._document.graphselectionmodel)
+        self._graph_view.setModel(self._document.graph_model)
+        self._graph_view.setSelectionModel(self._document.graphselection_model)
         self._graph_view.layout_nodes()
         self._graph_view.fitNodes()
 
@@ -263,36 +285,50 @@ class PyFlow5Window(QMainWindow):
 
         @Slot()
         def _on_request_link(source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
-            self._document.graphmodel.addLink(source, outlet, target, inlet)
+            self._document.graph_model.addLink(source, outlet, target, inlet)
         self._graph_view.requestLink.connect(_on_request_link)
 
         # - Setup node inspector -
         self._inspector_view = InspectorView(self)
-        self._inspector_view.setModel(self._document.graphdetailsmodel)
+        self._inspector_view.setModel(self._document.graphdetails_model)
         # self._inspector_view.setSelectionModel(self._document.graphselectionmodel)
 
         # - Setup display widget -
-        viewer = QWidget(self)
-        viewer_layout = QVBoxLayout(viewer)
-        viewer_layout.setContentsMargins(0, 0, 0, 0)
-        viewer_header = QHBoxLayout()
-        viewer_header.addWidget(QLabel("Viewer", viewer))
-        viewer_header.addStretch()
-        self._viewer_lock_switch = QCheckBox("Lock", viewer)
-        self._viewer_lock_switch.setToolTip("Keep viewing this output when the selection changes.")
-        self._viewer_lock_switch.setChecked(self._document.isOutputLocked())
-        self._viewer_lock_switch.toggled.connect(self._document.setOutputLocked)
-        self._document.output_lock_changed.connect(self._viewer_lock_switch.setChecked)
-        viewer_header.addWidget(self._viewer_lock_switch)
-        viewer_layout.addLayout(viewer_header)
-        self._display_widget = myqtx.DisplayWidget(viewer)
-        viewer_layout.addWidget(self._display_widget)
 
-        @Slot()
-        def _on_output_value_changed():
-            # update display widget
-            self._display_widget.display(self._document.output_value())
-        self._document.output_value_changed.connect(_on_output_value_changed)
+        self._document.graphselection_model.nodesSelectionChanged.connect(
+            lambda selected, deselected: print(selected, deselected)
+        )
+        
+        self._viewer = Viewer(self)
+        self._viewer.setModel(self._document.graph_model)
+        self._document.graphselection_model.nodesSelectionChanged.connect(
+            lambda selected, deselected: 
+            self._viewer.setCurrentNodeName(
+                next(iter(selected)) if selected else None)
+        )
+        # self._document._graphselection_model.selectionChanged.connect(
+        #     lambda selected, deselected: 
+        #     self._viewer.setCurrentNodeName(
+        #         selected.indexes()[0] if selected.indexes() else None)
+        # )
+
+        # viewer = QWidget(self)
+        # viewer_layout = QVBoxLayout(viewer)
+        # viewer_layout.setContentsMargins(0, 0, 0, 0)
+        # viewer_header = QHBoxLayout()
+        # viewer_header.addWidget(QLabel("Viewer", viewer))
+        # viewer_header.addStretch()
+        # self._viewer_lock_switch = QCheckBox("Lock", viewer)
+        # self._viewer_lock_switch.setToolTip("Keep viewing this output when the selection changes.")
+        # self._viewer_lock_switch.setChecked(self._document.isOutputLocked())
+        # self._viewer_lock_switch.toggled.connect(self._document.setOutputLocked)
+        # self._document.output_lock_changed.connect(self._viewer_lock_switch.setChecked)
+        # viewer_header.addWidget(self._viewer_lock_switch)
+        # viewer_layout.addLayout(viewer_header)
+        # self._display_widget = myqtx.DisplayWidget(viewer)
+        # viewer_layout.addWidget(self._display_widget)
+
+
 
         # - Serialization widget -
         self._serialization_window = QDialog(self)
@@ -306,11 +342,11 @@ class PyFlow5Window(QMainWindow):
 
         # - Add widgets to splitter -
         splitter = QSplitter(self)
-        splitter.addWidget(self._module_list_view)
+        splitter.addWidget(self._modules_listview)
         splitter.addWidget(self._module_details_view)
         splitter.addWidget(self._graph_view)
         splitter.addWidget(self._inspector_view)
-        splitter.addWidget(viewer)
+        splitter.addWidget(self._viewer)
         splitter.setSizes([100, 350, 400, 260, 350])
         self.resize(1460, 600)
 
@@ -320,7 +356,7 @@ class PyFlow5Window(QMainWindow):
         self._graph_view.setFocus()
 
         # - Initial results update -
-        self._document._execute()
+        # self._document._execute()
 
     def setupMenubar(self):
         menubar: QMenuBar = self.menuBar()
@@ -376,7 +412,7 @@ class PyFlow5Window(QMainWindow):
     def editLocalDefinitions(self):
         model = self._document.modules_proxy_model
         # `Local` is the first editable module in every graph.
-        self._module_list_view.setCurrentIndex(model.index(0, 0))
+        self._modules_listview.setCurrentIndex(model.index(0, 0))
         self._code_editor.setFocus()
 
     def importModule(self):
@@ -409,13 +445,13 @@ class PyFlow5Window(QMainWindow):
             viewport_center = QPointF(self._graph_view.contentsRect().center())
             scene_pos = self._graph_view.mapToScene(viewport_center)
 
-        dialog = SelectionDialog(self._document.modulesmodel, self)
+        dialog = SelectionDialog(self._document.modules_model, self)
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
                 selected_op = selected_index.data(ModulesOperatorsTreeModel.OperatorRole)
                 if selected_op:
-                    self._document.graphmodel.addNode(selected_op, scene_pos)
+                    self._document.graph_model.addNode(selected_op, scene_pos)
         finally:
             dialog.deleteLater()
 

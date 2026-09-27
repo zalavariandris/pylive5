@@ -14,7 +14,7 @@ from qtpy.QtTest import QSignalSpy
 
 class TestNodeCollectionSignals():
     def test_node_added_signal(self):
-        G = rt.GraphRT()
+        G = rt.GraphStateRT()
         spy = QSignalSpy(G.nodes_added)
 
         @G.node()
@@ -25,7 +25,7 @@ class TestNodeCollectionSignals():
         assert my_node in spy[0][0], "nodes_added signal should contain the name of the added node"
 
     def test_node_removed_signal(self):
-        G = rt.GraphRT()
+        G = rt.GraphStateRT()
         spy = QSignalSpy(G.nodes_removed)
 
         @G.node()
@@ -37,7 +37,7 @@ class TestNodeCollectionSignals():
         assert my_node in spy[0][0], "nodes_removed signal should contain the name of the removed node"
 
     def test_node_inputs_changed_signal(self):
-        G = rt.GraphRT()
+        G = rt.GraphStateRT()
         spy = QSignalSpy(G.nodes_changed)
 
         @G.node()
@@ -51,7 +51,7 @@ class TestNodeCollectionSignals():
 
 class TestOperatorCollectionSignals():
     def test_operator_added_signal(self):
-        G = rt.GraphRT()
+        G = rt.GraphStateRT()
         spy = QSignalSpy(G._inline_module.operators_added)
 
         @G.op()
@@ -62,7 +62,7 @@ class TestOperatorCollectionSignals():
         assert my_operator in spy[0][0], "operators_added signal should contain the name of the added operator"
 
     def test_operator_removed_signal(self):
-        G = rt.GraphRT()
+        G = rt.GraphStateRT()
         spy = QSignalSpy(G._inline_module.operators_removed)
 
         @G.op()
@@ -76,8 +76,9 @@ class TestOperatorCollectionSignals():
 
 
 def test_executed_signal():
-    G = rt.GraphRT()
-    spy = QSignalSpy(G.executed)
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G)
+    spy = QSignalSpy(E.executed)
 
     @G.node()
     def two():
@@ -91,7 +92,7 @@ def test_executed_signal():
     def mult(a, b):
         return a*b
 
-    result = G.execute(mult, profile=True)
+    result = E.execute(mult, profile=True)
     assert result == 6, "The result of executing the node should be correct"
 
     assert len(spy) == 1, "executed signal should have been emitted once"

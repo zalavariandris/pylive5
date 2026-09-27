@@ -106,16 +106,16 @@ class DummyCache:
 
 @dataclass
 class NodeRef:
-    _graph: 'GraphRT'
+    _graph: 'GraphStateRT'
     _name: str
 
     def __repr__(self):
         return f"NodeRef('{self._name}')"
 
     def __call__(self) -> Any:
-        if operator_data:=self.get_operator().get_value():
+        if operator_ref:=self.get_operator():
             data = self.get_value()
-            return operator_data(*data.args, **data.kwargs)
+            return operator_ref(*data.args, **data.kwargs)
         else:
             raise GraphExecutionError(f"Operator {self.get_operator()} is missing from the graph")
         
@@ -130,7 +130,7 @@ class NodeRef:
     def get_name(self) -> str:
         return self._name
 
-    def get_value(self) -> NodeData|None:
+    def get_value(self) -> NodeState|None:
         node_data = self._graph._nodes[self]
         return node_data
 
@@ -152,8 +152,8 @@ class NodeRef:
 type LiteralValue = None | bool | int | float | str
 type Value = NodeRef | LiteralValue
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
-class NodeData:
-    operator: OperatorRef
+class NodeState:
+    operator: OperatorRef|None
     args: tuple[Value, ...] = tuple()
     kwargs: MappingProxyType[str, Value] = MappingProxyType({})
 
@@ -162,12 +162,11 @@ class NodeData:
             k: v for k, v in self.kwargs.items()
         }) # todo: create a view
 
-    def get_operator(self) -> OperatorRef:
+    def get_operator(self) -> OperatorRef|None:
         return self.operator
 
     def __call__(self, *args, **kwargs) -> Any:
         raise NotImplementedError("__call__ is not implemented for NodeRef")
-
 
 
 def freeze(value, active=None) -> tuple:
@@ -281,22 +280,18 @@ def _decode_value(value, nodes):
     raise ValueError(f"Invalid tagged input: {value!r}")
 
 
-class GraphRT(QObject):
+class GraphStateRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
     nodes_changed = Signal(list) # list[NodeRef]
     nodes_removed = Signal(list) # list[NodeRef]
-    executed = Signal(dict) # dict[NodeRef, Any]
     modules_changed = Signal()
 
     def __init__(self):
         super().__init__()
-
         self._imports: list[ImportModuleRT] = [] # List of imported modules
         self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
         self._local = ScriptModuleRT("_local_", parent=self)
-        self._nodes: dict[NodeRef, NodeData] = dict()
-        self._profiler = Profiler()
-        self.cache = DummyCache()
+        self._nodes: dict[NodeRef, NodeState] = dict()
 
     def setLocalDefinitions(self, test: str) -> None:
         self._local.set_script(test)
@@ -406,7 +401,7 @@ class GraphRT(QObject):
 
         # create the node and store its data
         node_ref = NodeRef(self, name)
-        node_data = NodeData(operator, tuple(args), MappingProxyType(kwargs))
+        node_data = NodeState(operator, tuple(args), MappingProxyType(kwargs))
         self._nodes[node_ref] = node_data
         self.nodes_added.emit([node_ref])
         return node_ref
@@ -415,7 +410,7 @@ class GraphRT(QObject):
         assert node_ref in self._nodes, "Node does not exist in the graph." # todo: Api misuse: raise standard python errors
         if op is None:
             op = self._nodes[node_ref].get_operator()
-        node_data = NodeData(op, tuple(args), MappingProxyType(kwargs))
+        node_data = NodeState(op, tuple(args), MappingProxyType(kwargs))
         self._nodes[node_ref] = node_data
         self.nodes_changed.emit([node_ref])
 
@@ -430,7 +425,6 @@ class GraphRT(QObject):
         assert node_ref in self._nodes, "Node does not exist in the graph."
 
         del self._nodes[node_ref]
-        self.cache.remove(node_ref)
 
         changed_nodes = []
         for dependent, node_data in self._nodes.items():
@@ -444,7 +438,7 @@ class GraphRT(QObject):
                 if not (isinstance(value, NodeRef) and value == node_ref)
             }
             if len(remaining_args) != len(args) or len(remaining_kwargs) != len(kwargs):
-                self._nodes[dependent] = NodeData(
+                self._nodes[dependent] = NodeState(
                     node_data.get_operator(), remaining_args, remaining_kwargs
                 )
                 changed_nodes.append(dependent)
@@ -505,92 +499,6 @@ class GraphRT(QObject):
 
         return sorted_nodes
 
-    def _build_fingerprints(self, sorted_nodes: list[NodeRef]) -> dict[NodeRef, int]:
-        fingerprints: dict[NodeRef, int] = {}
-        for node_ref in sorted_nodes:
-            node_data = self._nodes[node_ref]
-            args, kwargs = node_data.get_inputs()
-            operator_ref = node_data.get_operator()
-            assert isinstance(operator_ref, OperatorRef), f"operator_ref must be an instance of OperatorRef, got: {operator_ref}"
-
-            operator_data = operator_ref.get_value()
-            signature = (
-                operator_data,
-                tuple(
-                    (
-                        "node", value, fingerprints[value]) if isinstance(value, NodeRef) else ("literal", freeze(value)
-                    )
-                    for value in args
-                ),
-                tuple(
-                    (
-                        key, 
-                        ("node", value, fingerprints[value]) if isinstance(value, NodeRef) else ("literal", freeze(value))
-                    ) 
-                    for key, value in kwargs.items()
-                ),
-            )
-            # Dependencies already have hashes because this is topological order.
-            fingerprints[node_ref] = hash(signature)
-        return fingerprints
-        
-    def execute(self, root:NodeRef, profile: bool = True, ):
-        """Evaluate pure operators with immutable inputs and operator data.
-
-        Upstream signatures are reduced to Python hashes, so dependency hash
-        collisions are possible. Cache lookups compare full local signatures.
-        """
-        assert isinstance(root, NodeRef), f"root must be an instance of NodeRef, got: {root}"
-        if root is None:
-            raise ValueError("No output node specified.")
-
-        if root not in self._nodes:
-            raise ValueError(f"Node {root} does not exist in the engine.")
-        
-        if profile:
-            self._profiler.clear()
-
-        ancestors = self.ancestors(root)
-        sorted_ancestors = self.topological_sort(ancestors)
-
-        # execute nodes
-        fingerprints = self._build_fingerprints(sorted_ancestors)
-        ancestors_output: dict[NodeRef, Any] = {} # store node output temporary
-        for node_ref in sorted_ancestors:
-            node_data = self._nodes[node_ref]
-            
-            if entry:=self.cache.lookup(node_ref, fingerprints[node_ref]):
-                ancestors_output[node_ref] = entry.value
-            else:
-                args, kwargs = node_data.get_inputs()
-                
-
-                resolved_args = [
-                    ancestors_output[value] if isinstance(value, NodeRef) else value
-                    for value in args
-                ]
-
-                resolved_kwargs = {
-                    key: ancestors_output[value] if isinstance(value, NodeRef) else value
-                    for key, value in kwargs.items()
-                }
-
-                operator_ref = node_data.get_operator()
-                with self._profiler.profile(node_ref):
-                    if operator := operator_ref.get_value():
-                        try:
-                            value = operator(*resolved_args, **resolved_kwargs)
-                        except Exception as error:
-                            raise GraphExecutionError(str(error), node_ref) from error
-                    else:
-                        raise GraphExecutionError("Node cannot be executed because its operator is missing.", node_ref)
-
-                ancestors_output[node_ref] = value
-                entry = self.cache.save(node_ref, fingerprints[node_ref], value)
-
-        self.executed.emit({node_ref: ancestors_output[node_ref] for node_ref in ancestors})
-        return ancestors_output[root]
-
     def todict(self, explicit: bool = False) -> dict[str, Any]:
         """Save the graph, using short _local_ operator names unless explicit."""
 
@@ -646,7 +554,7 @@ class GraphRT(QObject):
         return data
 
     @classmethod
-    def fromdict(cls, data: dict[str, Any]) -> "GraphRT":
+    def fromdict(cls, data: dict[str, Any]) -> "GraphStateRT":
         """Build a new runtime. Unknown operators and invalid scripts stay editable."""
 
         validate_graph_data(data)
@@ -676,8 +584,8 @@ class GraphRT(QObject):
             operator = record["operator"]
             if isinstance(operator, str):
                 operator = {"module": "_local_", "name": operator}
-            ref = OperatorRef(modules_by_id[operator["module"]], operator["name"])
-            nodes[name] = graph.node()(ref, name=name)
+            op_ref = OperatorRef(modules_by_id[operator["module"]], operator["name"])
+            nodes[name] = graph._create_node(op_ref)
 
         # Create every node before restoring inputs, allowing forward references.
         for name, record in graph_data["nodes"].items():
@@ -688,8 +596,111 @@ class GraphRT(QObject):
             )
         return graph
 
+
+class GraphExecutorRT(QObject):
+    executed = Signal(dict) # dict[NodeRef, Any]
+    def __init__(self, graph: GraphStateRT, cache: MemoryCache|HistoryMemoryCache|None=None):
+        super().__init__()
+        self._graph: GraphStateRT = graph
+        self._profiler = Profiler()
+        self._cache = cache if cache is not None else DummyCache()
+        self._graph.nodes_removed.connect(self._on_nodes_removed)
+
+    def _on_nodes_removed(self, removed_nodes: list[NodeRef]):
+        
+        for node_ref in removed_nodes:
+            del self._cache[node_ref]
+
+    def _build_fingerprints(self, sorted_nodes: list[NodeRef]) -> dict[NodeRef, int]:
+        fingerprints: dict[NodeRef, int] = {}
+        for node_ref in sorted_nodes:
+            node_data = self._graph._nodes[node_ref]
+            args, kwargs = node_data.get_inputs()
+            operator_ref = node_data.get_operator()
+
+            assert isinstance(operator_ref, (OperatorRef, type(None))), f"operator_ref must be an instance of OperatorRef, got: {operator_ref}"
+            if operator_ref is None:
+                signature = ("no_operator",)
+            else:
+                signature = (
+                    operator_ref.fingerprint(),
+                    tuple(
+                        (
+                            "node", value, fingerprints[value]) if isinstance(value, NodeRef) else ("literal", freeze(value)
+                        )
+                        for value in args
+                    ),
+                    tuple(
+                        (
+                            key, 
+                            ("node", value, fingerprints[value]) if isinstance(value, NodeRef) else ("literal", freeze(value))
+                        ) 
+                        for key, value in kwargs.items()
+                    ),
+                )
+            # Dependencies already have hashes because this is topological order.
+            fingerprints[node_ref] = hash(signature)
+        return fingerprints
+        
+    def execute(self, root:NodeRef, profile: bool = True):
+        """Evaluate pure operators with immutable inputs and operator data.
+
+        Upstream signatures are reduced to Python hashes, so dependency hash
+        collisions are possible. Cache lookups compare full local signatures.
+        """
+        assert isinstance(root, NodeRef), f"root must be an instance of NodeRef, got: {root}"
+        if root is None:
+            raise ValueError("No output node specified.")
+
+        if root not in self._graph._nodes:
+            raise ValueError(f"Node {root} does not exist in the engine.")
+        
+        if profile:
+            self._profiler.clear()
+
+        ancestors = self._graph.ancestors(root)
+        sorted_ancestors = self._graph.topological_sort(ancestors)
+
+        # execute nodes
+        fingerprints = self._build_fingerprints(sorted_ancestors)
+        ancestors_output: dict[NodeRef, Any] = {} # store node output temporary
+        for node_ref in sorted_ancestors:
+            node_data = self._graph._nodes[node_ref]
+            
+            if entry:=self._cache.lookup(node_ref, fingerprints[node_ref]):
+                ancestors_output[node_ref] = entry.value
+            else:
+                args, kwargs = node_data.get_inputs()
+                
+
+                resolved_args = [
+                    ancestors_output[value] if isinstance(value, NodeRef) else value
+                    for value in args
+                ]
+
+                resolved_kwargs = {
+                    key: ancestors_output[value] if isinstance(value, NodeRef) else value
+                    for key, value in kwargs.items()
+                }
+
+                with self._profiler.profile(node_ref):
+                    if operator := node_data.get_operator():
+                        try:
+                            value = operator(*resolved_args, **resolved_kwargs)
+                        except Exception as error:
+                            raise GraphExecutionError(str(error), node_ref) from error
+                    else:
+                        raise GraphExecutionError("Node cannot be executed because its operator is missing.", node_ref)
+
+                ancestors_output[node_ref] = value
+                entry = self._cache.save(node_ref, fingerprints[node_ref], value)
+
+        self.executed.emit({node_ref: ancestors_output[node_ref] for node_ref in ancestors})
+        return ancestors_output[root]
+
+
 if __name__ == "__main__":
-    G = GraphRT()
+    G = GraphStateRT()
 
     @G.node()
     def A():
@@ -706,5 +717,7 @@ if __name__ == "__main__":
         print("Executing node mult")
         return x*y
 
-    result = G.execute(mult)
+    executor = GraphExecutorRT(G)
+
+    result = executor.execute(mult)
     print(result)

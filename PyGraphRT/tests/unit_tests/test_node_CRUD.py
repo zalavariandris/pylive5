@@ -9,7 +9,7 @@ import random
 from pygraphrt.inline_module import InlineModuleRT
 import pytest
 import pygraphrt as rt
-from pygraphrt.graph_rt import NodeData
+from pygraphrt.graph_rt import NodeState
 
 
 
@@ -28,13 +28,13 @@ def module() -> InlineModuleRT:
     params=[rt.DummyCache, rt.MemoryCache, rt.HistoryMemoryCache],
     ids=["uncached", "memory", "history"],
 )
-def graph(request: pytest.FixtureRequest) -> rt.GraphRT:
-    graph = rt.GraphRT()
+def graph(request: pytest.FixtureRequest) -> rt.GraphStateRT:
+    graph = rt.GraphStateRT()
     graph.cache = request.param()
     return graph
 
 @pytest.fixture
-def hello_node(hello_operator, graph: rt.GraphRT) -> rt.NodeRef:
+def hello_node(hello_operator, graph: rt.GraphStateRT) -> rt.NodeRef:
     return graph._create_node(hello_operator)
 
 
@@ -46,29 +46,29 @@ def _execute_node(node: rt.NodeRef) -> None:
 
 
 class Test_CreateNode:
-    def test_create_node_without_op(self, graph: rt.GraphRT) -> None:
+    def test_create_node_without_op(self, graph: rt.GraphStateRT) -> None:
         node_ref = graph._create_node()
         assert node_ref in graph.nodes()
 
-    def test_create_node_with_op(self, graph: rt.GraphRT) -> None:
+    def test_create_node_with_op(self, graph: rt.GraphStateRT) -> None:
         im = InlineModuleRT()
         op = im._create_operator(lambda x: x)
         
         node_ref = graph._create_node(op)
         assert node_ref in graph.nodes()
 
-    def test_create_node_without_op(self, graph: rt.GraphRT) -> None:
+    def test_create_node_without_op(self, graph: rt.GraphStateRT) -> None:
         n1 = graph._create_node()
         assert n1 in graph.nodes()
 
-    def test_create_node_from_bad_objects(self, graph: rt.GraphRT) -> None:
+    def test_create_node_from_bad_objects(self, graph: rt.GraphStateRT) -> None:
         with pytest.raises(AssertionError):
             graph._create_node("not an operator")
 
         with pytest.raises(AssertionError):
             graph._create_node(123)
 
-    def test_create_node_directly_with_a_function_is_not_allowed(self, graph: rt.GraphRT) -> None:
+    def test_create_node_directly_with_a_function_is_not_allowed(self, graph: rt.GraphStateRT) -> None:
         # todo: reconsider this behaviour
         def func():
             pass
@@ -76,12 +76,12 @@ class Test_CreateNode:
             graph._create_node(func)
 
     @pytest.mark.skip(reason="not yet implemented")
-    def test_clear_node(self, graph: rt.GraphRT) -> None:
+    def test_clear_node(self, graph: rt.GraphStateRT) -> None:
         ...
 
 class Test_UpdateNode:
     def test_update_node_operator(self) -> None:
-        graph = rt.GraphRT()
+        graph = rt.GraphStateRT()
         node = graph._create_node()
 
         im = InlineModuleRT()
@@ -91,7 +91,7 @@ class Test_UpdateNode:
         assert _execute_node(node) == "Hello"
 
     def test_update_node_args(self) -> None:
-        graph = rt.GraphRT()
+        graph = rt.GraphStateRT()
         node = graph._create_node()
 
         im = InlineModuleRT()
@@ -103,7 +103,7 @@ class Test_UpdateNode:
         assert _execute_node(node) == 42
 
     def test_update_node_kwargs(self) -> None:
-        graph = rt.GraphRT()
+        graph = rt.GraphStateRT()
         node = graph._create_node()
 
         im = InlineModuleRT()
@@ -117,7 +117,7 @@ class Test_UpdateNode:
 
 class Test_DeleteNode:
     def test_delete_node(self) -> None:
-        graph = rt.GraphRT()
+        graph = rt.GraphStateRT()
         node = graph._create_node()
         assert node in graph.nodes()
 

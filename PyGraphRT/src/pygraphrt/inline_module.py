@@ -24,7 +24,8 @@ class OperatorExistsError(Exception):
 class FunctionOperator(AbstractOperator):
     def __init__(self, func:callable):
         super().__init__()
-        assert callable(func) and hasattr(func, "__code__"), "func must be a callable function with a __code__ attribute"
+        assert callable(func), f"func must be a callable function got{func}"
+        assert hasattr(func, "__code__"), f"function with a __code__ attribute, got {func}"
         self._func = func
 
     def _signature(self):
@@ -53,7 +54,6 @@ class FunctionOperator(AbstractOperator):
     def __call__(self, *args, **kwargs) -> Any:
         return self._func(*args, **kwargs)
 
-    
 
 class InlineModuleRT(AbstractModule):
     """An editable script runtime exporting callable module-level bindings.

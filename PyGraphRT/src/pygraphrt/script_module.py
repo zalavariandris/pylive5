@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from types import FunctionType, ModuleType
 from typing import Iterable, Literal, Any
 from qtpy.QtCore import Signal, QObject
@@ -41,8 +42,10 @@ def _get_all_callables_from_script(
     try:
         code = compile(script, f"<script:{name}>", "exec")
         exec(code, namespace)
+
     except SyntaxError as error:
         raise ScriptSyntaxError(str(error)) from error
+    
     except Exception as error:
         raise ScriptEvaluationError(str(error)) from error
 
@@ -108,7 +111,8 @@ class ScriptModuleRT(AbstractModule):
         
         super().__init__(name, parent=parent)
         
-        self._operators_cache: dict[str, FunctionOperator] = {}
+        self._functions_cache: dict[str, FunctionType] = {}
+        self._evaluated_script: str = "" # used to track the last successfully evaluated script. necessary to determine dependency changes in the code itself.
         self._script = ""
         self._state: Literal["VALID"] | Exception = "VALID"
 
@@ -126,41 +130,46 @@ class ScriptModuleRT(AbstractModule):
         
         if script == self._script:
             return
-
+        
+        self._script = script
+        self.script_changed.emit()
+        self._evaluate()
+        
+    def _evaluate(self) -> None:
+        """update operators based on the current script and emit relevant signals"""
         name: str | None = self.get_display_name()
         execution_name: str = name if name is not None else "<script>"
         new_state: Literal["VALID"] | Exception
         try:
-            new_functions = _get_all_callables_from_script(script, name=execution_name)
+            all_functions_from_script = _get_all_callables_from_script(self._script, name=execution_name)
         except ScriptEvaluationError as error:
-            new_state = error.error
-            new_functions = {}
+            new_state = error
+            all_functions_from_script = {}
         except ModuleError as error:
             new_state = error
-            new_functions = {}
+            all_functions_from_script = {}
         else:
             new_state = "VALID"
 
-        prev_names = self._operators_cache.keys()
-        next_names = new_functions.keys()
+        prev_names = self._functions_cache.keys()
+        next_names = all_functions_from_script.keys()
         removed_names = sorted(prev_names - next_names)
         added_names = sorted(next_names - prev_names)
         changed_names: list[str] = []
         if new_state == "VALID":
-            functions_diff = ast_functions_diff(self._script, script)
+            functions_diff = ast_functions_diff(self._evaluated_script, self._script)
             # AST names can include nested functions; exports are actual bindings.
             changed_names = sorted(prev_names & next_names & functions_diff.changed)
 
         # Prepare the entire update before committing; runtime bugs propagate.
-        new_operators = self._operators_cache.copy()
+        current_functions = self._functions_cache.copy()
         for name in removed_names:
-            del new_operators[name]
+            del current_functions[name]
         for name in changed_names + added_names:
-            new_operators[name] = FunctionOperator(new_functions[name])
+            current_functions[name] = all_functions_from_script[name]
 
         state_changed = self._state != new_state
-        self._operators_cache = new_operators
-        self._script = script
+        self._functions_cache = current_functions
         self._state = new_state
 
         if state_changed:
@@ -171,8 +180,9 @@ class ScriptModuleRT(AbstractModule):
             self.operators_added.emit([OperatorRef(self, name) for name in added_names])
         if changed_names:
             self.operators_changed.emit([OperatorRef(self, name) for name in changed_names])
-        self.script_changed.emit()
-
+        self._evaluated_script = self._script
+        print("script evaluated")
+        
     def get_state(self) -> Literal["VALID"] | Exception:
         """Return 'VALID' or the stored compilation, execution, or export error."""
         return self._state
@@ -180,15 +190,27 @@ class ScriptModuleRT(AbstractModule):
     def operators(self) -> Iterable[OperatorRef]:
         return [
             OperatorRef(self, k) 
-            for k in self._operators_cache.keys()
+            for k in self._functions_cache.keys()
         ] # todo: use a dictionary view (or a frozendict) instead of a copy
 
+    #todo: deprecate. the operator reference is resposible to call 
+    # the actual function, that is owned by the module
     def get_operator(self, ref: OperatorRef, default=None) -> AbstractOperator | None:
-        return self._operators_cache.get(ref.name, default)
+        try:
+            func = self._functions_cache[ref.name]
+            return FunctionOperator(func)
+        except KeyError:
+            return None
+
+    def get_operator_by_name(self, name: str, default=None) -> OperatorRef | None:
+        if name in self._functions_cache:
+            return OperatorRef(self, name)
+        return default
 
     def __getitem__(self, key: OperatorRef) -> AbstractOperator:
         try:
-            return self._operators_cache[key.name]
+            func = self._functions_cache[key.name]
+            return FunctionOperator(func)
         except KeyError as err:
             raise ModuleError(f"Operator {key.name!r} not found", self) from err
         

@@ -28,7 +28,8 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
         return 0
     """))
 
-    G = rt.GraphRT()
+    G = rt.GraphStateRT()
+    E = rt.GraphExecutorRT(G)
     operators = {operator.name: operator for operator in sm.operators()}
 
     A=G.node()(operators['A'])
@@ -43,7 +44,7 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
     watcher = rt.watch(G, out, callback)
 
     try:
-        assert G.execute(out) == 3
+        assert E.execute(out) == 3
 
         sm.set_script(dedent(f"""
         def A():
@@ -60,7 +61,7 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
         """))
 
         assert len(track_changes) == expected_changes
-        assert G.execute(out) == a_value + b_value
+        assert E.execute(out) == a_value + b_value
 
     finally:
         watcher.stop()
@@ -69,7 +70,7 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
 @pytest.fixture
 def ancestor_graph():
     """The output is local; its ancestor comes from an independently edited script."""
-    graph = rt.GraphRT()
+    graph = rt.GraphStateRT()
     module = ScriptModuleRT("source")
     module.set_script("def value(): return 1")
     ancestor = graph.node()(OperatorRef(module, "value"))
@@ -95,7 +96,8 @@ def ancestor_graph():
 ], ids=["removed", "replaced", "syntax-error", "execution-error"])
 def test_ancestor_operator_removed_and_restored(ancestor_graph, script):
     graph, module, ancestor, output, watcher, changes = ancestor_graph
-    assert graph.execute(output) == 10
+    E = rt.GraphExecutorRT(graph)
+    assert E.execute(output) == 10
     for value in (2, 3):
         changes.clear()
         module.set_script(script)
@@ -105,15 +107,16 @@ def test_ancestor_operator_removed_and_restored(ancestor_graph, script):
         changes.clear()
         module.set_script(f"def value(): return {value}")
         assert changes == [True]
-        assert graph.execute(output) == value * 10
+        assert E.execute(output) == value * 10
         assert watcher._running
 
 
 def test_ancestor_operator_changed_and_unrelated_exports_ignored(ancestor_graph):
     graph, module, ancestor, output, watcher, changes = ancestor_graph
+    E = rt.GraphExecutorRT(graph)
     module.set_script("def value(): return 2")
     assert changes == [True]
-    assert graph.execute(output) == 20
+    assert E.execute(output) == 20
     changes.clear()
     module.set_script("def value(): return 2\ndef unused(): return 0")
     module.set_script("def value(): return 2\ndef unused(): return 9")
@@ -126,6 +129,7 @@ def test_ancestor_operator_changed_and_unrelated_exports_ignored(ancestor_graph)
 
 def test_setting_ancestor_inputs_rewires_watched_modules(ancestor_graph):
     graph, module, ancestor, output, watcher, changes = ancestor_graph
+    E = rt.GraphExecutorRT(graph)
     # Both scripts export the same name: matching must include module identity.
     other_module = ScriptModuleRT("other")
     other_module.set_script("def value(): return 4")
@@ -135,31 +139,31 @@ def test_setting_ancestor_inputs_rewires_watched_modules(ancestor_graph):
     bridge = graph.node(value=ancestor)(OperatorRef(bridge_module, "identity"))
     output.set_inputs(value=bridge)
     assert changes == [True]
-    assert graph.execute(output) == 10
+    assert E.execute(output) == 10
     changes.clear()
 
     # Mutate an ancestor's inputs, not the selected output node.
     bridge.set_inputs(value=other)
     assert changes == [True]
-    assert graph.execute(output) == 40
+    assert E.execute(output) == 40
     changes.clear()
     module.set_script("def value(): return 7")
     module.set_script("")
     assert changes == []
     other_module.set_script("def value(): return 5")
     assert changes == [True]
-    assert graph.execute(output) == 50
+    assert E.execute(output) == 50
     changes.clear()
     other_module.set_script("")
     assert changes == [True]
     other_module.set_script("def value(): return 6")
     assert changes == [True, True]
-    assert graph.execute(output) == 60
+    assert E.execute(output) == 60
     changes.clear()
 
     bridge.set_inputs(value=8)
     assert changes == [True]
-    assert graph.execute(output) == 80
+    assert E.execute(output) == 80
     changes.clear()
     other_module.set_script("def value(): return 9")
     assert changes == []

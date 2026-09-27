@@ -1,7 +1,8 @@
 from collections import defaultdict
 
 from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.graph_rt import NodeRef
+from pygraphrt.abstract_module_rt import AbstractModule
+from pygraphrt.graph_rt import GraphExecutorRT, NodeRef
 from pytools import UniqueNameGenerator
 from qtpy.QtCore import QPointF, Slot
 from typing import Iterable, override
@@ -26,14 +27,18 @@ from qtpy.QtGui import QColor
 from typing import Any
 
 class PyFlowRTModel(AbstractDAGModel):
-    def __init__(self, rt: rt.GraphRT):
+    ResultsRole = Qt.ItemDataRole.UserRole+1
+
+    def __init__(self, rt: rt.GraphStateRT, executor: GraphExecutorRT): 
         super().__init__()
         self._rt = rt
+        self._executor: GraphExecutorRT = executor
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
-        self._observed_modules = set()
+        self._observed_modules:set[AbstractModule] = set()
         self._connect_runtime()
+        self._results: dict[NodeName, Any] = {}
 
-    def setRT(self, rt: rt.GraphRT, positions=None):
+    def setRT(self, rt: rt.GraphStateRT, positions=None):
         self._beginResetModel()
         self._disconnect_runtime()
         self._rt = rt
@@ -137,6 +142,18 @@ class PyFlowRTModel(AbstractDAGModel):
         else:
             del self._positions[node_name]
 
+    def setNodeData(self, node: NodeName, role: int, value: Any) -> bool:
+        node_ref = self.getNode(node)
+        if node_ref is None:
+            return False
+        match role:
+            case self.ResultsRole:
+                self._results[node_ref] = value
+                self.nodeDataChanged.emit((node,))
+                return True
+            case _:
+                return False
+
     @override
     def nodeData(self, node: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         node_ref = self.getNode(node)
@@ -145,11 +162,16 @@ class PyFlowRTModel(AbstractDAGModel):
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 return node_ref.get_operator()
+            
             case Qt.ItemDataRole.BackgroundRole:
                 if op_ref:=node_ref.get_operator():
                     if op_ref.get_value() is not None:
                         return None
                 return QColor(Qt.GlobalColor.red) # return red color for missing operator
+            
+            case self.ResultsRole:
+                return self._results.get(node_ref, None)
+            
             case _:
                 return None
 
