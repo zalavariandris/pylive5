@@ -24,6 +24,7 @@ from .import_module import ImportModuleRT
 from .watch import watch
 from .errors import GraphExecutionError
 from .script_module_registry import ScriptModuleRegistry
+from .graph_resolver import GraphResolver
 
 __all__ = [
     "AbstractModule",
@@ -37,6 +38,7 @@ __all__ = [
     "ScriptModuleRT",
     "ImportModuleRT",
     "watch",
+    "GraphResolver",
     "GraphExecutionError",
     "GraphExecutorRT",
     "ScriptModuleRegistry"

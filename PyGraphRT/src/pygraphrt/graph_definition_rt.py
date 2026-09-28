@@ -164,15 +164,16 @@ def _decode_value(value, nodes):
 
 from .script_module_registry import ScriptModuleRegistry
 
+
 class GraphDefinitionRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
     nodes_changed = Signal(list) # list[NodeRef]
     nodes_removed = Signal(list) # list[NodeRef]
 
-    def __init__(self, module_registry: ScriptModuleRegistry|None=None):
+    def __init__(self):
         super().__init__()
 
-        self._module_registry: ScriptModuleRegistry = module_registry # List of imported modules
+        # self._module_registry: ScriptModuleRegistry = module_registry # List of imported modules
         self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
         self._local = ScriptModuleRT("_local_", parent=self)
         self._nodes: dict[NodeRef, NodeState] = dict()

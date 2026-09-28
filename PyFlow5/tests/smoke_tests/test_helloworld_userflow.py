@@ -12,8 +12,14 @@ from qtpy.QtWidgets import QApplication, QDialogButtonBox
 from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
 from pyflow5.pyflow5_window import PyFlow5Window
 from pyflow5.pyflow5_document import PyFlowDocument
-from pygraphrt.abstract_module_rt import OperatorRef
 
+
+import pygraphrt as rt
+from pygraphrt.graph_executor import (
+    ExecutionFailure, 
+    ExecutionSuccess, 
+    NodeExecution
+)
 
 global WAIT_TIME_MS
 WAIT_TIME_MS = 1000
@@ -177,12 +183,12 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     
     qtbot.wait(WAIT_TIME_MS)
 
-    assert isinstance(document.graph_model.nodeData("helloworld", role=PyFlowRTModel.ResultsRole), Exception)
+    assert isinstance(document.graph_model.nodeData("helloworld", role=PyFlowRTModel.ResultsRole), ExecutionFailure)
     qtbot.wait(WAIT_TIME_MS)
     return
     model = document.modules_model
     local_module_index = model.index(0, 0)
-    operators: dict[str, OperatorRef] = {
+    operators: dict[str, rt.OperatorRef] = {
         model.index(row, 0, local_module_index).data():
         model.index(row, 0, local_module_index).data(ModulesOperatorsTreeModel.OperatorRole)
         for row in range(model.rowCount(local_module_index))
@@ -206,7 +212,7 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
         raise AssertionError(f"Local operator {operator_name!r} is missing from the selector")
 
     operator = operator_index.data(ModulesOperatorsTreeModel.OperatorRole)
-    assert isinstance(operator, OperatorRef)
+    assert isinstance(operator, rt.OperatorRef)
     assert operator.module is document._graph.local()
 
     # Ctrl+P blocks in QDialog.exec(), so queue the dialog clicks on a timer.
@@ -261,7 +267,7 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
         raise AssertionError(f"Local operator {operator_name!r} is missing from the selector")
 
     operator = operator_index.data(ModulesOperatorsTreeModel.OperatorRole)
-    assert isinstance(operator, OperatorRef)
+    assert isinstance(operator, rt.OperatorRef)
     assert operator.module is document._graph.local()
 
     # Ctrl+P blocks in QDialog.exec(), so queue the dialog clicks on a timer.

@@ -41,7 +41,7 @@ class PyFlowDocument(QObject):
         # self.graphselection_model.nodesSelectionChanged.connect(self._sync_output_to_selection)
         # self.graphselection_model.currentNodeChanged.connect(self._sync_output_to_selection)
 
-        self._watcher:rt.Watcher|None = None
+        # self._watcher:rt.Watcher|None = None
 
     def addNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
         assert operator_index.isValid(), "Operator index must be valid."
