@@ -7,6 +7,7 @@ from pygraphrt import (
 )
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, QObject, Qt
 
+import pygraphrt as rt
 
 class ModulesOperatorsTreeModel(QAbstractItemModel):
     """One-column tree reading modules and operators from a graph runtime.
@@ -22,12 +23,12 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._graph: GraphDefinitionRT | None = None
+        self._registry: rt.ScriptModuleRegistry | None = None
 
-    def setGraph(self, graph: GraphDefinitionRT | None) -> None:
+    def setRegistry(self, registry: rt.ScriptModuleRegistry | None) -> None:
         """Replace the runtime used by this model."""
         self.beginResetModel()
-        self._graph = graph
+        self._registry = registry
         self.endResetModel()
 
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
@@ -46,7 +47,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         return self.createIndex(row, column, module_id)
 
     def parent(self, child: QModelIndex) -> QModelIndex:  # type: ignore
-        if self._graph is None or not child.isValid():
+        if self._registry is None or not child.isValid():
             return QModelIndex()
         if child.model() is not self or child.column() != 0:
             return QModelIndex()
@@ -58,10 +59,10 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         return self.index(module_id - 1, 0)
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        if self._graph is None:
+        if self._registry is None:
             return 0
 
-        modules = self._graph.modules()
+        modules = self._registry.modules()
         if not parent.isValid():
             return len(modules)
 
@@ -79,12 +80,12 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
     def data(
         self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole
     ) -> object | None:
-        if self._graph is None or not index.isValid():
+        if self._registry is None or not index.isValid():
             return None
         if index.model() is not self or index.column() != 0:
             return None
 
-        modules = self._graph.modules()
+        modules = self._registry.modules()
         module_id = index.internalId()
         module_row = index.row() if module_id == 0 else module_id - 1
         if not 0 <= module_row < len(modules):
@@ -152,15 +153,15 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         return True
 
     def importModule(self, file_path: str) -> None:
-        assert self._graph is not None, "Graph must be initialized before importing a module."
+        assert self._registry is not None, "Graph must be initialized before importing a module."
         module = ImportModuleRT(file_path)
         row = self.rowCount()
         self.beginInsertRows(QModelIndex(), row, row)
-        self._graph.add_import(module)
+        self._registry.add_module(module)
         self.endInsertRows()
 
     def removeModule(self, index: QModelIndex) -> bool:
-        if self._graph is None:
+        if self._registry is None:
             return False
 
         module = self.data(index, self.ModuleRole)
@@ -169,7 +170,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
 
         row = index.row()
         self.beginRemoveRows(QModelIndex(), row, row)
-        self._graph.remove_import(module)
+        self._registry.remove_import(module)
         self.endRemoveRows()
         return True
 
@@ -184,12 +185,12 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
     def mapFromSource(
         self, source: AbstractModule | OperatorRef
     ) -> QModelIndex:
-        if self._graph is None:
+        if self._registry is None:
             return QModelIndex()
 
         module = source.module if isinstance(source, OperatorRef) else source
         try:
-            module_row = self._graph.modules().index(module)
+            module_row = self._registry.modules().index(module)
         except ValueError:
             return QModelIndex()
 

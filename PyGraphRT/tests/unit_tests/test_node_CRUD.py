@@ -86,7 +86,7 @@ class Test_UpdateNode:
         op = im._create_operator(lambda: "Hello")
         graph._update_node(node, op, [], {})
 
-        assert E.execute(node) == "Hello"
+        assert E.execute(node).result == "Hello"
 
     def test_update_node_args(self) -> None:
         graph = rt.GraphDefinitionRT()
@@ -100,7 +100,7 @@ class Test_UpdateNode:
         graph._update_node(node, op, [42], {})
 
         E = rt.GraphExecutorRT(graph)
-        assert E.execute(node) == 42
+        assert E.execute(node).result == 42
 
     def test_update_node_kwargs(self) -> None:
         graph = rt.GraphDefinitionRT()
@@ -113,7 +113,7 @@ class Test_UpdateNode:
         op = im._create_operator(func)
         graph._update_node(node, op, [1], {"y": 2})
 
-        assert E.execute(node) == 3
+        assert E.execute(node).result == 3
 
 
 class Test_DeleteNode:

@@ -162,15 +162,17 @@ def _decode_value(value, nodes):
     raise ValueError(f"Invalid tagged input: {value!r}")
 
 
+from .script_module_registry import ScriptModuleRegistry
+
 class GraphDefinitionRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
     nodes_changed = Signal(list) # list[NodeRef]
     nodes_removed = Signal(list) # list[NodeRef]
-    modules_changed = Signal()
 
-    def __init__(self):
+    def __init__(self, module_registry: ScriptModuleRegistry|None=None):
         super().__init__()
-        self._imports: list[ImportModuleRT] = [] # List of imported modules
+
+        self._module_registry: ScriptModuleRegistry = module_registry # List of imported modules
         self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
         self._local = ScriptModuleRT("_local_", parent=self)
         self._nodes: dict[NodeRef, NodeState] = dict()
@@ -187,25 +189,28 @@ class GraphDefinitionRT(QObject):
         """Return the local script module containing user-defined functions."""
         return self._local
 
-    def imports(self) -> list[ImportModuleRT]:
-        return list(self._imports)
+    # def imports(self) -> list[ImportModuleRT]:
+    #     return list(self._module_registry)
 
-    def modules(self):
-        """Modules available to the editor, including unused imports."""
-        return [self._local, *self._imports]
+    # def modules(self):
+    #     """Modules available to the editor, including unused imports."""
+    #     if self._module_registry is not None:
+    #         return [self._local, *self._module_registry.modules()]
+    #     else:
+    #         return [self._local]
 
-    def add_import(self, module: ImportModuleRT) -> None:
-        if not isinstance(module, ImportModuleRT):
-            raise TypeError("Only imported modules can be added; edit local module for embedded code")
-        if module not in self._imports:
-            self._imports.append(module)
-            self.modules_changed.emit()
+    # def add_import(self, module: ImportModuleRT) -> None:
+    #     if not isinstance(module, ImportModuleRT):
+    #         raise TypeError("Only imported modules can be added; edit local module for embedded code")
+    #     if module not in self._module_registry:
+    #         self._module_registry.append(module)
+    #         self.modules_changed.emit()
 
-    def remove_import(self, module: ImportModuleRT) -> None:
-        if module not in self._imports:
-            raise KeyError("Import module is not in this graph")
-        self._imports.remove(module)
-        self.modules_changed.emit()
+    # def remove_import(self, module: ImportModuleRT) -> None:
+    #     if module not in self._module_registry:
+    #         raise KeyError("Import module is not in this graph")
+    #     self._module_registry.remove(module)
+    #     self.modules_changed.emit()
 
     def op(self) -> Callable[[Callable], OperatorRef]:
         return self._inline_module.op()
@@ -392,7 +397,7 @@ class GraphDefinitionRT(QObject):
         module_ids: dict[ScriptModuleRT, str] = {}
 
         imports_data: list[str] = []
-        for module in self._imports:
+        for module in self._module_registry:
             path = str(module.path())
             if not path or path == "_local_" or path in imports_data:
                 raise ValueError(f"Import path {path!r} must be nonempty, unique, and cannot be '_local_'")

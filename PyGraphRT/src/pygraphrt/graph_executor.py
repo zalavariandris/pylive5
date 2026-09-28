@@ -26,35 +26,37 @@ from .graph_cache import (
     DummyCache
 )
 
-@dataclass
-class NodeExecution:
+# @dataclass
+# class NodeExecution:
+#     node: NodeRef
+#     result: Any
+#     error: Exception | str | None = None
+
+# from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ExecutionPending:
+    node: NodeRef
+
+@dataclass(frozen=True)
+class ExecutionRunning:
+    node: NodeRef
+
+@dataclass(frozen=True)
+class ExecutionSuccess:
     node: NodeRef
     result: Any
-    error: Exception | None = None
-
-from dataclasses import dataclass
 
 @dataclass(frozen=True)
-class NodePending:
-    pass
-
-@dataclass(frozen=True)
-class NodeRunning:
-    pass
-
-@dataclass(frozen=True)
-class NodeSuccess:
-    result: Any
-
-@dataclass(frozen=True)
-class NodeError:
-    reason: Exception
+class ExecutionFailure:
+    node: NodeRef
+    reason: str|Exception
 
 NodeExecution = (
-    NodePending
-    | NodeRunning
-    | NodeSuccess
-    | NodeError
+    ExecutionPending
+    | ExecutionRunning
+    | ExecutionSuccess
+    | ExecutionFailure
 )
 
 @dataclass(frozen=True)
@@ -63,7 +65,8 @@ class GraphExecution:
 
 
 class GraphExecutorRT(QObject):
-    executed = Signal(dict) # dict[NodeRef, Any]
+    executed = Signal(dict) # dict[NodeRef, NodeExecution]
+    
     def __init__(self, graph: GraphDefinitionRT, cache: MemoryCache|HistoryMemoryCache|None=None):
         super().__init__()
         self._graph: GraphDefinitionRT = graph
@@ -116,13 +119,17 @@ class GraphExecutorRT(QObject):
                         try:
                             value = operator(*resolved_args, **resolved_kwargs)
                         except Exception as error:
+                            return ExecutionFailure(node_ref, reason=error)
                             raise GraphExecutionError(str(error), node_ref) from error
                     else:
-                        raise GraphExecutionError("Node cannot be executed because its operator is missing.", node_ref)
+                        return ExecutionFailure(node_ref, reason="Node cannot be executed because its operator is missing.")
 
                 ancestors_output[node_ref] = value
                 entry = self._cache.save(node_ref, fingerprints[node_ref], value)
 
-        self.executed.emit({node_ref: ancestors_output[node_ref] for node_ref in ancestors})
-        return ancestors_output[root]
+        self.executed.emit({
+            node_ref: ancestors_output[node_ref] 
+            for node_ref in ancestors
+        })
+        return ExecutionSuccess(root, ancestors_output[root]) 
 

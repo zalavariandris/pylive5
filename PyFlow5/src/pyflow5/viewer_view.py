@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from pyflow5.pygraphrt_model import PyFlowRTModel
 from pygraphrt.errors import GraphExecutionError
+from pygraphrt.graph_executor import ExecutionFailure, ExecutionSuccess, NodeExecution
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import (
     QAbstractItemModel,
@@ -129,6 +130,15 @@ class Viewer(QWidget):
     def _update_display(self):
         if self._current_nodename is None:
             self._display_widget.clear()
-        else:
-            data = self._model.nodeData(self._current_nodename, self._model.ResultsRole) if self._model else None
-            self._display_widget.display(data)
+        if self._model is None: 
+            self._display_widget.clear()
+
+        data:NodeExecution = self._model.nodeData(self._current_nodename, self._model.ResultsRole)
+        match data:
+            case ExecutionFailure():
+                self._display_widget.display(data.reason)
+            case ExecutionSuccess():
+                self._display_widget.display(data.result)
+            case _:
+                self._display_widget.clear()
+

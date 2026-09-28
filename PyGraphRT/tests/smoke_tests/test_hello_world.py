@@ -1,6 +1,8 @@
 from pygraphrt.abstract_module_rt import OperatorRef
 from pygraphrt.errors import GraphExecutionError, ModuleError
 
+from pygraphrt.graph_executor import ExecutionFailure
+from pygraphrt.script_module import ScriptModuleRT
 import pytest
 from pygraphrt import GraphDefinitionRT, ImportModuleRT, GraphExecutorRT
 from textwrap import dedent
@@ -35,14 +37,14 @@ from textwrap import dedent
 
 # Lets make the user test go through each layer: pygrapg rt; document; gui
 
-def find_operator_by_name(im, name)->OperatorRef|None:
-    return next((op for op in im.operators() if op.get_name() == name), None)
+def find_operator_by_name(module: ScriptModuleRT, name:str)->OperatorRef|None:
+    return next((op for op in module.operators() if op.get_name() == name), None)
 
 def test_smoke_hello_world():
     G = GraphDefinitionRT()
     E = GraphExecutorRT(G)
     im = ImportModuleRT()
-    G.add_import(im)
+    # G.add_import(im)
 
     # - Create a broken 'hello' operator
     im.set_script("def hello( ") 
@@ -55,18 +57,17 @@ def test_smoke_hello_world():
     # - Add empty 'hello' node with the op
     hello_op = find_operator_by_name(im, "hello")
     hello_node = G._create_node(hello_op)
-    assert E.execute(hello_node) == 'Hello!', "The 'hello' node should execute successfully."
+    assert E.execute(hello_node).result == 'Hello!', "The 'hello' node should execute successfully."
 
     # brake the hello op
     im.set_script("def hello( ") 
     assert 'hello' not in [op.name for op in im.operators()], "The broken 'hello' operator should not exist yet."
-    with pytest.raises(GraphExecutionError): #todo: we need to review this behaviour. if modules report errors, instead of raising them we might want similar behaviour for the graph as well.
-        assert E.execute(hello_node)
+    assert isinstance(E.execute(hello_node), ExecutionFailure)
 
     # fix the hello op
     im.set_script("def hello(): return 'Hello!'") 
     assert 'hello' in [op.name for op in im.operators()], "The 'hello' operator should exist after being fixed."
-    assert E.execute(hello_node) == 'Hello!', "The 'hello' node should execute successfully after the operator is fixed."
+    assert E.execute(hello_node).result == 'Hello!', "The 'hello' node should execute successfully after the operator is fixed."
 
     # add the_name, and the_greeting operators
     im.set_script(dedent("""\
@@ -97,18 +98,17 @@ def test_smoke_hello_world():
             return f"{greeting} {name}!"
     """))
 
-    with pytest.raises(GraphExecutionError):
-        E.execute(hello_node)
+    assert isinstance(E.execute(hello_node), ExecutionFailure)
 
     # Connect the_name 
     G._update_node(hello_node, hello_op, kwargs={"name": the_name_node})
 
     # Execute the hello node after connecting the_name
-    assert E.execute(hello_node) == 'Hello Mása!', "The 'hello' node should execute successfully with the_name connected."
+    assert E.execute(hello_node).result == 'Hello Mása!', "The 'hello' node should execute successfully with the_name connected."
     # Connect the_greeting
     G._update_node(hello_node, hello_op, kwargs={"name": the_name_node, "greeting": the_greeting_node})
     # Execute the hello node after connecting the_greeting
-    assert E.execute(hello_node) == 'Hey Mása!', "The 'hello' node should execute successfully with both the_name and the_greeting connected."
+    assert E.execute(hello_node).result == 'Hey Mása!', "The 'hello' node should execute successfully with both the_name and the_greeting connected."
 
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"])

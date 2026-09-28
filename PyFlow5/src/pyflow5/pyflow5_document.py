@@ -22,11 +22,15 @@ class PyFlowDocument(QObject):
         super().__init__(parent=parent)
         self._graph = rt.GraphDefinitionRT()
         self._executor = rt.GraphExecutorRT(self._graph)
+        
+        self._module_registry = rt.ScriptModuleRegistry()
+        local_module = rt.ScriptModuleRT(name="<local>")
+        self._module_registry.add_module(local_module)
 
         self.graph_model = PyFlowRTModel(self._graph, self._executor)
 
         self.modules_model = ModulesOperatorsTreeModel(parent=self)
-        self.modules_model.setGraph(self._graph)
+        self.modules_model.setRegistry(self._module_registry)
         self.modulesselection_model = QItemSelectionModel(self.modules_model)
 
         self.graphselection_model = GraphSelectionModel(self.graph_model)

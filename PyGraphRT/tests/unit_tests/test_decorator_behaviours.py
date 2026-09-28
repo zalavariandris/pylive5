@@ -16,15 +16,10 @@ import pygraphrt as rt
 
 # REVIEW SIMPLIFY: cache variants add no coverage to tests that never execute
 # nodes. Reserve the cache matrix for execution/invalidation scenarios.
-@pytest.fixture(
-    params=[rt.DummyCache, rt.MemoryCache, rt.HistoryMemoryCache],
-    ids=["uncached", "memory", "history"],
-)
-def graph(request: pytest.FixtureRequest) -> rt.GraphDefinitionRT:
+@pytest.fixture
+def graph() -> rt.GraphDefinitionRT:
     graph = rt.GraphDefinitionRT()
-    graph.cache = request.param()
     return graph
-
 
 class Test_InlineOperatorCRUD():
     # REVIEW UNNECESSARY / REMOVE: uncollected placeholder (_test_ prefix),

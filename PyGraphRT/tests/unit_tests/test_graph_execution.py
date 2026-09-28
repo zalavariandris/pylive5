@@ -1,5 +1,9 @@
-import pytest
 
+import pytest
+from typing import TYPE_CHECKING
+
+
+from pygraphrt.graph_executor import NodeExecution, ExecutionFailure, ExecutionSuccess
 
 
 def test_executing_node_without_an_operator():
@@ -10,8 +14,8 @@ def test_executing_node_without_an_operator():
     node = G._create_node()
 
 
-    result:NodeExecution = E.execute(node)
-    assert isinstance(result, Exception)
+    execution:NodeExecution = E.execute(node)
+    assert isinstance(execution, ExecutionFailure)
 
 def test_executing_node_with_a_valid_operator():
     import pygraphrt as rt
