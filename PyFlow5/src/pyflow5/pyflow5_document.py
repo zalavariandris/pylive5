@@ -20,14 +20,29 @@ from .pygraphrt_model import PyFlowRTModel
 class PyFlowDocument(QObject):
     def __init__(self, parent:QObject|None=None):
         super().__init__(parent=parent)
+        # RT
         self._graph = rt.GraphDefinitionRT()
         self._executor = rt.GraphExecutorRT(self._graph)
-        
         self._module_registry = rt.ScriptModuleRegistry()
         local_module = rt.ScriptModuleRT(name="<local>")
         self._module_registry.add_module(local_module)
+        self._resolver = rt.GraphResolver(self._graph, self._module_registry)
 
+        # Models
         self.graph_model = PyFlowRTModel(self._graph, self._executor)
+        self._resolver = rt.GraphResolver(self._graph, self._module_registry)
+
+        @self._resolver.resolutions_changed.connect
+        def on_resolutions_changed(nodes: set[rt.NodeRef]):
+            for node_ref in nodes:
+                node_name = node_ref._name
+                resolution = self._resolver.get_resolution(node_ref)
+                self.graph_model.setNodeData(
+                    node_name, 
+                    self.graph_model.ResolutionRole, 
+                    resolution
+                )
+
 
         self.modules_model = ModulesOperatorsTreeModel(parent=self)
         self.modules_model.setRegistry(self._module_registry)
@@ -120,7 +135,10 @@ class PyFlowDocument(QObject):
     def open(self, file_path: str | Path) -> None:
         """Load a JSON file, retaining the document and its models."""
         data = json.loads(Path(file_path).read_text(encoding="utf-8"))
+        new_registry = rt.ScriptModuleRegistry()
         new_graph_rt = rt.GraphDefinitionRT.fromdict(data)
+        new_executor = rt.GraphExecutorRT(new_graph_rt)
+        new_resolver = rt.GraphResolver(new_graph_rt, new_registry)
         positions: dict[str, tuple[float, float]] = {}
         for name, record in data.get("graph", {}).get("nodes", {}).items():
             position = record.get("position", [0, 0])

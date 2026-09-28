@@ -97,7 +97,7 @@ class Viewer(QWidget):
         if self._model and self._current_nodename is not None:
             node_ref = self._model.getNode(self._current_nodename)
             self._watcher = rt.watch(
-                self._model._rt, 
+                self._model._graph, 
                 node_ref, 
                 self._on_watch_triggered
             )

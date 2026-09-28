@@ -1,4 +1,5 @@
 from collections import defaultdict
+from logging import warning
 
 import pygraphrt as rt
 
@@ -35,20 +36,25 @@ from typing import Any
 
 class PyFlowRTModel(AbstractDAGModel):
     ResultsRole = Qt.ItemDataRole.UserRole+1
+    ResolutionRole = Qt.ItemDataRole.UserRole+2
 
-    def __init__(self, rt: rt.GraphDefinitionRT, executor: rt.GraphExecutorRT): 
+    def __init__(self, graph: rt.GraphDefinitionRT, executor: rt.GraphExecutorRT): 
         super().__init__()
-        self._rt: rt.GraphDefinitionRT = rt
+        self._graph: rt.GraphDefinitionRT = graph
         self._executor: GraphExecutorRT = executor
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
         self._observed_modules:set[AbstractModule] = set()
         self._connect_runtime()
         self._results: dict[NodeName, Any] = {}
 
-    def setRT(self, rt: GraphDefinitionRT, positions=None):
+    def setRT(self, graph: rt.GraphDefinitionRT, executor: rt.GraphExecutorRT, positions=None):
+        # TODO: "the relationship between the graph components are fragile for now. this has to be reviewd"
+        warning.warn("the relationship between the graph components are fragile for now. this has to be reviewd") 
+        assert executor._graph is graph, "Executor's graph must match the provided graph."
         self._beginResetModel()
         self._disconnect_runtime()
-        self._rt = rt
+        self._graph = graph
+        self._executor = executor
         self._positions = defaultdict(lambda: (0.0, 0.0), positions or {})
         self._connect_runtime()
         self._endResetModel()
@@ -58,7 +64,7 @@ class PyFlowRTModel(AbstractDAGModel):
 
         Call after a failed mutation has unwound, not from a mutation signal handler.
         """
-        node_names = {node.get_name() for node in self._rt.nodes()}
+        node_names = {node.get_name() for node in self._graph.nodes()}
         positions = {name: position for name, position in self._positions.items()
                      if name in node_names}
         # Recovery deliberately abandons notifications left open by a failed edit.
@@ -69,15 +75,15 @@ class PyFlowRTModel(AbstractDAGModel):
         self._endResetModel()
 
     def _connect_runtime(self):
-        self._rt.nodes_added.connect(self._refresh_module_subscriptions)
-        self._rt.nodes_removed.connect(self._refresh_module_subscriptions)
-        self._rt.nodes_changed.connect(self._on_runtime_nodes_changed)
+        self._graph.nodes_added.connect(self._refresh_module_subscriptions)
+        self._graph.nodes_removed.connect(self._refresh_module_subscriptions)
+        self._graph.nodes_changed.connect(self._on_runtime_nodes_changed)
         self._refresh_module_subscriptions()
 
     def _disconnect_runtime(self):
-        self._rt.nodes_added.disconnect(self._refresh_module_subscriptions)
-        self._rt.nodes_removed.disconnect(self._refresh_module_subscriptions)
-        self._rt.nodes_changed.disconnect(self._on_runtime_nodes_changed)
+        self._graph.nodes_added.disconnect(self._refresh_module_subscriptions)
+        self._graph.nodes_removed.disconnect(self._refresh_module_subscriptions)
+        self._graph.nodes_changed.disconnect(self._on_runtime_nodes_changed)
         for module in self._observed_modules:
             self._disconnect_module(module)
         self._observed_modules.clear()
@@ -89,7 +95,7 @@ class PyFlowRTModel(AbstractDAGModel):
 
     @Slot(list)
     def _refresh_module_subscriptions(self, nodes=None):
-        modules = {ref.module for node in self._rt.nodes()
+        modules = {ref.module for node in self._graph.nodes()
                    if (ref := node.get_operator()) is not None}
         for module in self._observed_modules - modules:
             self._disconnect_module(module)
@@ -114,7 +120,7 @@ class PyFlowRTModel(AbstractDAGModel):
     def _on_operators_changed(self, operators):
         changed = set(operators)
         self._notify_node_presentation([
-            node.get_name() for node in self._rt.nodes()
+            node.get_name() for node in self._graph.nodes()
             if node.get_operator() in changed
         ])
 
@@ -123,13 +129,13 @@ class PyFlowRTModel(AbstractDAGModel):
     def nodes(self)->Iterable[NodeName]:
         return [
             node_ref.get_name() 
-            for node_ref in self._rt.nodes()
+            for node_ref in self._graph.nodes()
         ]
 
     def getNode(self, node_name:NodeName)->rt.NodeRef|None:
         # todo: consider caching node references by name for faster lookup
         # find noderef by the name
-        for node_ref in self._rt.nodes():
+        for node_ref in self._graph.nodes():
             if node_ref.get_name() == node_name:
                 return node_ref
         return None
@@ -188,7 +194,7 @@ class PyFlowRTModel(AbstractDAGModel):
             node_ref = self.getNode(node_name)
             assert node_ref is not None, f"Node '{node_name}' not found"
 
-            self._rt._delete_node(node_ref)
+            self._graph._delete_node(node_ref)
             self._positions.pop(node_name, None)
         self._endRemoveNodes()
 
@@ -262,7 +268,7 @@ class PyFlowRTModel(AbstractDAGModel):
 
     @override
     def links(self)->Iterable[DirectionalLinkId]:
-        for node_ref in self._rt.nodes():
+        for node_ref in self._graph.nodes():
             yield from self._node_input_links(node_ref)
 
     @override
@@ -339,10 +345,10 @@ class PyFlowRTModel(AbstractDAGModel):
         position: QPointF|None, in scene coordinates"""
         assert isinstance(operator, OperatorRef), f"operator must be an instance of OperatorRef, got: {operator}"
         new_node_name = operator.name
-        node_names = [ref.get_name() for ref in self._rt.nodes()]
+        node_names = [ref.get_name() for ref in self._graph.nodes()]
         unique_name = UniqueNameGenerator(existing_names=node_names)(new_node_name)
         self._beginAddNodes([unique_name])
-        new_node_ref = self._rt.node()(operator, name=unique_name)
+        new_node_ref = self._graph.node()(operator, name=unique_name)
         if position:
             self._positions[new_node_ref.get_name()] = position.x(), position.y()
         self._endAddNodes()
