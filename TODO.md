@@ -12,7 +12,8 @@
 - [ ] Image CornerPin
 
 ## DEV
-- [ ] NodeRef shjould not have acces to the nodeData directly. nodeData is internal to the graph. noderef should interact strictly with the owner graph
+- [ ] use two way .relations for node-operators in GrahpRT.
+- [ ] NodeRef should not have acces to the nodeData directly. nodeData is internal to the graph. noderef should interact strictly with the owner graph
       - this ould open up implementation optimizations inside the graph. for example to use a node_to_operator relationship table instead of storing the operator in the NodeData. also to store links in a table. seperate node properties and links. (we can keep the public api [eg update_node...] the same, but the internal would be a lot easier to optimize.)
 - [ ] use pre post change handler in GraphDefinition for addition, and removal. 
 - [ ] consider using pre/post data_change signals as well?
