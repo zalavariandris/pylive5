@@ -5,7 +5,7 @@
 - [ ] Replace the NodeName in GraphModel to a QModelIndex-like object. namei `ModelKey` \#QDAGEditor5
 
 - [x] add open/save .pgraph
-- [ ] Resolve graph imports and asset paths relative to the .pgraph file’s directory
+- [ ] Resolve graph imports and asset paths relative to the .pgraph file’s directory \#PyGraphRT.serialization
 - [x] fix json fileformat:
       - `local` should be the local python script.
       - import are the ImportModuleRT (relative to the graph)
