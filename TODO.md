@@ -1,6 +1,4 @@
 # TODO
-
-
 ## ExampleApps
 - [ ] Image Grade
   - [ ] node graph, with image operators: 
@@ -12,4 +10,99 @@
     - [ ] blur
 
 - [ ] Image CornerPin
+
+## DEV
+- [ ] consider adding Roles (same as QT uses for models) to the Graphmodel.
+      NodeTitleRole
+      NodeMessageRole
+      NodeInletsRole?
+      ... NodeBody Role
+      \#QDagEditor
+
+- [ ] add option, to show broken links. links are broken, when points to nodes that are not in the model.
+      a link can be broken in multiple ways:
+      - link has source, but no target, or has target node but no source
+      - link has no source neither target. how to show that?
+      - link has source and target, but points to missing ports? it should be pointing to the node direclty
+    when the show broken links is off, skip broken links!
+    \#QDagEditor
+    
+- [ ] consider adding addLinks and removeLinks abstract methods for the AnstractDagmodel. With this move, consider making the DirectionalLink a concrete class. \#QDagEditor
+
+   if soo, we need to think about multiple links between the same ports? not really, since the same port will not be connected multiple time. multiple links make sense only, when the links are connected directly to the nodes. specifying source outlet and target inlet is enough for now. If we decide to make the Link a concrete class, then 'linkSource' and 'linkTarget' would become obsolete.
+   think about this carefully, how 'abstract' this model should be.
+   \#QDagEditor5
+- [ ] update node paint method, to reflect ExecutionGraph and GraphResolution results. Also include the resolution and execution graph to change the PyGraphRTModel Data. Probably the GraphModel should use these. \#QDAGEditor5 \#PyFlow
+- [ ] ADD ModuleRegistry to the open, save in Document \#PyFlow
+- [ ] UPDATE serialization to use the ModuleRegistry \#PyGraphRT
+- [ ] OperatorRef is an AbstractOperator, not something that point to and AbstractOperator. Modules should implement the methods instead, and the ref should call the owning module methods instead. \#PyGraphRT
+- [ ] Replace the NodeName in GraphModel to a QModelIndex-like object. namei `ModelKey` \#QDAGEditor5
+
+- [x] add open/save .pgraph
+- [ ] Resolve graph imports and asset paths relative to the .pgraph file’s directory \#PyGraphRT.serialization
+- [x] fix json fileformat:
+      - `local` should be the local python script.
+      - import are the ImportModuleRT (relative to the graph)
+      - nodes: nodes with args and kwargs defining the links and parameters
+- [ ] consider other graph formats:
+      - yaml
+      - markdown
+        with frontmatter for the imports
+        a python code block for the `local` definitions
+        a mermaid code block for the graph itself.
+
+
+- [x] support untitled ImportModule \#pygraph
+- [ ] review PyGraphRT error handling and reporting \#pygraph
+- [ ] review parameters and getters semantic. whic one to use where and why. \#pygraph
+- [ ] testing. subclasses that share behaviour, should have shared tests.
+      share test between local_module and script_module, 
+      see: pygraphrt model tests. its uses fixture, and parametrize
+      \#pygraph
+- [x] graph (snapshots) and serialization \#pygraph
+- [ ] support callable objects not just functions \#pygraph
+- [x] refactor Cache to be pluggable. \#pygraph
+- [x] emit signals, when functions actually added, removed changed. dont emit
+      add, remove, change signlas, when only the script has changed. \#pygraph
+- [x] TEST change signal, when the function itself did not, but due to its scope 
+      the behaviour has changed. \#pygraph
+- [ ] **ImportModuleRT** how to handle importmodule without a file. <unnamed>
+      when there was a real file, but it was deleted? In the UI we should be
+      able to create files, that are not yet saved. So it should be valid as
+      long as the script is valid. \#pygraph
+- [ ] **ImportModule** should save **relative paths**.
+      when a graph was not yet saved, importing modules, will have to store the
+      abolute path. Now when the graph is saved, the importmodule paths should
+      be resolved to be relative to the graph. by default it sohuld be relative,
+      we should add an option, to save it as absolute path. \#pygraph
+- [ ] **ImportModule** indicate when the script has been __*edited__ 
+      with a STAR \#pygraph \#pyflow
+- [ ] **export** a runnable python script. \#pygraph
+- [ ] investigate, signals, that sends a batch of object that changed, and signals, that send change iformation about a single object. Consider, the signals to be more consistent, moving in either direction, eg allwazs use a batch, or alwazs use sngle objects. Batch feels more performant. This also related to, if operators become first class citizens.
+
+## Architecture
+NOTE: these might be outdated:
+- [x] Investigate operator fingerprints in ScriptModuleRT. Re-executing a script
+      recreates unchanged functions and changes their fingerprints despite selective
+      change signals. Review stable fingerprints for unaffected operators, module
+      ownership, and changes through globals, helpers, and imported callables.
+      \#pygraph **cache**
+- GraphRT execution should be deterministic. Same inputs result the same outputs.
+  make sure, GraphRT after mutated behaves the same as GraphRT jsut initialized.
+  \#pygraph
+
+- [x] allow adding and updating operators in GraphRT.
+- [x] GraphRT should be allowed to load and reaload(!) operators from a python script!
+      -> ScriptmoduleRT added, that manages operators from a python script.
+- [x] consider making operators first class citizens. \#pygraph
+
+- [ ] Consider GraphRT responsibility to be nodes and links only. and factor out, the python script-like additions: operators, modules etc. \#pygraph
+- [x] consider using references inside the GraphRT datastructure.
+      eg graph.output, node.inputs, node.operators etc. \#pygraph
+- [x] when a node is removed, the GraphRT.output still holds on to it.
+      when a node is removed, and its the actual ouput, set the output to None \#pygraph
+- [x] add test for cycle detection.
+      just caught a bug where two nodes were connected twice and it detected it as a cycle \#pygraph
+
+
 
