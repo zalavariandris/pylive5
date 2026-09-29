@@ -17,6 +17,25 @@ class ImageRGBA:
 def constant(width: int=512, height: int=512, color: ColorData=ColorData(0.5, 0.5, 0.5))->ImageRGBA:
     return ImageRGBA(np.full((height, width, 4), [color.r, color.g, color.b, color.a], dtype=np.float32))
 
+import numpy as np
+
+def noise(
+    w: int,
+    h: int,
+    amount: float = 0.15,
+    seed: int = 1,
+) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+
+    noise = rng.random((h, w), dtype=np.float32)
+    noise = 0.5 + (noise - 0.5) * amount
+
+    out = np.empty((h, w, 4), dtype=np.float32)
+    out[..., :3] = noise[..., None]
+    out[..., 3] = 1.0
+
+    return out
+
 def read(path: pathlib.Path)->ImageRGBA:
     return ImageRGBA(np.zeros((1, 1, 4), dtype=np.float32))
 

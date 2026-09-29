@@ -366,7 +366,7 @@ def test_script_errors_notify_observers_after_committing(
     observed: list[tuple[str, str, object, list[OperatorRef]]] = []
 
     def record(signal: str) -> None:
-        observed.append((signal, module.get_script(), module.get_state(), list(module.operators())))
+        observed.append((signal, module.get_source(), module.get_state(), list(module.operators())))
 
     module.state_changed.connect(lambda: record("state"))
     module.operators_removed.connect(lambda _: record("removed"))
@@ -396,7 +396,7 @@ def test_script_interrupts_propagate_without_committing(exception_name: str) -> 
     with pytest.raises(exception_type):
         module.set_script(f"raise {exception_name}()")
 
-    assert module.get_script() == source
+    assert module.get_source() == source
     assert module.get_state() == "VALID"
     assert OperatorRef(module, "one")() == 1
 

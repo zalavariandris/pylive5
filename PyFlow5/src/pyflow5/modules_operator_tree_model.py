@@ -111,7 +111,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         if role == self.OperatorRole and isinstance(item, OperatorRef):
             return item
         if role == self.SourceRole and isinstance(item, ScriptModuleRT):
-            return item.get_script()
+            return item.get_source()
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:

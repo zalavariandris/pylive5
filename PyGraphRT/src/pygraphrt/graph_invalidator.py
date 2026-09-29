@@ -1,35 +1,38 @@
+from qtpy.QtCore import QObject, Signal
+
 from .graph_definition_rt import GraphDefinitionRT, NodeRef
 from .module_registry import ModuleRegistry
-from qtpy.QtCore import QObject, Signal
 
 
 class GraphInvalidator(QObject):
-    nodes_invalidated: Signal = Signal(list[NodeRef])
+    nodes_invalidated: Signal = Signal(list) # list[NodeRef]
 
-    def __init__(self, graph: GraphDefinitionRT, module_registry: ModuleRegistry):
-        self.graph = graph
-        self.registry = module_registry
+    def __init__(self, graph: GraphDefinitionRT, module_registry: ModuleRegistry|None=None):
+        super().__init__()
+        self._graph = graph
+        self._registry: ModuleRegistry|None= module_registry
 
-        def invalidate_nodes_descendants(nodes):
-            invalidate_nodes = []
-            for node in nodes:
-                descendants = self.graph.descendants(node)
-                invalidate_nodes.extend(descendants)
-            self.nodes_invalidated.emit(invalidate_nodes)
-
-        self.graph.nodes_added.connect(invalidate_nodes_descendants)
-        self.graph.nodes_removed.connect(invalidate_nodes_descendants)
-        self.graph.nodes_changed.connect(invalidate_nodes_descendants)
+        self._graph.nodes_added.connect(self._invalidate_nodes_descendants)
+        self._graph.nodes_removed.connect(self._invalidate_nodes_descendants)
+        self._graph.nodes_changed.connect(self._invalidate_nodes_descendants)
             
-        def invalidate_operator_nodes_descendants(operators):
-            invalidate_nodes = []
-            for op in operators:
-                for node in self.graph.nodes_of_operator(op):
-                    descendants = self.graph.descendants(node)
-                    invalidate_nodes.extend(descendants)
+        if self._registry is not None:
+            self._registry.operators_added.connect(self._invalidate_operator_nodes_descendants)          
+            self._registry.operators_removed.connect(self._invalidate_operator_nodes_descendants)
+            self._registry.operators_changed.connect(self._invalidate_operator_nodes_descendants)
 
-            self.nodes_invalidated.emit(invalidate_nodes)
+    def _invalidate_nodes_descendants(self, nodes):
+        invalidate_nodes = []
+        for node in nodes:
+            descendants = self._graph.descendants(node)
+            invalidate_nodes.extend(descendants)
+        self.nodes_invalidated.emit(invalidate_nodes)
 
-        self.registry.operators_added.connect(invalidate_operator_nodes_descendants)          
-        self.registry.operators_removed.connect(invalidate_operator_nodes_descendants)
-        self.registry.operators_changed.connect(invalidate_operator_nodes_descendants)
+    def _invalidate_operator_nodes_descendants(self, operators):
+        invalidate_nodes = []
+        for op in operators:
+            for node in self._graph.nodes_of_operator(op):
+                descendants = self._graph.descendants(node)
+                invalidate_nodes.extend(descendants)
+
+        self.nodes_invalidated.emit(invalidate_nodes)

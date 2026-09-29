@@ -1,6 +1,8 @@
+"""The runtime representation of a computation graph definition."""
+
 from collections import deque, defaultdict
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Callable, Callable, Any, Iterable, Mapping
+from typing import Any, Callable, Callable, Any, Iterable, Mapping
 
 import math
 from pathlib import Path
@@ -12,22 +14,18 @@ from qtpy.QtCore import (
     Signal
 )
 
-from myutils.profiler import Profiler
-
-if TYPE_CHECKING:
-    from .abstract_module_rt import AbstractOperator, OperatorRef
-
-# from .inline_module import InlineModuleRT
+from .relations import ManyToOneRelation
 from .import_module import ImportModuleRT
 from .script_module import ScriptModuleRT
 from .graph_schema import validate_graph_data
-from .abstract_module_rt import OperatorRef
 from .abstract_module_rt import AbstractOperator
 
 from .errors import (
     ModuleError,
     GraphExecutionError
 )
+
+from .function_operator import FunctionOperator
 
 
 @dataclass
@@ -56,13 +54,13 @@ class NodeRef:
     def get_name(self) -> str:
         return self._name
 
-    def get_operator(self) -> OperatorRef:
+    def get_operator(self) -> AbstractOperator|None:
         operator_ref = self._graph._operator_to_nodes.parent_of(self)
         return operator_ref
 
     def set_inputs(self, *args, **kwargs) -> None:
         self._graph._validate_inputs(*args, **kwargs)
-        current_operator: OperatorRef|None = self._graph._operator_to_nodes.parent_of(self)
+        current_operator: AbstractOperator|None = self._graph._operator_to_nodes.parent_of(self)
         self._graph._update_node(self, current_operator, args, kwargs)
 
     def get_inputs(self) -> tuple[tuple[Value], dict[str, Value]]:
@@ -75,7 +73,6 @@ type Value = NodeRef | LiteralValue
 
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
 class _NodeState:
-    # operator: OperatorRef|None
     args: tuple[Value, ...] = tuple()
     kwargs: MappingProxyType[str, Value] = MappingProxyType({})
 
@@ -150,10 +147,6 @@ def _decode_value(value, nodes):
     raise ValueError(f"Invalid tagged input: {value!r}")
 
 
-from .module_registry import ModuleRegistry
-from .relations import ManyToOneRelation
-
-
 
 
 
@@ -167,59 +160,21 @@ class GraphDefinitionRT(QObject):
     def __init__(self):
         super().__init__()
 
-        # self._module_registry: ScriptModuleRegistry = module_registry # List of imported modules
-        # self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
         self._local = ScriptModuleRT("_local_", parent=self)
         self._nodes: dict[NodeRef, _NodeState] = dict()
         self._out_links: dict[NodeRef, dict[NodeRef, set[int | str]]] = {}
-        self._operator_to_nodes = ManyToOneRelation[OperatorRef, NodeRef]()
+        self._operator_to_nodes = ManyToOneRelation[NodeRef, AbstractOperator]()
 
     def setLocalDefinitions(self, test: str) -> None:
         self._local.set_script(test)
-
-    # def inline(self) -> InlineModuleRT:
-    #     """Return the inline module containing runtime functions.
-    #     Created with the node decorators."""
-    #     return self._inline_module
 
     def local(self) -> ScriptModuleRT:
         """Return the local script module containing user-defined functions."""
         return self._local
 
-    # def imports(self) -> list[ImportModuleRT]:
-    #     return list(self._module_registry)
-
-    # def modules(self):
-    #     """Modules available to the editor, including unused imports."""
-    #     if self._module_registry is not None:
-    #         return [self._local, *self._module_registry.modules()]
-    #     else:
-    #         return [self._local]
-
-    # def add_import(self, module: ImportModuleRT) -> None:
-    #     if not isinstance(module, ImportModuleRT):
-    #         raise TypeError("Only imported modules can be added; edit local module for embedded code")
-    #     if module not in self._module_registry:
-    #         self._module_registry.append(module)
-    #         self.modules_changed.emit()
-
-    # def remove_import(self, module: ImportModuleRT) -> None:
-    #     if module not in self._module_registry:
-    #         raise KeyError("Import module is not in this graph")
-    #     self._module_registry.remove(module)
-    #     self.modules_changed.emit()
-
-    def op(self) -> Callable[[Callable], OperatorRef]:
-        return self._inline_module.op()
-
-    def operators(self) -> list[OperatorRef]:
-        # todo: this method is misleading; it only returns inline module operators, not all operators in the graph.
-        return list(self._inline_module._operators.keys())
-
-    def get_operator(self, op_ref: OperatorRef) -> AbstractOperator:
-        if op_ref not in self._inline_module._operators:
-            raise ModuleError(f"Operator {op_ref} does not exist in the graph.")
-        return self._inline_module._operators[op_ref]
+    def operators(self) -> Iterable[AbstractOperator]:
+        for node in self._nodes:
+            yield from self._operator_to_nodes.parent_of(node)
 
     def _validate_inputs(self, *args: Value, **kwargs: Value) -> None:
         """Validate that all NodeRef inputs exist in the graph.
@@ -238,27 +193,17 @@ class GraphDefinitionRT(QObject):
                     raise ValueError(f"Node {value} does not exist in the graph.")
 
     def node(self, *args: Value, **kwargs: Value) -> Callable[..., NodeRef]: # todo: consider using a protocol for better type checking
-        def decorator(func: Callable | OperatorRef, name: str|None=None) -> NodeRef:
-            assert (
-                isinstance(func, OperatorRef)
-                or (callable(func) and hasattr(func, "__code__"))
-            ), f"Expected a Python function or an OperatorRef, got: {func}"
+        def decorator(func: Callable) -> NodeRef:
+            is_function = lambda f: callable(f) and hasattr(f, "__code__")
 
-            self._validate_inputs(*args, **kwargs)
+            assert is_function(func), f"Expected a Python function, got: {func}"
 
-            # Reuse an operator reference or register the function.
-            if isinstance(func, OperatorRef):
-                operator = func
-            else:
-                operator = self._inline_module.op()(func)
-
-            if name is None:
-                name = operator.get_name()
-
+            name = func.__name__
+            node_ref = NodeRef(self, name)
+            operator = FunctionOperator(func)
             # Create or update the named node.
             # NOTE: for now, we want the create unique operator behaviour. See test for decorator behaviours
-                    #       todo: write this down somewhere. what create and rebind behaviour means here.
-            node_ref = NodeRef(self, name)
+            
             if node_ref in self._nodes:
                 # self._update_node(node_ref, operator, args, dict(kwargs))
                 node_ref = self._create_node(operator, args, dict(kwargs))
@@ -305,7 +250,7 @@ class GraphDefinitionRT(QObject):
     def __get_node_data(self, node: NodeRef) -> _NodeState:
         return self._nodes[node]
 
-    def nodes_of_operator(self, operator: OperatorRef) -> frozenset[NodeRef]:
+    def nodes_of_operator(self, operator: AbstractOperator) -> frozenset[NodeRef]:
         # todo: consider caching operator to node mapping for efficiency or creating a table to author operator node relationhips
         return self._operator_to_nodes.children_of(operator)    
 
@@ -320,13 +265,15 @@ class GraphDefinitionRT(QObject):
             for target, inlets in self._out_links[node].items()
         }
 
-    def _create_node(self, operator:OperatorRef|None=None, args: Iterable=(), kwargs: Mapping={}) -> NodeRef: 
-        assert isinstance(operator, OperatorRef) or operator is None, f"Expected an OperatorRef or None, got: {operator}"
+    def _create_node(self, operator:AbstractOperator|None=None, args: Iterable=(), kwargs: Mapping={}) -> NodeRef: 
+        assert isinstance(operator, AbstractOperator) or operator is None, f"Expected an AbstractOperator or None, got: {operator}"
         # derive name from the operator
-        if isinstance(operator, OperatorRef):
+        if isinstance(operator, AbstractOperator):
             name = operator.get_name()
         else:
             name = "node"
+
+        self._validate_inputs(args, kwargs)
 
         # ensure the node name is unique within the graph
         existing_names = {node.get_name() for node in self._nodes.keys()}
@@ -344,8 +291,10 @@ class GraphDefinitionRT(QObject):
         self.nodes_added.emit([node_ref])
         return node_ref
 
-    def _update_node(self, node_ref: NodeRef, op:OperatorRef=None, args: tuple=(), kwargs: dict={}) -> None:
+    def _update_node(self, node_ref: NodeRef, op:AbstractOperator=None, args: tuple=(), kwargs: dict={}) -> None:
         assert node_ref in self._nodes, "Node does not exist in the graph." # todo: Api misuse: raise standard python errors
+        assert isinstance(node_ref, NodeRef), f"Expected a NodeRef, got: {node_ref}"
+        assert isinstance(op, AbstractOperator) or op is None, f"Expected an AbstractOperator or None, got: {op}"
         node_data = _NodeState(tuple(args), MappingProxyType(kwargs))
         self._operator_to_nodes.set(node_ref, op)
         self.__store_node_data(node_ref, node_data)
@@ -492,8 +441,8 @@ class GraphDefinitionRT(QObject):
             data["imports"] = imports_data
 
         # add the local definitions
-        if self.local().get_script() or explicit:
-            data["_local_"] = self.local().get_script()
+        if self.local().get_source() or explicit:
+            data["_local_"] = self.local().get_source()
         module_ids[self.local()] = "_local_"
 
         # add graph nodes
@@ -555,7 +504,7 @@ class GraphDefinitionRT(QObject):
             operator = record["operator"]
             if isinstance(operator, str):
                 operator = {"module": "_local_", "name": operator}
-            op_ref = OperatorRef(modules_by_id[operator["module"]], operator["name"])
+            op_ref = AbstractOperator(modules_by_id[operator["module"]], operator["name"])
             nodes[name] = graph._create_node(op_ref)
 
         # Create every node before restoring inputs, allowing forward references.

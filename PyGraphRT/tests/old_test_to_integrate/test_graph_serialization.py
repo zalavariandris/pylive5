@@ -140,7 +140,7 @@ def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Pat
 
     loaded = GraphDefinitionRT.fromdict(json.loads(json.dumps(data)))
     assert loaded.todict() == data
-    assert loaded.local().get_script() == ""
+    assert loaded.local().get_source() == ""
     assert all(node.get_operator().module is loaded.imports()[0] for node in loaded.nodes())
     loaded_nodes = {node.get_name(): node for node in loaded.nodes()}
     assert GraphExecutorRT(loaded).execute(loaded_nodes["hello_world"]) == GraphExecutorRT(graph).execute(hello_world) == "Hey Masa!"
@@ -326,7 +326,7 @@ def test_invalid_source_and_missing_operator_stay_editable():
     
     graph.node()(OperatorRef(graph.local(), "op"))
     loaded = GraphDefinitionRT.fromdict(graph.todict())
-    assert loaded.local().get_script() == "def op(:"
+    assert loaded.local().get_source() == "def op(:"
     loaded.local().set_script("def op(): return 7")
     assert GraphExecutorRT(loaded).execute(loaded.nodes()[0]) == 7
 

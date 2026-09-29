@@ -1,3 +1,7 @@
+"""
+Relations between entities in the graph.
+"""
+
 from typing import Generic, TypeVar
 ParentT = TypeVar("ParentT")
 ChildT = TypeVar("ChildT")

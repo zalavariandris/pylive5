@@ -1,3 +1,7 @@
+"""
+Registry for managing script modules and their operators.
+responsibility: ...
+"""
 from typing import Any
 
 from qtpy.QtCore import (

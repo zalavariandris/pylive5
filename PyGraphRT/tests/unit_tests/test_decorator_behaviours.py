@@ -9,7 +9,7 @@ implementation, which rejects duplicate operator names.
 """
 
 from pygraphrt.errors import GraphExecutionError
-from pygraphrt.inline_module import InlineModuleRT
+# from pygraphrt.inline_module import InlineModuleRT
 import pytest
 import pygraphrt as rt
 

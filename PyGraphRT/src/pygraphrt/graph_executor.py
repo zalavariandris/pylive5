@@ -1,6 +1,6 @@
 
-from typing import TYPE_CHECKING, Any, Hashable, Any, Iterable, Mapping
-from dataclasses import dataclass, field
+from typing import Any
+from dataclasses import dataclass
 
 from qtpy.QtCore import (
     QObject, 
@@ -13,7 +13,6 @@ from myutils.profiler import Profiler
 from .errors import (
     GraphExecutionError
 )
-
 
 from .graph_definition_rt import (
     GraphDefinitionRT, 

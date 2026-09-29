@@ -1,3 +1,8 @@
+"""
+Runtime representation of an importable script module.
+responsibility: ...
+"""
+
 from pathlib import Path
 from qtpy.QtCore import QObject
 from .script_module import ScriptModuleRT
@@ -22,7 +27,7 @@ class ImportModuleRT(ScriptModuleRT):
     def save_file(self) -> None:
         """Save the current script to the source file."""
         try:
-            Path(self._path).write_text(self.get_script(), encoding="utf-8")
+            Path(self._path).write_text(self.get_source(), encoding="utf-8")
         except FileNotFoundError as error:
             raise ImportModuleNotFoundError("Cannot save file: path is None") from error
 

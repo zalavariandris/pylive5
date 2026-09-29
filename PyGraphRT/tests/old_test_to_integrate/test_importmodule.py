@@ -61,7 +61,7 @@ def test_edits_write_source_before_notifying_observers(tmp_path):
     source = "def op(): return 'Mása'"
     module.set_script(source)
     assert path.read_text(encoding="utf-8") == source
-    assert module.get_script() == source
+    assert module.get_source() == source
     assert observed == [source]
 
     module.set_script("def op(:")
@@ -81,7 +81,7 @@ def test_reload_does_not_write_to_the_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Path, "write_text", unexpected_write)
     module.reload_file()
-    assert module.get_script() == source
+    assert module.get_source() == source
     module.set_script(source)
 
 
@@ -102,7 +102,7 @@ def test_failed_write_does_not_change_runtime_or_emit_success(tmp_path, monkeypa
     monkeypatch.setattr(Path, "write_text", denied)
     with pytest.raises(PermissionError):
         module.set_script("def op(): return 2")
-    assert module.get_script() == source
+    assert module.get_source() == source
     assert path.read_text(encoding="utf-8") == source
     assert changes == []
 
@@ -152,7 +152,7 @@ def test_reading_script_with_inconsistent__all__(monkeypatch: pytest.MonkeyPatch
     module = ImportModuleRT("tools.py")
     assert isinstance(module.get_state(), AttributeError)
     assert "op2" in str(module.get_state())
-    assert module.get_script() == source
+    assert module.get_source() == source
     assert list(module.operators()) == []
 
 @pytest.mark.parametrize("source, error_type", [
@@ -170,7 +170,7 @@ def test_reload_records_script_errors(
     monkeypatch.setattr(Path, "read_text", read_source)
     module = ImportModuleRT("tools.py")
     observed: list[str] = []
-    module.script_changed.connect(lambda: observed.append(module.get_script()))
+    module.script_changed.connect(lambda: observed.append(module.get_source()))
 
     file_source = source
     module.reload_file()
@@ -195,7 +195,7 @@ def test_reload_read_errors_propagate_without_committing(
     monkeypatch.setattr(Path, "read_text", read_source)
     module = ImportModuleRT("tools.py")
     observed: list[str] = []
-    module.script_changed.connect(lambda: observed.append(module.get_script()))
+    module.script_changed.connect(lambda: observed.append(module.get_source()))
     error = error_type("cannot read source")
 
     def failed_read(self: Path, encoding: str) -> str:
@@ -206,7 +206,7 @@ def test_reload_read_errors_propagate_without_committing(
         module.reload_file()
 
     assert caught.value is error
-    assert module.get_script() == source
+    assert module.get_source() == source
     assert module.get_state() == "VALID"
     assert next(iter(module.operators()))() == 1
     assert observed == []

@@ -1,15 +1,14 @@
 
-from typing import TYPE_CHECKING, Any, Hashable, Any, override
+from typing import Any, Hashable, Any, override
 from dataclasses import dataclass, field
 
-from pygraphrt.abstract_module_rt import OperatorRef
 from qtpy.QtCore import (
     QObject, 
     Signal
 )
 
+from .abstract_operator import AbstractOperator
 from .graph_definition_rt import GraphDefinitionRT, NodeRef
-
 
 
 @dataclass(frozen=True)
@@ -46,14 +45,14 @@ class DummyCache:
         fingerprints: dict[NodeRef, int] = {}
         for node_ref in sorted_nodes:
             args, kwargs = node_ref.get_inputs()
-            operator_ref = node_ref.get_operator()
+            operator = node_ref.get_operator()
 
-            assert isinstance(operator_ref, (OperatorRef, type(None))), f"operator_ref must be an instance of OperatorRef, got: {operator_ref}"
-            if operator_ref is None:
+            assert isinstance(operator, (AbstractOperator, type(None))), f"operator_ref must be an instance of AbstractOperator or None, got: {operator}"
+            if operator is None:
                 signature = ("no_operator",)
             else:
                 signature = (
-                    operator_ref.fingerprint(),
+                    operator.fingerprint(),
                     tuple(
                         (
                             "node", value, fingerprints[value]) if isinstance(value, NodeRef) else ("literal", freeze(value)
@@ -137,7 +136,6 @@ class HistoryMemoryCache(DummyCache):
     @override
     def clear(self) -> None:
         self._entries.clear()
-
 
 
 def freeze(value, active=None) -> tuple:

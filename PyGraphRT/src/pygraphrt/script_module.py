@@ -1,3 +1,6 @@
+"""Runtime representation of a script module.
+"""
+
 from annotationlib import Format
 from collections.abc import Callable
 from importlib.metadata.diagnose import inspect
@@ -11,11 +14,8 @@ from myutils.source_diff import ast_functions_diff
 
 from .abstract_module_rt import (
     AbstractOperator,
-    OperatorRef,
     ParameterData
 )
-
-from .inline_module import FunctionOperator
 
 from .abstract_module_rt import AbstractModule
 
@@ -104,9 +104,18 @@ class ScriptOperatorRef(AbstractOperator):
         self._module = module
         self._name = name
 
+    def get_name(self) -> str:
+        return self._name
+
+    def get_module(self) -> ScriptModuleRT:
+        return self._module
+
     def fingerprint(self) -> int:
-        func = self._module._functions_cache[self._name]
-        return hash(func) # review if this is sufficient for fingerprinting functions
+        # todo: review if this is sufficient for fingerprinting functions
+        if func:=self._module._functions_cache.get(self._name, None):
+            return hash((self._name, func)) 
+        else:
+            return hash((self._name, None))
 
     def __func_sig(self):
         func = self._module._functions_cache[self._name]
@@ -136,31 +145,34 @@ class ScriptOperatorRef(AbstractOperator):
         func = self._module._functions_cache[self._name]
         return func(*args, **kwargs)
 
+    def __hash__(self) -> int:
+        return hash((self._module, self._name))
+    
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, ScriptOperatorRef):
+            return False
+        return self._module == other._module and self._name == other._name
+
 
 class ScriptModuleRT(AbstractModule):
-    """An editable script runtime exporting callable module-level bindings.
-
-    Updates execute in a fresh shared namespace and commit before emitting signals.
-    All operator signals carry lists of OperatorRef, including removed exports.
-    Operator change notifications use structural function differences; changes to
-    globals and dependencies are not tracked by this analysis.
-    Tracebacks identify the script by its module name as <script:name>.
+    """An editable script provides Operators
     """
     state_changed = Signal()
     script_changed = Signal()
 
     def __init__(self, name: str|None=None, parent:QObject | None = None):
+        super().__init__(name, parent=parent)
         if not isinstance(name, (str, type(None))):
             raise TypeError("name must be a string or None")
         
-        super().__init__(name, parent=parent)
+        
         
         self._functions_cache: dict[str, FunctionType] = {}
         self._evaluated_script: str = "" # used to track the last successfully evaluated script. necessary to determine dependency changes in the code itself.
         self._script = ""
         self._state: Literal["VALID"] | Exception = "VALID"
 
-    def get_script(self) -> str:
+    def get_source(self) -> str:
         return self._script
 
     def set_script(self, script: str) -> None:
@@ -219,11 +231,11 @@ class ScriptModuleRT(AbstractModule):
         if state_changed:
             self.state_changed.emit()
         if removed_names:
-            self.operators_removed.emit([OperatorRef(self, name) for name in removed_names])
+            self.operators_removed.emit([ScriptOperatorRef(self, name) for name in removed_names])
         if added_names:
-            self.operators_added.emit([OperatorRef(self, name) for name in added_names])
+            self.operators_added.emit([ScriptOperatorRef(self, name) for name in added_names])
         if changed_names:
-            self.operators_changed.emit([OperatorRef(self, name) for name in changed_names])
+            self.operators_changed.emit([ScriptOperatorRef(self, name) for name in changed_names])
         self._evaluated_script = self._script
         print("script evaluated")
         
@@ -231,30 +243,15 @@ class ScriptModuleRT(AbstractModule):
         """Return 'VALID' or the stored compilation, execution, or export error."""
         return self._state
 
-    def operators(self) -> Iterable[OperatorRef]:
+    def operators(self) -> Iterable[ScriptOperatorRef]:
         return [
-            OperatorRef(self, k) 
+            ScriptOperatorRef(self, k) 
             for k in self._functions_cache.keys()
         ] # todo: use a dictionary view (or a frozendict) instead of a copy
-
-    # #todo: deprecate. the operator reference is resposible to call 
-    # # the actual function, that is owned by the module
-    # def get_operator(self, ref: OperatorRef, default=None) -> AbstractOperator | None:
-    #     try:
-    #         func = self._functions_cache[ref.name]
-    #         return FunctionOperator(func)
-    #     except KeyError:
-    #         return None
-
-    def get_operator_by_name(self, name: str, default=None) -> OperatorRef | None:
+    
+    def get_operator_by_name(self, name: str, default=None) -> ScriptOperatorRef | None:
         if name in self._functions_cache:
-            return OperatorRef(self, name)
+            return ScriptOperatorRef(self, name)
         return default
 
-    def __getitem__(self, key: OperatorRef) -> AbstractOperator:
-        try:
-            func = self._functions_cache[key.name]
-            return FunctionOperator(func)
-        except KeyError as err:
-            raise ModuleError(f"Operator {key.name!r} not found", self) from err
         
