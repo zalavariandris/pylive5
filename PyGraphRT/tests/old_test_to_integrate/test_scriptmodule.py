@@ -51,7 +51,7 @@ def test_changing_all_updates_exports_and_signals():
     assert [ref.name for ref in module.operators()] == ["_private"]
     assert added == [[OperatorRef(module, "_private")]]
     assert removed == [[OperatorRef(module, "public")]]
-    assert OperatorRef(module, "_private").get_value()() == 2
+    assert OperatorRef(module, "_private")() == 2
 
     added.clear()
     removed.clear()
@@ -382,39 +382,6 @@ def test_script_errors_notify_observers_after_committing(
     assert OperatorRef(module, "recovered")() == 2
 
 
-# REVIEW UNNECESSARY / DEFER: monkeypatches four internal components and demands
-# transaction-like rollback for arbitrary implementation bugs. This couples the
-# suite to the architecture; retain public script-error/recovery tests instead.
-@pytest.mark.parametrize("component", [
-    "ModuleType", "_get_all_callables_from_script", "ast_functions_diff", "FunctionOperator",
-])
-def test_runtime_bugs_propagate_without_committing(
-    monkeypatch: pytest.MonkeyPatch, component: str
-) -> None:
-    module = ScriptModuleRT()
-    source = "def one(): return 1\ndef two(): return 2"
-    module.set_script(source)
-    operators = {ref.name: ref.get_value() for ref in module.operators()}
-    notifications: list[str] = []
-    module.state_changed.connect(lambda: notifications.append("state"))
-    module.script_changed.connect(lambda: notifications.append("script"))
-    module.operators_added.connect(lambda _: notifications.append("added"))
-    module.operators_removed.connect(lambda _: notifications.append("removed"))
-    module.operators_changed.connect(lambda _: notifications.append("changed"))
-    bug = RuntimeError("runtime implementation bug")
-
-    def fail(*args: object, **kwargs: object) -> None:
-        raise bug
-
-    monkeypatch.setattr(script_module, component, fail)
-    with pytest.raises(RuntimeError) as caught:
-        module.set_script("def two(): return 3")
-
-    assert caught.value is bug
-    assert module.get_script() == source
-    assert module.get_state() == "VALID"
-    assert {ref.name: ref.get_value() for ref in module.operators()} == operators
-    assert notifications == []
 
 
 # REVIEW SIMPLIFY: propagating interrupts is useful; complete rollback of all

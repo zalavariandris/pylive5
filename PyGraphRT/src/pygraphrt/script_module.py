@@ -1,6 +1,9 @@
+from annotationlib import Format
 from collections.abc import Callable
-from types import FunctionType, ModuleType
-from typing import Iterable, Literal, Any
+from importlib.metadata.diagnose import inspect
+import sys
+from types import FunctionType, MappingProxyType, ModuleType
+from typing import Iterable, Literal, Any, Mapping
 from qtpy.QtCore import Signal, QObject
 
 
@@ -8,7 +11,8 @@ from myutils.source_diff import ast_functions_diff
 
 from .abstract_module_rt import (
     AbstractOperator,
-    OperatorRef
+    OperatorRef,
+    ParameterData
 )
 
 from .inline_module import FunctionOperator
@@ -91,6 +95,46 @@ def _get_all_callables_from_script(
         objects = filter(is_locally_defined, objects)
 
     return dict(objects)
+
+
+class ScriptOperatorRef(AbstractOperator):
+    """Represents an operator within a ScriptModule."""
+    def __init__(self, module: ScriptModuleRT, name: str):
+        super().__init__()
+        self._module = module
+        self._name = name
+
+    def fingerprint(self) -> int:
+        func = self._module._functions_cache[self._name]
+        return hash(func) # review if this is sufficient for fingerprinting functions
+
+    def __func_sig(self):
+        func = self._module._functions_cache[self._name]
+        # Live edits can leave annotation names unfinished (e.g. s instead of str).
+        if sys.version_info >= (3, 14):
+            return inspect.signature(func, annotation_format=Format.FORWARDREF)
+        return inspect.signature(func)
+
+    def get_parameters(self) -> Mapping[str, ParameterData]:
+        sig = self.__func_sig()
+        params = {}
+        for name, param in sig.parameters.items():
+            param_data = ParameterData(
+                name, 
+                param.annotation if param.annotation is not inspect.Parameter.empty else ParameterData._empty,
+                param.default if param.default is not inspect.Parameter.empty else ParameterData._empty
+                )
+
+            params[name] = param_data
+        return MappingProxyType(params)
+
+    def get_return_type(self) -> type:
+        sig = self.__func_sig()
+        return sig.return_annotation if sig.return_annotation is not inspect.Signature.empty else Any
+
+    def __call__(self, *args, **kwargs):
+        func = self._module._functions_cache[self._name]
+        return func(*args, **kwargs)
 
 
 class ScriptModuleRT(AbstractModule):
@@ -193,14 +237,14 @@ class ScriptModuleRT(AbstractModule):
             for k in self._functions_cache.keys()
         ] # todo: use a dictionary view (or a frozendict) instead of a copy
 
-    #todo: deprecate. the operator reference is resposible to call 
-    # the actual function, that is owned by the module
-    def get_operator(self, ref: OperatorRef, default=None) -> AbstractOperator | None:
-        try:
-            func = self._functions_cache[ref.name]
-            return FunctionOperator(func)
-        except KeyError:
-            return None
+    # #todo: deprecate. the operator reference is resposible to call 
+    # # the actual function, that is owned by the module
+    # def get_operator(self, ref: OperatorRef, default=None) -> AbstractOperator | None:
+    #     try:
+    #         func = self._functions_cache[ref.name]
+    #         return FunctionOperator(func)
+    #     except KeyError:
+    #         return None
 
     def get_operator_by_name(self, name: str, default=None) -> OperatorRef | None:
         if name in self._functions_cache:

@@ -1,12 +1,12 @@
 from .graph_definition_rt import GraphDefinitionRT, NodeRef
-from .script_module_registry import ScriptModuleRegistry
+from .module_registry import ModuleRegistry
 from qtpy.QtCore import QObject, Signal
 
 
 class GraphInvalidator(QObject):
     nodes_invalidated: Signal = Signal(list[NodeRef])
 
-    def __init__(self, graph: GraphDefinitionRT, module_registry: ScriptModuleRegistry):
+    def __init__(self, graph: GraphDefinitionRT, module_registry: ModuleRegistry):
         self.graph = graph
         self.registry = module_registry
 
@@ -24,7 +24,7 @@ class GraphInvalidator(QObject):
         def invalidate_operator_nodes_descendants(operators):
             invalidate_nodes = []
             for op in operators:
-                for node in self.graph.operator_nodes(op):
+                for node in self.graph.nodes_of_operator(op):
                     descendants = self.graph.descendants(node)
                     invalidate_nodes.extend(descendants)
 

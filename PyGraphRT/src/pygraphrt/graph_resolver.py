@@ -7,7 +7,7 @@ from qtpy.QtCore import (
 )
 
 from .graph_definition_rt import GraphDefinitionRT, NodeRef
-from .script_module_registry import ScriptModuleRegistry
+from .module_registry import ModuleRegistry
 from .script_module import ScriptModuleRT
 
 from dataclasses import dataclass
@@ -86,7 +86,7 @@ class GraphResolver(QObject):
 
     NodeResolution = ResolutionSuccess | ResolutionFailure
 
-    def __init__(self, graph: GraphDefinitionRT, module_registry: ScriptModuleRegistry, parent:QObject=None):
+    def __init__(self, graph: GraphDefinitionRT, module_registry: ModuleRegistry, parent:QObject=None):
         super().__init__(parent=parent)
         self._graph = graph
         self._graph.nodes_added.connect(self._on_nodes_added)

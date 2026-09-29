@@ -91,14 +91,13 @@ class GraphDetailsModel(QAbstractListModel):
             return [], ""
         node = self._graph_model.getNode(self._node)
         operator = node.get_operator()
-        available = operator is not None and operator.get_value() is not None
+
         description = (
             f"{operator.module.get_display_name()}.{operator.name}"
             if operator is not None else "No operator"
         )
-        if not available:
-            description += " ? operator unavailable"
-        parameters = operator.get_parameters() if available else {}
+  
+        parameters = operator.get_parameters()
         names = list(parameters)
         args, kwargs = node.get_inputs()
         rows = []

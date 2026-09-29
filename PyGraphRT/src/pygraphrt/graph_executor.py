@@ -115,7 +115,7 @@ class GraphExecutorRT(QObject):
                 }
 
                 with self._profiler.profile(node_ref):
-                    if operator := node_data.get_operator():
+                    if operator := node_ref.get_operator():
                         try:
                             value = operator(*resolved_args, **resolved_kwargs)
                         except Exception as error:

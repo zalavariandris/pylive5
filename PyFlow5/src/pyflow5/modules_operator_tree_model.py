@@ -23,9 +23,9 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._registry: rt.ScriptModuleRegistry | None = None
+        self._registry: rt.ModuleRegistry | None = None
 
-    def setRegistry(self, registry: rt.ScriptModuleRegistry | None) -> None:
+    def setRegistry(self, registry: rt.ModuleRegistry | None) -> None:
         """Replace the runtime used by this model."""
         self.beginResetModel()
         self._registry = registry

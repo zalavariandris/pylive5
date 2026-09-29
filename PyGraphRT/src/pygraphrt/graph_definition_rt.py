@@ -17,7 +17,7 @@ from myutils.profiler import Profiler
 if TYPE_CHECKING:
     from .abstract_module_rt import AbstractOperator, OperatorRef
 
-from .inline_module import InlineModuleRT
+# from .inline_module import InlineModuleRT
 from .import_module import ImportModuleRT
 from .script_module import ScriptModuleRT
 from .graph_schema import validate_graph_data
@@ -57,17 +57,16 @@ class NodeRef:
         return self._name
 
     def get_operator(self) -> OperatorRef:
-        node_data = self._graph._nodes[self]
-        return node_data.get_operator()
+        operator_ref = self._graph._operator_to_nodes.parent_of(self)
+        return operator_ref
 
     def set_inputs(self, *args, **kwargs) -> None:
-        prev_data = self._graph._nodes[self]
         self._graph._validate_inputs(*args, **kwargs)
-        # next_data = NodeData(, args, dict(kwargs))
-        self._graph._update_node(self, prev_data.get_operator(), args, kwargs)
+        current_operator: OperatorRef|None = self._graph._operator_to_nodes.parent_of(self)
+        self._graph._update_node(self, current_operator, args, kwargs)
 
     def get_inputs(self) -> tuple[tuple[Value], dict[str, Value]]:
-        node_data = self._graph._nodes[self]
+        node_data: _NodeState = self._graph._nodes[self]
         return node_data.get_inputs()
         
 
@@ -76,7 +75,7 @@ type Value = NodeRef | LiteralValue
 
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
 class _NodeState:
-    operator: OperatorRef|None
+    # operator: OperatorRef|None
     args: tuple[Value, ...] = tuple()
     kwargs: MappingProxyType[str, Value] = MappingProxyType({})
 
@@ -84,13 +83,7 @@ class _NodeState:
         return tuple(self.args), MappingProxyType({
             k: v for k, v in self.kwargs.items()
         }) # todo: create a view
-
-    def get_operator(self) -> OperatorRef|None:
-        return self.operator
-
-    def __call__(self, *args, **kwargs) -> Any:
-        raise NotImplementedError("__call__ is not implemented for NodeRef")
-
+    
 
 def _encode_value(value, nodes):
     from .graph_definition_rt import NodeRef
@@ -157,10 +150,12 @@ def _decode_value(value, nodes):
     raise ValueError(f"Invalid tagged input: {value!r}")
 
 
-from .script_module_registry import ScriptModuleRegistry
+from .module_registry import ModuleRegistry
+from .relations import ManyToOneRelation
 
 
-from .relations import OneToManyRelation
+
+
 
 class GraphDefinitionRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
@@ -173,20 +168,19 @@ class GraphDefinitionRT(QObject):
         super().__init__()
 
         # self._module_registry: ScriptModuleRegistry = module_registry # List of imported modules
-        self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
+        # self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
         self._local = ScriptModuleRT("_local_", parent=self)
         self._nodes: dict[NodeRef, _NodeState] = dict()
         self._out_links: dict[NodeRef, dict[NodeRef, set[int | str]]] = {}
-
-        self._node_to_operators = OneToManyRelation[NodeRef, OperatorRef]()
+        self._operator_to_nodes = ManyToOneRelation[OperatorRef, NodeRef]()
 
     def setLocalDefinitions(self, test: str) -> None:
         self._local.set_script(test)
 
-    def inline(self) -> InlineModuleRT:
-        """Return the inline module containing runtime functions.
-        Created with the node decorators."""
-        return self._inline_module
+    # def inline(self) -> InlineModuleRT:
+    #     """Return the inline module containing runtime functions.
+    #     Created with the node decorators."""
+    #     return self._inline_module
 
     def local(self) -> ScriptModuleRT:
         """Return the local script module containing user-defined functions."""
@@ -286,20 +280,19 @@ class GraphDefinitionRT(QObject):
                 links.setdefault(value, set()).add(name)
         return links
 
-    def __store_node_data(self, node: NodeRef, data: _NodeState) -> None:
+    def __store_node_data(self, node: NodeRef, state: _NodeState) -> None:
         """Store inputs and their reverse index together, without emitting signals."""
         # Own the containers so external mutations cannot bypass the index.
-        data = _NodeState(
-            data.operator,
-            tuple(data.args),
-            MappingProxyType(dict(data.kwargs)),
+        new_state = _NodeState(
+            tuple(state.args),
+            MappingProxyType(dict(state.kwargs)),
         )
-        self._validate_inputs(*data.args, **data.kwargs)
+        self._validate_inputs(*new_state.args, **new_state.kwargs)
 
-        new_links = self.__input_links(data)
-        previous = self._nodes.get(node)
-        if previous is not None:
-            for source in self.__input_links(previous):
+        new_links = self.__input_links(new_state)
+        previous_state: _NodeState | None = self._nodes.get(node)
+        if previous_state is not None:
+            for source in self.__input_links(previous_state):
                 del self._out_links[source][node]
 
         # Preserve this node's outgoing connections to its consumers.
@@ -307,14 +300,14 @@ class GraphDefinitionRT(QObject):
         for source, inlets in new_links.items():
             self._out_links[source][node] = inlets
 
-        self._nodes[node] = data
+        self._nodes[node] = new_state
 
-    def operator_nodes(self, operator: OperatorRef) -> list[NodeRef]:
+    def __get_node_data(self, node: NodeRef) -> _NodeState:
+        return self._nodes[node]
+
+    def nodes_of_operator(self, operator: OperatorRef) -> frozenset[NodeRef]:
         # todo: consider caching operator to node mapping for efficiency or creating a table to author operator node relationhips
-        return [
-            node for node, data in self._nodes.items()
-            if data.operator == operator
-        ]
+        return self._operator_to_nodes.children_of(operator)    
 
     def in_links(self, node: NodeRef) -> dict[NodeRef, set[int | str]]:
         """Map each source node to the inputs it feeds on this node."""
@@ -343,17 +336,18 @@ class GraphDefinitionRT(QObject):
 
         # create the node and store its data
         node_ref = NodeRef(self, name)
-        node_data = _NodeState(operator, tuple(args), MappingProxyType(kwargs))
+        node_state = _NodeState(tuple(args), MappingProxyType(kwargs))
+        self.__store_node_data(node_ref, node_state)
+        self._operator_to_nodes.set(node_ref, operator)
         # self.nodes_about_to_be_added.emit([node_ref])
-        self.__store_node_data(node_ref, node_data)
+        
         self.nodes_added.emit([node_ref])
         return node_ref
 
     def _update_node(self, node_ref: NodeRef, op:OperatorRef=None, args: tuple=(), kwargs: dict={}) -> None:
         assert node_ref in self._nodes, "Node does not exist in the graph." # todo: Api misuse: raise standard python errors
-        if op is None:
-            op = self._nodes[node_ref].get_operator()
-        node_data = _NodeState(op, tuple(args), MappingProxyType(kwargs))
+        node_data = _NodeState(tuple(args), MappingProxyType(kwargs))
+        self._operator_to_nodes.set(node_ref, op)
         self.__store_node_data(node_ref, node_data)
         self.nodes_changed.emit([node_ref])
 
@@ -386,12 +380,14 @@ class GraphDefinitionRT(QObject):
             self.__store_node_data(
                 dependent,
                 _NodeState(
-                    node_data.get_operator(),
                     remaining_args,
                     MappingProxyType(remaining_kwargs),
                 ),
             )
             changed_nodes.append(dependent)
+
+        if changed_nodes:
+            self.nodes_changed.emit(changed_nodes)
 
         # Detach the deleted node from its own input sources.
         for source in self.__input_links(self._nodes[node_ref]):
@@ -402,8 +398,7 @@ class GraphDefinitionRT(QObject):
 
         # All state is consistent; watchers of the deleted node can stop first.
         self.nodes_removed.emit([node_ref])
-        if changed_nodes:
-            self.nodes_changed.emit(changed_nodes)
+        
 
     def nodes(self) -> list[NodeRef]:
         return list(self._nodes.keys())

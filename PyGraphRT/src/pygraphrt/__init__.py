@@ -21,23 +21,24 @@ from .abstract_module_rt import (
     OperatorRef
 )
 
-from .inline_module import InlineModuleRT, FunctionOperator
+# from .inline_module import InlineModuleRT, FunctionOperator
 from .script_module import ScriptModuleRT
 from .import_module import ImportModuleRT
 from .watch import watch
 from .errors import GraphExecutionError
-from .script_module_registry import ScriptModuleRegistry
+from .module_registry import ModuleRegistry
 from .graph_resolver import _GraphModuleMapper, GraphResolver
+from .graph_invalidator import GraphInvalidator
 
 __all__ = [
     "AbstractModule",
     "NodeRef",
     "GraphDefinitionRT",
-    "FunctionOperator",
+    # "FunctionOperator",
     "MemoryCache",
     "HistoryMemoryCache",
     "DummyCache",
-    "InlineModuleRT",
+    # "InlineModuleRT",
     "ScriptModuleRT",
     "ImportModuleRT",
     "watch",
@@ -45,5 +46,6 @@ __all__ = [
     "_GraphModuleMapper",
     "GraphExecutionError",
     "GraphExecutorRT",
-    "ScriptModuleRegistry"
+    "ModuleRegistry",
+    "GraphInvalidator"
 ]

@@ -5,12 +5,12 @@ from qtpy.QtCore import (
     Signal
 )
 
-from .inline_module import InlineModuleRT
+# from .inline_module import InlineModuleRT
 from .import_module import ImportModuleRT
 from .script_module import ScriptModuleRT
 
 
-class ScriptModuleRegistry(QObject):
+class ModuleRegistry(QObject):
     modules_added = Signal(list)
     modules_removed = Signal(list)
     operators_added = Signal(list)

@@ -24,7 +24,7 @@ class PyFlowDocument(QObject):
         # RT
         self._graph = rt.GraphDefinitionRT()
         self._executor = rt.GraphExecutorRT(self._graph)
-        self._module_registry = rt.ScriptModuleRegistry()
+        self._module_registry = rt.ModuleRegistry()
         local_module = rt.ScriptModuleRT(name="<local>")
         local_module.set_script(dedent("""\
         def the_name():
@@ -134,7 +134,7 @@ class PyFlowDocument(QObject):
     def open(self, file_path: str | Path) -> None:
         """Load a JSON file, retaining the document and its models."""
         data = json.loads(Path(file_path).read_text(encoding="utf-8"))
-        new_registry = rt.ScriptModuleRegistry()
+        new_registry = rt.ModuleRegistry()
         new_graph_rt = rt.GraphDefinitionRT.fromdict(data)
         new_executor = rt.GraphExecutorRT(new_graph_rt)
         new_resolver = rt.GraphResolver(new_graph_rt, new_registry)

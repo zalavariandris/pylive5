@@ -327,7 +327,6 @@ def test_invalid_source_and_missing_operator_stay_editable():
     graph.node()(OperatorRef(graph.local(), "op"))
     loaded = GraphDefinitionRT.fromdict(graph.todict())
     assert loaded.local().get_script() == "def op(:"
-    assert loaded.nodes()[0].get_operator().get_value() is None
     loaded.local().set_script("def op(): return 7")
     assert GraphExecutorRT(loaded).execute(loaded.nodes()[0]) == 7
 

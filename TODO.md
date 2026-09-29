@@ -12,12 +12,20 @@
 - [ ] Image CornerPin
 
 ## DEV
-- [ ] use two way .relations for node-operators in GrahpRT.
-- [ ] NodeRef should not have acces to the nodeData directly. nodeData is internal to the graph. noderef should interact strictly with the owner graph
+The Book Keeping problem
+I think the current architecture has a deply routed problem. We call it the book keeping problem.
+Collection items, like a node, a link, or an operator and especialy their relationships are sometimes kept in seperate places. we must decide who is the owner not just the object, but the relationshsip as well.
+Also, the signals emitted from the Graph, or Modules must be enough, to keep that in sync for example with QAbstractItemModels. So the proxy model does not need bookkeping, to notify the views. This is a deep architectural question. Probably structural changes, like removeing nodes adding link, or deleting operators have to emit pre adn post signals. Otherwise, the model cant keep in sync without bookkeeping.
+Basically we wanna make sure, that there are only on book. on source of truth. And that is easaly queriable and sends apprpriate notifications, so it could have basically a clone.
+
+- [x] use two way .relations for node-to-operators in GrahpRT. A relation must be stored in one place.!
+      This is a  architectural role. Currently the GraphDefinition responsibility to store node-operator relations.
+- [x] NodeRef should not have acces to the nodeData directly. nodeData is internal to the graph. noderef should interact strictly with the owner graph
       - this ould open up implementation optimizations inside the graph. for example to use a node_to_operator relationship table instead of storing the operator in the NodeData. also to store links in a table. seperate node properties and links. (we can keep the public api [eg update_node...] the same, but the internal would be a lot easier to optimize.)
 - [ ] use pre post change handler in GraphDefinition for addition, and removal. 
 - [ ] consider using pre/post data_change signals as well?
-- [ ] add the resolve and executor to the PyGraphmodel
+
+
 - [ ] update node paint method, to reflect ExecutionGraph and GraphResolution results. Also include the resolution and execution graph to change the PyGraphRTModel Data. Probably the GraphModel should use these. \#QDAGEditor5 \#PyFlow
 - [ ] ADD ModuleRegistry to the open, save in Document \#PyFlow
 - [ ] UPDATE serialization of the graph definition. GraphDefinition no longer references modules.

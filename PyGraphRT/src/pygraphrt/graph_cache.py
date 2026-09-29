@@ -45,9 +45,8 @@ class DummyCache:
     def _build_fingerprints(self, sorted_nodes: list[NodeRef]) -> dict[NodeRef, int]:
         fingerprints: dict[NodeRef, int] = {}
         for node_ref in sorted_nodes:
-            node_data = self._graph._nodes[node_ref]
-            args, kwargs = node_data.get_inputs()
-            operator_ref = node_data.get_operator()
+            args, kwargs = node_ref.get_inputs()
+            operator_ref = node_ref.get_operator()
 
             assert isinstance(operator_ref, (OperatorRef, type(None))), f"operator_ref must be an instance of OperatorRef, got: {operator_ref}"
             if operator_ref is None:

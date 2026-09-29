@@ -43,8 +43,6 @@ class PyFlowRTModel(AbstractDAGModel):
         self._connect_runtime()
         self._results: dict[NodeName, Any] = {}
 
-        
-
     def setRT(self, graph: rt.GraphDefinitionRT, executor: rt.GraphExecutorRT, resolver: rt.GraphResolver, positions=None):
         # TODO: "the relationship between the graph components are fragile for now. this has to be reviewd"
         warning.warn("the relationship between the graph components are fragile for now. this has to be reviewd") 

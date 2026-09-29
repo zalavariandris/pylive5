@@ -2,21 +2,21 @@ from typing import Generic, TypeVar
 ParentT = TypeVar("ParentT")
 ChildT = TypeVar("ChildT")
 
-class OneToManyRelation(Generic[ParentT, ChildT]):
+class ManyToOneRelation(Generic[ChildT, ParentT]):
     def __init__(self) -> None:
         self._children: dict[ParentT, set[ChildT]] = {}
         self._parent: dict[ChildT, ParentT] = {}
 
-    def add(self, parent: ParentT, child: ChildT) -> None:
+    def set(self, child: ChildT, parent: ParentT) -> None:
         old_parent = self._parent.get(child)
 
         if old_parent is not None and old_parent != parent:
-            self.remove(old_parent, child)
+            self.delete(child, old_parent)
 
         self._children.setdefault(parent, set()).add(child)
         self._parent[child] = parent
 
-    def remove(self, parent: ParentT, child: ChildT) -> None:
+    def delete(self, child: ChildT, parent: ParentT, ) -> None:
         if self._parent.get(child) != parent:
             return
 
