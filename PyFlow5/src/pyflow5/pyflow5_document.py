@@ -1,6 +1,7 @@
 import json
 import math
 from pathlib import Path
+from textwrap import dedent
 import traceback
 
 from pygraphrt.errors import GraphExecutionError
@@ -25,23 +26,21 @@ class PyFlowDocument(QObject):
         self._executor = rt.GraphExecutorRT(self._graph)
         self._module_registry = rt.ScriptModuleRegistry()
         local_module = rt.ScriptModuleRT(name="<local>")
+        local_module.set_script(dedent("""\
+        def the_name():
+            return "Mása"
+
+        def the_greeting():
+            return "Hey"
+
+        def hello_world():
+            return "Hello!"
+        """)) 
         self._module_registry.add_module(local_module)
         self._resolver = rt.GraphResolver(self._graph, self._module_registry)
 
         # Models
-        self.graph_model = PyFlowRTModel(self._graph, self._executor)
-        self._resolver = rt.GraphResolver(self._graph, self._module_registry)
-
-        @self._resolver.resolutions_changed.connect
-        def on_resolutions_changed(nodes: set[rt.NodeRef]):
-            for node_ref in nodes:
-                node_name = node_ref._name
-                resolution = self._resolver.get_resolution(node_ref)
-                self.graph_model.setNodeData(
-                    node_name, 
-                    self.graph_model.ResolutionRole, 
-                    resolution
-                )
+        self.graph_model = PyFlowRTModel(self._graph, self._executor, self._resolver)
 
 
         self.modules_model = ModulesOperatorsTreeModel(parent=self)

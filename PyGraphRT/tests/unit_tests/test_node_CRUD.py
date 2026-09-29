@@ -9,7 +9,6 @@ import random
 from pygraphrt.inline_module import InlineModuleRT
 import pytest
 import pygraphrt as rt
-from pygraphrt.graph_definition_rt import NodeState
 
 
 

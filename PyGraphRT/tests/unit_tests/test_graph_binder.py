@@ -1,4 +1,4 @@
-"""Unit tests for the GraphResolver class."""
+"""Unit tests for the GraphBinder class."""
 
 
 from textwrap import dedent
@@ -107,7 +107,7 @@ def test_module_removal_and_readdition(
 ) -> None:
     graph, module, registry, resolver = graph_module_registry_resolver
     tracker: list[set[rt.NodeRef]] = []
-    resolver.resolutions_changed.connect(tracker.append)
+    resolver.nodes_invalidated.connect(tracker.append)
 
     registry.remove_module(module)
     assert tracker == [set(graph.nodes())]
@@ -136,7 +136,7 @@ def test_added_node_tracks_operator_removal(
 ) -> None:
     graph, module, registry, resolver = graph_module_registry_resolver
     tracker: list[set[rt.NodeRef]] = []
-    resolver.resolutions_changed.connect(tracker.append)
+    resolver.nodes_invalidated.connect(tracker.append)
     node = graph._create_node(module.get_operator_by_name("the_name"))
     assert isinstance(resolver.resolution(node), rt.GraphResolver.ResolutionSuccess)
     assert tracker == [{node}]
@@ -152,7 +152,7 @@ def test_deleted_node_is_not_resolved_on_operator_events(
     graph, module, registry, resolver = graph_module_registry_resolver
     node = graph.nodes()[0]
     tracker: list[set[rt.NodeRef]] = []
-    resolver.resolutions_changed.connect(tracker.append)
+    resolver.nodes_invalidated.connect(tracker.append)
 
     graph._delete_node(node)
     assert resolver.resolution(node) is None
@@ -198,12 +198,11 @@ def test_operator_body_change_keeps_successful_resolution(
 ) -> None:
     graph, module, registry, resolver = graph_module_registry_resolver
     tracker: list[set[rt.NodeRef]] = []
-    resolver.resolutions_changed.connect(tracker.append)
+    resolver.nodes_invalidated.connect(tracker.append)
     module.set_script(hello_world_script.replace('return "Hey"', 'return "Welcome"'))
 
     assert all(isinstance(resolver.resolution(node), rt.GraphResolver.ResolutionSuccess) for node in graph.nodes())
     assert tracker == []
-
 
 def test_module_events_update_missing_operator_reason() -> None:
     graph = rt.GraphDefinitionRT()

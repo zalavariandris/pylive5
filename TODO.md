@@ -12,6 +12,21 @@
 - [ ] Image CornerPin
 
 ## DEV
+- [ ] NodeRef shjould not have acces to the nodeData directly. nodeData is internal to the graph. noderef should interact strictly with the owner graph
+      - this ould open up implementation optimizations inside the graph. for example to use a node_to_operator relationship table instead of storing the operator in the NodeData. also to store links in a table. seperate node properties and links. (we can keep the public api [eg update_node...] the same, but the internal would be a lot easier to optimize.)
+- [ ] use pre post change handler in GraphDefinition for addition, and removal. 
+- [ ] consider using pre/post data_change signals as well?
+- [ ] add the resolve and executor to the PyGraphmodel
+- [ ] update node paint method, to reflect ExecutionGraph and GraphResolution results. Also include the resolution and execution graph to change the PyGraphRTModel Data. Probably the GraphModel should use these. \#QDAGEditor5 \#PyFlow
+- [ ] ADD ModuleRegistry to the open, save in Document \#PyFlow
+- [ ] UPDATE serialization of the graph definition. GraphDefinition no longer references modules.
+- [ ] ADD serialization to the ModuleRegistry \#PyGraphRT
+      with relative paths?
+
+- [ ] OperatorRef is an AbstractOperator, not something that point to and AbstractOperator. Modules should implement the methods instead, and the ref should call the owning module methods instead. \#PyGraphRT
+- [ ] Replace the NodeName in GraphModel to a QModelIndex-like object. namei `ModelKey` \#QDAGEditor5
+
+
 - [ ] consider adding Roles (same as QT uses for models) to the Graphmodel.
       NodeTitleRole
       NodeMessageRole
@@ -28,18 +43,14 @@
     \#QDagEditor
     
 - [ ] consider adding addLinks and removeLinks abstract methods for the AnstractDagmodel. With this move, consider making the DirectionalLink a concrete class. \#QDagEditor
-
    if soo, we need to think about multiple links between the same ports? not really, since the same port will not be connected multiple time. multiple links make sense only, when the links are connected directly to the nodes. specifying source outlet and target inlet is enough for now. If we decide to make the Link a concrete class, then 'linkSource' and 'linkTarget' would become obsolete.
    think about this carefully, how 'abstract' this model should be.
    \#QDagEditor5
-- [ ] update node paint method, to reflect ExecutionGraph and GraphResolution results. Also include the resolution and execution graph to change the PyGraphRTModel Data. Probably the GraphModel should use these. \#QDAGEditor5 \#PyFlow
-- [ ] ADD ModuleRegistry to the open, save in Document \#PyFlow
-- [ ] UPDATE serialization to use the ModuleRegistry \#PyGraphRT
-- [ ] OperatorRef is an AbstractOperator, not something that point to and AbstractOperator. Modules should implement the methods instead, and the ref should call the owning module methods instead. \#PyGraphRT
-- [ ] Replace the NodeName in GraphModel to a QModelIndex-like object. namei `ModelKey` \#QDAGEditor5
+
+
 
 - [x] add open/save .pgraph
-- [ ] Resolve graph imports and asset paths relative to the .pgraph file’s directory \#PyGraphRT.serialization
+
 - [x] fix json fileformat:
       - `local` should be the local python script.
       - import are the ImportModuleRT (relative to the graph)

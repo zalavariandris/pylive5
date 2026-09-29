@@ -119,7 +119,7 @@ class Viewer(QWidget):
     def _on_model_reset(self):
         self.setCurrentNodeName(None)
 
-    def _on_node_data_changed(self, nodes):
+    def _on_node_data_changed(self, nodes, roles):
         if self._current_nodename in nodes:
             self._update_display()
 
@@ -133,12 +133,13 @@ class Viewer(QWidget):
         if self._model is None: 
             self._display_widget.clear()
 
-        data:NodeExecution = self._model.nodeData(self._current_nodename, self._model.ResultsRole)
-        match data:
-            case ExecutionFailure():
-                self._display_widget.display(data.reason)
-            case ExecutionSuccess():
-                self._display_widget.display(data.result)
-            case _:
-                self._display_widget.clear()
+        data = self._model.nodeData(self._current_nodename, self._model.ResultsRole)
+        self._display_widget.display(data)
+        # match data:
+        #     case Exception():
+        #         self._display_widget.display(data)
+        #     case ExecutionSuccess():
+        #         self._display_widget.display(data)
+        #     case _:
+        #         self._display_widget.clear()
 

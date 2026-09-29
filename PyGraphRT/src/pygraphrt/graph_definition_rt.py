@@ -1,6 +1,10 @@
 from collections import deque, defaultdict
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Callable, Callable, Any, Iterable, Mapping
+
+import math
+from pathlib import Path
+
 from dataclasses import dataclass, field
 
 from qtpy.QtCore import (
@@ -36,8 +40,8 @@ class NodeRef:
 
     def __call__(self) -> Any:
         if operator_ref:=self.get_operator():
-            data = self.get_value()
-            return operator_ref(*data.args, **data.kwargs)
+            args, kwargs = self.get_inputs()
+            return operator_ref(*args, **kwargs)
         else:
             raise GraphExecutionError(f"Operator {self.get_operator()} is missing from the graph")
         
@@ -52,29 +56,26 @@ class NodeRef:
     def get_name(self) -> str:
         return self._name
 
-    def get_value(self) -> NodeState|None:
-        node_data = self._graph._nodes[self]
-        return node_data
-
     def get_operator(self) -> OperatorRef:
-        node_data = self.get_value()
+        node_data = self._graph._nodes[self]
         return node_data.get_operator()
 
     def set_inputs(self, *args, **kwargs) -> None:
-        prev_data = self.get_value()
+        prev_data = self._graph._nodes[self]
         self._graph._validate_inputs(*args, **kwargs)
         # next_data = NodeData(, args, dict(kwargs))
         self._graph._update_node(self, prev_data.get_operator(), args, kwargs)
 
     def get_inputs(self) -> tuple[tuple[Value], dict[str, Value]]:
-        node_data = self.get_value()
+        node_data = self._graph._nodes[self]
         return node_data.get_inputs()
         
 
 type LiteralValue = None | bool | int | float | str
 type Value = NodeRef | LiteralValue
+
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
-class NodeState:
+class _NodeState:
     operator: OperatorRef|None
     args: tuple[Value, ...] = tuple()
     kwargs: MappingProxyType[str, Value] = MappingProxyType({})
@@ -91,11 +92,6 @@ class NodeState:
         raise NotImplementedError("__call__ is not implemented for NodeRef")
 
 
-
-import math
-from pathlib import Path
-
-
 def _encode_value(value, nodes):
     from .graph_definition_rt import NodeRef
 
@@ -104,14 +100,6 @@ def _encode_value(value, nodes):
 
     if type(value) is float:
         return value if math.isfinite(value) else {"type": "float", "value": value.hex()}
-
-    if isinstance(value, NodeRef):
-        if value not in nodes:
-            raise ValueError(f"Input references a node outside this graph: {value}")
-        return {
-            "type": "node", 
-            "name": value.get_name()
-        }
 
     if type(value) is list:
         return [_encode_value(item, nodes) for item in value]
@@ -125,11 +113,18 @@ def _encode_value(value, nodes):
             for key, item in value.items()
         ]}
 
+    if isinstance(value, NodeRef):
+        if value not in nodes:
+            raise ValueError(f"Input references a node outside this graph: {value}")
+        return {
+            "type": "node", 
+            "name": value.get_name()
+        }
+
     if isinstance(value, Path):
         return {"type": "path", "value": str(value)}
     
     raise TypeError(f"Cannot save input of type: {type(value).__name__!r}")
-
 
 def _decode_value(value, nodes):
     if type(value) in (type(None), bool, int, float, str):
@@ -165,10 +160,14 @@ def _decode_value(value, nodes):
 from .script_module_registry import ScriptModuleRegistry
 
 
+from .relations import OneToManyRelation
+
 class GraphDefinitionRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
-    nodes_changed = Signal(list) # list[NodeRef]
+    # nodes_about_to_be_added = Signal(list) # list[NodeRef]
     nodes_removed = Signal(list) # list[NodeRef]
+    # nodes_about_to_be_removed = Signal(list) # list[NodeRef]
+    nodes_changed = Signal(list) # list[NodeRef]
 
     def __init__(self):
         super().__init__()
@@ -176,7 +175,10 @@ class GraphDefinitionRT(QObject):
         # self._module_registry: ScriptModuleRegistry = module_registry # List of imported modules
         self._inline_module: InlineModuleRT = InlineModuleRT(parent=self) # hold runtime functions. created with the node decorators
         self._local = ScriptModuleRT("_local_", parent=self)
-        self._nodes: dict[NodeRef, NodeState] = dict()
+        self._nodes: dict[NodeRef, _NodeState] = dict()
+        self._out_links: dict[NodeRef, dict[NodeRef, set[int | str]]] = {}
+
+        self._node_to_operators = OneToManyRelation[NodeRef, OperatorRef]()
 
     def setLocalDefinitions(self, test: str) -> None:
         self._local.set_script(test)
@@ -273,6 +275,58 @@ class GraphDefinitionRT(QObject):
 
         return decorator
 
+    @staticmethod
+    def __input_links(data: _NodeState) -> dict[NodeRef, set[int | str]]:
+        links: dict[NodeRef, set[int | str]] = {}
+        for index, value in enumerate(data.args):
+            if isinstance(value, NodeRef):
+                links.setdefault(value, set()).add(index)
+        for name, value in data.kwargs.items():
+            if isinstance(value, NodeRef):
+                links.setdefault(value, set()).add(name)
+        return links
+
+    def __store_node_data(self, node: NodeRef, data: _NodeState) -> None:
+        """Store inputs and their reverse index together, without emitting signals."""
+        # Own the containers so external mutations cannot bypass the index.
+        data = _NodeState(
+            data.operator,
+            tuple(data.args),
+            MappingProxyType(dict(data.kwargs)),
+        )
+        self._validate_inputs(*data.args, **data.kwargs)
+
+        new_links = self.__input_links(data)
+        previous = self._nodes.get(node)
+        if previous is not None:
+            for source in self.__input_links(previous):
+                del self._out_links[source][node]
+
+        # Preserve this node's outgoing connections to its consumers.
+        self._out_links.setdefault(node, {})
+        for source, inlets in new_links.items():
+            self._out_links[source][node] = inlets
+
+        self._nodes[node] = data
+
+    def operator_nodes(self, operator: OperatorRef) -> list[NodeRef]:
+        # todo: consider caching operator to node mapping for efficiency or creating a table to author operator node relationhips
+        return [
+            node for node, data in self._nodes.items()
+            if data.operator == operator
+        ]
+
+    def in_links(self, node: NodeRef) -> dict[NodeRef, set[int | str]]:
+        """Map each source node to the inputs it feeds on this node."""
+        return self.__input_links(self._nodes[node])
+
+    def out_links(self, node: NodeRef) -> dict[NodeRef, set[int | str]]:
+        """Map each target node to the inputs this node feeds."""
+        return {
+            target: inlets.copy()
+            for target, inlets in self._out_links[node].items()
+        }
+
     def _create_node(self, operator:OperatorRef|None=None, args: Iterable=(), kwargs: Mapping={}) -> NodeRef: 
         assert isinstance(operator, OperatorRef) or operator is None, f"Expected an OperatorRef or None, got: {operator}"
         # derive name from the operator
@@ -289,8 +343,9 @@ class GraphDefinitionRT(QObject):
 
         # create the node and store its data
         node_ref = NodeRef(self, name)
-        node_data = NodeState(operator, tuple(args), MappingProxyType(kwargs))
-        self._nodes[node_ref] = node_data
+        node_data = _NodeState(operator, tuple(args), MappingProxyType(kwargs))
+        # self.nodes_about_to_be_added.emit([node_ref])
+        self.__store_node_data(node_ref, node_data)
         self.nodes_added.emit([node_ref])
         return node_ref
 
@@ -298,8 +353,8 @@ class GraphDefinitionRT(QObject):
         assert node_ref in self._nodes, "Node does not exist in the graph." # todo: Api misuse: raise standard python errors
         if op is None:
             op = self._nodes[node_ref].get_operator()
-        node_data = NodeState(op, tuple(args), MappingProxyType(kwargs))
-        self._nodes[node_ref] = node_data
+        node_data = _NodeState(op, tuple(args), MappingProxyType(kwargs))
+        self.__store_node_data(node_ref, node_data)
         self.nodes_changed.emit([node_ref])
 
     # deprecated for now
@@ -310,12 +365,15 @@ class GraphDefinitionRT(QObject):
     #         self._create_node(node_data.get_operator(), node_data.get_inputs()[0], node_data.get_inputs()[1])
 
     def _delete_node(self, node_ref: NodeRef) -> None:
-        assert node_ref in self._nodes, "Node does not exist in the graph."
+        if node_ref not in self._nodes:
+            raise KeyError(node_ref)
 
-        del self._nodes[node_ref]
-
-        changed_nodes = []
-        for dependent, node_data in self._nodes.items():
+        changed_nodes: list[NodeRef] = []
+        # Storing consumers changes this map, so iterate over a snapshot.
+        for dependent in tuple(self._out_links[node_ref]):
+            if dependent == node_ref:
+                continue
+            node_data = self._nodes[dependent]
             args, kwargs = node_data.get_inputs()
             remaining_args = tuple(
                 value for value in args
@@ -325,16 +383,27 @@ class GraphDefinitionRT(QObject):
                 key: value for key, value in kwargs.items()
                 if not (isinstance(value, NodeRef) and value == node_ref)
             }
-            if len(remaining_args) != len(args) or len(remaining_kwargs) != len(kwargs):
-                self._nodes[dependent] = NodeState(
-                    node_data.get_operator(), remaining_args, remaining_kwargs
-                )
-                changed_nodes.append(dependent)
+            self.__store_node_data(
+                dependent,
+                _NodeState(
+                    node_data.get_operator(),
+                    remaining_args,
+                    MappingProxyType(remaining_kwargs),
+                ),
+            )
+            changed_nodes.append(dependent)
 
-        # Finish clearing all references before notifying listeners.
+        # Detach the deleted node from its own input sources.
+        for source in self.__input_links(self._nodes[node_ref]):
+            del self._out_links[source][node_ref]
+
+        del self._out_links[node_ref]
+        del self._nodes[node_ref]
+
+        # All state is consistent; watchers of the deleted node can stop first.
+        self.nodes_removed.emit([node_ref])
         if changed_nodes:
             self.nodes_changed.emit(changed_nodes)
-        self.nodes_removed.emit([node_ref])
 
     def nodes(self) -> list[NodeRef]:
         return list(self._nodes.keys())
@@ -350,6 +419,25 @@ class GraphDefinitionRT(QObject):
                 if isinstance(v, NodeRef) and v not in visited:
                     visited.add(v)
                     stack.append(v)
+        return visited
+
+    def successors(self, node: NodeRef) -> set[NodeRef]:
+        """Return direct dependants as an independent set."""
+        return set(self._out_links[node])
+
+    def descendants(self, root: NodeRef) -> set[NodeRef]:
+        """Return root and all downstream dependants, including in cyclic graphs."""
+        if root not in self._nodes:
+            raise KeyError(root)
+
+        visited: set[NodeRef] = {root}
+        stack: list[NodeRef] = [root]
+        while stack:
+            node = stack.pop()
+            for target in self._out_links[node]:
+                if target not in visited:
+                    visited.add(target)
+                    stack.append(target)
         return visited
 
     def topological_sort(self, nodes: set[NodeRef] | None = None) -> list[NodeRef]:

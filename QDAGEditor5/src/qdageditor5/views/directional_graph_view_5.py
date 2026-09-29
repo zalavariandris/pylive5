@@ -189,7 +189,7 @@ class DirectionalGraphView5(QFrame):
         self._model = model
         self.update()
 
-    def _on_node_presentation_changed(self, *args):
+    def _on_node_presentation_changed(self, nodes, roles=[]):
         # Port changes move links and can shrink old painted bounds. Invalidate
         # the whole view so both old and new geometry are repainted.
         self.update()
@@ -860,7 +860,6 @@ class DirectionalGraphView5(QFrame):
             threshold = 5  # pixels
             if (self.rect().contains(event.pos()) and
                     (event.pos() - self._press_pos).manhattanLength() < threshold):
-                print("Click detected at", event.pos())
                 self._mouse_click_event(event)
 
             self._pressed = False

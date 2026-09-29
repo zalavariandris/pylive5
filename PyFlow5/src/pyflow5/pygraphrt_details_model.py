@@ -63,7 +63,7 @@ class GraphDetailsModel(QAbstractListModel):
         if self._node in nodes:
             self.setNode(None)
 
-    def _on_nodes_changed(self, nodes:list[NodeName])->None:
+    def _on_nodes_changed(self, nodes:list[NodeName], roles:list[int])->None:
         if self._node is None or self._node not in nodes:
             return
         if self._graph_model.getNode(self._node) is None:

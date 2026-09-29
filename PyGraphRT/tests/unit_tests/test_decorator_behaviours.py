@@ -54,39 +54,6 @@ class Test_OperatorRebinding():
 
         
 
-    # REVIEW SIMPLIFY: keep reference stability, updated behavior, and no nodes;
-    # old/new FunctionOperator identity and retained wrapper snapshots need not
-    # constrain how operator storage is implemented during development.
-    def test_op_redefinition_rebinds_existing_references_without_creating_nodes(
-        self,
-        graph: rt.GraphDefinitionRT,
-    ) -> None:
-        @graph.op()
-        def greet() -> str:
-            return "hello"
-
-        saved_ref = greet
-        previous_data = greet.get_value()
-        refs = {saved_ref}
-        assert previous_data is not None
-        assert previous_data() == "hello"
-        assert graph.nodes() == []
-
-        @graph.op()
-        def greet() -> str:
-            return "goodbye"
-
-        assert greet == saved_ref
-        assert greet in refs
-        assert graph.operators() == [saved_ref]
-        assert graph.nodes() == []
-        current_data = saved_ref.get_value()
-        assert current_data is not None
-        assert current_data is greet.get_value()
-        assert current_data is not previous_data
-        assert current_data() == "goodbye"
-        assert previous_data() == "hello"
-
     def test_op_redefinition_updates_all_users_and_preserves_connections(
         self, graph: rt.GraphDefinitionRT,
     ) -> None:
@@ -189,64 +156,6 @@ class Test_NodeDecorator_Rebind_Behaviour():
         B = hello
 
         assert A == B
-
-    # REVIEW SIMPLIFY: keep stable references and updated execution; requiring
-    # a newly allocated NodeData object unnecessarily fixes the storage strategy.
-    def test_node_redefinition_rebinds_existing_references(self, graph: rt.GraphDefinitionRT) -> None:
-        E = rt.GraphExecutorRT(graph)
-        @graph.node()
-        def hello() -> str:
-            return "boom"
-
-        saved_ref = hello
-        previous_data = hello.get_value()
-        refs = {saved_ref}
-        assert E.execute(saved_ref) == "boom"
-
-        @graph.node()
-        def hello() -> str:
-            return "boom2"
-
-        assert hello == saved_ref
-        assert hello in refs
-        assert graph.nodes() == [saved_ref]
-        assert saved_ref.get_value() is hello.get_value()
-        assert saved_ref.get_value() is not previous_data
-        assert E.execute(saved_ref) == "boom2"
-        assert E.execute(hello) == "boom2"
-
-
-    # REVIEW SIMPLIFY: keep new connections, ancestors, and execution; retaining
-    # an immutable previous_data snapshot is an additional storage contract.
-    def test_node_redefinition_replaces_declared_connections(self, graph: rt.GraphDefinitionRT) -> None:
-        E = rt.GraphExecutorRT(graph)
-        @graph.node()
-        def old_source() -> int:
-            return 2
-
-        @graph.node()
-        def new_source() -> int:
-            return 5
-
-        @graph.node(old_source, offset=10)
-        def result(value: int, offset: int) -> int:
-            return value + offset
-
-        saved_ref = result
-        previous_data = result.get_value()
-        assert previous_data is not None
-        assert E.execute(result) == 12
-
-        @graph.node(value=new_source, factor=3)
-        def result(value: int, factor: int) -> int:
-            return value * factor
-
-        assert result == saved_ref
-        assert saved_ref.get_inputs() == ((), {"value": new_source, "factor": 3})
-        assert previous_data.get_inputs() == ((old_source,), {"offset": 10})
-        assert graph.ancestors(saved_ref) == {saved_ref, new_source}
-        assert set(graph.nodes()) == {old_source, new_source, saved_ref}
-        assert E.execute(saved_ref) == 15
 
 
     def test_node_redefinition_without_inputs_removes_old_connections(

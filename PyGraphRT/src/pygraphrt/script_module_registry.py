@@ -13,7 +13,6 @@ from .script_module import ScriptModuleRT
 class ScriptModuleRegistry(QObject):
     modules_added = Signal(list)
     modules_removed = Signal(list)
-    modules_changed = Signal(list)
     operators_added = Signal(list)
     operators_removed = Signal(list)
     operators_changed = Signal(list)

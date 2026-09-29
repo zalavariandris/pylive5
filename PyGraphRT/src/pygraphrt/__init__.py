@@ -7,10 +7,13 @@ from .graph_executor import (
     GraphExecutorRT,
     MemoryCache,
     HistoryMemoryCache,
-    DummyCache
+    DummyCache,
+    ExecutionPending,
+    ExecutionRunning,
+    ExecutionSuccess,
+    ExecutionFailure,
+    NodeExecution
 )
-
-
 
 from .abstract_module_rt import (
     AbstractModule,
@@ -24,7 +27,7 @@ from .import_module import ImportModuleRT
 from .watch import watch
 from .errors import GraphExecutionError
 from .script_module_registry import ScriptModuleRegistry
-from .graph_resolver import GraphResolver
+from .graph_resolver import _GraphModuleMapper, GraphResolver
 
 __all__ = [
     "AbstractModule",
@@ -39,6 +42,7 @@ __all__ = [
     "ImportModuleRT",
     "watch",
     "GraphResolver",
+    "_GraphModuleMapper",
     "GraphExecutionError",
     "GraphExecutorRT",
     "ScriptModuleRegistry"

@@ -60,13 +60,13 @@ def ast_functions_diff(source_before: str, source_after: str) -> FunctionsDiff:
     removed = before.keys() - after.keys()
     common = before.keys() & after.keys()
     changed = {name for name in common if before[name] != after[name]}
-    print(dedent(f"""\
-    AST Diff:
-        Added: {added}
-        Removed: {removed}
-        Changed: {changed}
-        Unchanged: {common - changed}
-    """))
+    # print(dedent(f"""\
+    # AST Diff:
+    #     Added: {added}
+    #     Removed: {removed}
+    #     Changed: {changed}
+    #     Unchanged: {common - changed}
+    # """))
     return FunctionsDiff(
         changed=changed,
         unchanged=common - changed,

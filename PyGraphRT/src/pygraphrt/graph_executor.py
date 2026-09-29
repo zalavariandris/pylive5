@@ -59,9 +59,9 @@ NodeExecution = (
     | ExecutionFailure
 )
 
-@dataclass(frozen=True)
-class GraphExecution:
-    nodes: dict[NodeRef, NodeExecution]
+# @dataclass(frozen=True)
+# class GraphExecution:
+#     nodes: dict[NodeRef, NodeExecution]
 
 
 class GraphExecutorRT(QObject):
