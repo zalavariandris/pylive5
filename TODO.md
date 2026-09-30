@@ -12,7 +12,15 @@
 - [ ] Image CornerPin
 
 ## DEV
-The Book Keeping problem
+- [x] smoke test covering basic functionality *2026/09/30*
+  - [x] importint module from files, and executing the graph
+  - [x] serialization
+  - [x] memory cache
+
+- [ ] we somehow need to indicate, when an ImportModule has a path, but the file does not exist.
+
+- [ ] consider addin a rename method to the node_ref. it would probaly change the NodeRef hash. so it might not be a good idea. Unless NodeRefs are used by their objectid under the hood, and not its hash.
+**The Book Keeping problem**
 I think the current architecture has a deply routed problem. We call it the book keeping problem.
 Collection items, like a node, a link, or an operator and especialy their relationships are sometimes kept in seperate places. we must decide who is the owner not just the object, but the relationshsip as well.
 Also, the signals emitted from the Graph, or Modules must be enough, to keep that in sync for example with QAbstractItemModels. So the proxy model does not need bookkeping, to notify the views. This is a deep architectural question. Probably structural changes, like removeing nodes adding link, or deleting operators have to emit pre adn post signals. Otherwise, the model cant keep in sync without bookkeeping.

@@ -18,7 +18,7 @@ from pygraphrt import (
 )
 
 def test_smoke_hello_world(subtests, tmp_path)->None:
-    im = ImportModuleRT()
+    im = ImportModuleRT("hello_world")
     registry = ModuleRegistry()
     registry.add_module(im)
     graph = GraphDefinitionRT()
@@ -183,9 +183,11 @@ def test_smoke_with_module_from_file_using_numpy( tmp_path)->None:
     ]
 
     """)
-    imagi_path = tmp_path / "imagey_script.py"
+    imagi_path = tmp_path / "imagi_script.py"
     imagi_path.write_text(imagi_script)
-    imagi = ImportModuleRT(str(imagi_path))
+    imagi = ImportModuleRT("imagi", imagi_path)
+    # imagi.reload_file()
+    
     assert len(imagi.operators()) > 0
 
     graph = GraphDefinitionRT()

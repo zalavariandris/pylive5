@@ -21,12 +21,12 @@ from .abstract_module_rt import (
 )
 
 from .function_operator import FunctionOperator
-
 from .script_module import ScriptModuleRT
 from .import_module import ImportModuleRT
 from .errors import GraphExecutionError
 from .module_registry import ModuleRegistry
 from .graph_invalidator import GraphInvalidator
+from .graph_serializer import GraphSerializer, GraphDeserializer
 
 __all__ = [
     "AbstractModule",
@@ -41,5 +41,7 @@ __all__ = [
     "GraphExecutionError",
     "GraphExecutorRT",
     "ModuleRegistry",
-    "GraphInvalidator"
+    "GraphInvalidator",
+    "GraphSerializer",
+    "GraphDeserializer"
 ]

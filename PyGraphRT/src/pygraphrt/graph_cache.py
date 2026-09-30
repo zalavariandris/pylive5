@@ -18,9 +18,11 @@ class CacheEntry:
 
 
 class DummyCache:
-    def __init__(self, graph: GraphDefinitionRT) -> None:
-        self._graph = graph
-        self._graph.nodes_removed.connect(self._on_nodes_removed)
+    def __init__(self) -> None:
+        pass
+    # def __init__(self, graph: GraphDefinitionRT) -> None:
+    #     self._graph = graph
+    #     self._graph.nodes_removed.connect(self._on_nodes_removed)
 
     def _on_nodes_removed(self, removed_nodes: list[NodeRef]):    
         for node_ref in removed_nodes:

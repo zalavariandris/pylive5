@@ -80,75 +80,7 @@ class _NodeState:
         return tuple(self.args), MappingProxyType({
             k: v for k, v in self.kwargs.items()
         }) # todo: create a view
-    
-
-def _encode_value(value, nodes):
-    from .graph_definition_rt import NodeRef
-
-    if type(value) in (type(None), bool, int, str):
-        return value
-
-    if type(value) is float:
-        return value if math.isfinite(value) else {"type": "float", "value": value.hex()}
-
-    if type(value) is list:
-        return [_encode_value(item, nodes) for item in value]
-
-    if type(value) is tuple:
-        return {"type": "tuple", "items": [_encode_value(item, nodes) for item in value]}
-
-    if type(value) is dict:
-        return {"type": "dict", "items": [
-            [_encode_value(key, nodes), _encode_value(item, nodes)]
-            for key, item in value.items()
-        ]}
-
-    if isinstance(value, NodeRef):
-        if value not in nodes:
-            raise ValueError(f"Input references a node outside this graph: {value}")
-        return {
-            "type": "node", 
-            "name": value.get_name()
-        }
-
-    if isinstance(value, Path):
-        return {"type": "path", "value": str(value)}
-    
-    raise TypeError(f"Cannot save input of type: {type(value).__name__!r}")
-
-def _decode_value(value, nodes):
-    if type(value) in (type(None), bool, int, float, str):
-        return value
-    
-    if isinstance(value, list):
-        return [_decode_value(item, nodes) for item in value]
-    
-    if not isinstance(value, dict):
-        raise ValueError("Invalid input value")
-    
-    match value:
-        case {"type": "node", "name": str(name)}:
-            if name not in nodes:
-                raise ValueError(f"Unknown node reference: {name}")
-            return nodes[name]
-
-        case {"type": "tuple", "items": list(items)}:
-            return tuple(_decode_value(item, nodes) for item in items)
-
-        case {"type": "dict", "items": list(items)}:
-            return {_decode_value(key, nodes): _decode_value(item, nodes) for key, item in items}
-
-        case {"type": "path", "value": str(path)}:
-            return Path(path)
-
-        case {"type": "float", "value": str(number)}:
-            return float.fromhex(number)
-        
-    raise ValueError(f"Invalid tagged input: {value!r}")
-
-
-
-
+ 
 
 class GraphDefinitionRT(QObject):
     nodes_added = Signal(list) # list[NodeRef]
@@ -225,7 +157,8 @@ class GraphDefinitionRT(QObject):
                 links.setdefault(value, set()).add(name)
         return links
 
-    def __store_node_data(self, node: NodeRef, state: _NodeState) -> None:
+    def __store_node(self, node: NodeRef, state: _NodeState) -> None:
+        # todo: this could be moved to _create_node i think.
         """Store inputs and their reverse index together, without emitting signals."""
         # Own the containers so external mutations cannot bypass the index.
         new_state = _NodeState(
@@ -247,9 +180,6 @@ class GraphDefinitionRT(QObject):
 
         self._nodes[node] = new_state
 
-    def __get_node_data(self, node: NodeRef) -> _NodeState:
-        return self._nodes[node]
-
     def nodes_of_operator(self, operator: AbstractOperator) -> frozenset[NodeRef]:
         # todo: consider caching operator to node mapping for efficiency or creating a table to author operator node relationhips
         return self._operator_to_nodes.children_of(operator)    
@@ -265,15 +195,14 @@ class GraphDefinitionRT(QObject):
             for target, inlets in self._out_links[node].items()
         }
 
-    def _create_node(self, operator:AbstractOperator|None=None, args: Iterable=(), kwargs: Mapping={}) -> NodeRef: 
+    def _create_node(self, operator:AbstractOperator|None=None, args: Iterable=(), kwargs: Mapping={}, *, name: str|None=None) -> NodeRef: 
         assert isinstance(operator, AbstractOperator) or operator is None, f"Expected an AbstractOperator or None, got: {operator}"
         # derive name from the operator
-        if isinstance(operator, AbstractOperator):
-            name = operator.get_name()
-        else:
-            name = "node"
-
-        self._validate_inputs(args, kwargs)
+        if name is None:
+            if isinstance(operator, AbstractOperator):
+                name = operator.get_name()
+            else:
+                name = "node"
 
         # ensure the node name is unique within the graph
         existing_names = {node.get_name() for node in self._nodes.keys()}
@@ -281,10 +210,12 @@ class GraphDefinitionRT(QObject):
             from pytools import UniqueNameGenerator
             name = UniqueNameGenerator(existing_names)(name)
 
+        self._validate_inputs(args, kwargs)
+
         # create the node and store its data
         node_ref = NodeRef(self, name)
         node_state = _NodeState(tuple(args), MappingProxyType(kwargs))
-        self.__store_node_data(node_ref, node_state)
+        self.__store_node(node_ref, node_state)
         self._operator_to_nodes.set(node_ref, operator)
         # self.nodes_about_to_be_added.emit([node_ref])
         
@@ -297,7 +228,7 @@ class GraphDefinitionRT(QObject):
         assert isinstance(op, AbstractOperator) or op is None, f"Expected an AbstractOperator or None, got: {op}"
         node_data = _NodeState(tuple(args), MappingProxyType(kwargs))
         self._operator_to_nodes.set(node_ref, op)
-        self.__store_node_data(node_ref, node_data)
+        self.__store_node(node_ref, node_data)
         self.nodes_changed.emit([node_ref])
 
     # deprecated for now
@@ -326,7 +257,7 @@ class GraphDefinitionRT(QObject):
                 key: value for key, value in kwargs.items()
                 if not (isinstance(value, NodeRef) and value == node_ref)
             }
-            self.__store_node_data(
+            self.__store_node(
                 dependent,
                 _NodeState(
                     remaining_args,
@@ -419,102 +350,102 @@ class GraphDefinitionRT(QObject):
 
         return sorted_nodes
 
-    def todict(self, explicit: bool = False) -> dict[str, Any]:
-        """Save the graph, using short _local_ operator names unless explicit."""
+    # def todict(self, explicit: bool = False) -> dict[str, Any]:
+    #     """Save the graph, using short _local_ operator names unless explicit."""
 
-        data: dict[str, Any] = {
-            "version": 1
-        }
+    #     data: dict[str, Any] = {
+    #         "version": 1
+    #     }
 
-        # add imports
-        module_ids: dict[ScriptModuleRT, str] = {}
+    #     # add imports
+    #     module_ids: dict[ScriptModuleRT, str] = {}
 
-        imports_data: list[str] = []
-        for module in self._module_registry:
-            path = str(module.path())
-            if not path or path == "_local_" or path in imports_data:
-                raise ValueError(f"Import path {path!r} must be nonempty, unique, and cannot be '_local_'")
-            module_ids[module] = path
-            imports_data.append(path)
+    #     imports_data: list[str] = []
+    #     for module in self._module_registry:
+    #         path = str(module.path())
+    #         if not path or path == "_local_" or path in imports_data:
+    #             raise ValueError(f"Import path {path!r} must be nonempty, unique, and cannot be '_local_'")
+    #         module_ids[module] = path
+    #         imports_data.append(path)
 
-        if imports_data or explicit:
-            data["imports"] = imports_data
+    #     if imports_data or explicit:
+    #         data["imports"] = imports_data
 
-        # add the local definitions
-        if self.local().get_source() or explicit:
-            data["_local_"] = self.local().get_source()
-        module_ids[self.local()] = "_local_"
+    #     # add the local definitions
+    #     if self.local().get_source() or explicit:
+    #         data["_local_"] = self.local().get_source()
+    #     module_ids[self.local()] = "_local_"
 
-        # add graph nodes
-        nodes = {}
-        node_refs = set(self.nodes())
-        for node in self.nodes():
-            name = node.get_name()
-            if not isinstance(name, str):
-                raise TypeError("Saved node names must be strings")
-            operator = node.get_operator()
-            if operator.module not in module_ids:
-                raise ValueError(f"Node {name!r} must use the local script module or a registered import")
-            args, kwargs = node.get_inputs()
-            record: dict[str, Any] = {
-                "operator": operator.name
-                if operator.module is self.local() and not explicit
-                else {"module": module_ids[operator.module], "name": operator.name}
-            }
-            if args or explicit:
-                record["args"] = [_encode_value(value, node_refs) for value in args]
-            if kwargs or explicit:
-                record["kwargs"] = {key: _encode_value(value, node_refs) for key, value in kwargs.items()}
+    #     # add graph nodes
+    #     nodes = {}
+    #     node_refs = set(self.nodes())
+    #     for node in self.nodes():
+    #         name = node.get_name()
+    #         if not isinstance(name, str):
+    #             raise TypeError("Saved node names must be strings")
+    #         operator = node.get_operator()
+    #         if operator.module not in module_ids:
+    #             raise ValueError(f"Node {name!r} must use the local script module or a registered import")
+    #         args, kwargs = node.get_inputs()
+    #         record: dict[str, Any] = {
+    #             "operator": operator.name
+    #             if operator.module is self.local() and not explicit
+    #             else {"module": module_ids[operator.module], "name": operator.name}
+    #         }
+    #         if args or explicit:
+    #             record["args"] = [_encode_value(value, node_refs) for value in args]
+    #         if kwargs or explicit:
+    #             record["kwargs"] = {key: _encode_value(value, node_refs) for key, value in kwargs.items()}
 
-            nodes[name] = record
+    #         nodes[name] = record
 
-        if nodes or explicit:
-            data["graph"] = {"nodes": nodes}
+    #     if nodes or explicit:
+    #         data["graph"] = {"nodes": nodes}
 
-        return data
+    #     return data
 
-    @classmethod
-    def fromdict(cls, data: dict[str, Any]) -> "GraphDefinitionRT":
-        """Build a new runtime. Unknown operators and invalid scripts stay editable."""
+    # @classmethod
+    # def fromdict(cls, data: dict[str, Any]) -> "GraphDefinitionRT":
+    #     """Build a new runtime. Unknown operators and invalid scripts stay editable."""
 
-        validate_graph_data(data)
+    #     validate_graph_data(data)
 
-        local_definitions = data.get("_local_", "")
-        imports = data.get("imports", [])
-        graph_data = data.get("graph", {"nodes": {}})
-        if len(imports) != len(set(imports)):
-            raise ValueError("Import paths must be unique")
+    #     local_definitions = data.get("_local_", "")
+    #     imports = data.get("imports", [])
+    #     graph_data = data.get("graph", {"nodes": {}})
+    #     if len(imports) != len(set(imports)):
+    #         raise ValueError("Import paths must be unique")
 
-        module_ids = {"_local_", *imports}
-        for name, record in graph_data["nodes"].items():
-            operator = record["operator"]
-            if isinstance(operator, dict) and operator["module"] not in module_ids:
-                raise ValueError(f"Invalid operator reference for node {name!r}")
+    #     module_ids = {"_local_", *imports}
+    #     for name, record in graph_data["nodes"].items():
+    #         operator = record["operator"]
+    #         if isinstance(operator, dict) and operator["module"] not in module_ids:
+    #             raise ValueError(f"Invalid operator reference for node {name!r}")
 
-        graph = cls()
-        modules_by_id: dict[str, ScriptModuleRT] = {"_local_": graph.local()}
-        graph.setLocalDefinitions(local_definitions)
-        for path in imports:
-            import_module = ImportModuleRT(path)
-            graph.add_import(import_module)
-            modules_by_id[path] = import_module
+    #     graph = cls()
+    #     modules_by_id: dict[str, ScriptModuleRT] = {"_local_": graph.local()}
+    #     graph.setLocalDefinitions(local_definitions)
+    #     for path in imports:
+    #         import_module = ImportModuleRT(path)
+    #         graph.add_import(import_module)
+    #         modules_by_id[path] = import_module
 
-        nodes: dict[str, NodeRef] = {}
-        for name, record in graph_data["nodes"].items():
-            operator = record["operator"]
-            if isinstance(operator, str):
-                operator = {"module": "_local_", "name": operator}
-            op_ref = AbstractOperator(modules_by_id[operator["module"]], operator["name"])
-            nodes[name] = graph._create_node(op_ref)
+    #     nodes: dict[str, NodeRef] = {}
+    #     for name, record in graph_data["nodes"].items():
+    #         operator = record["operator"]
+    #         if isinstance(operator, str):
+    #             operator = {"module": "_local_", "name": operator}
+    #         op_ref = AbstractOperator(modules_by_id[operator["module"]], operator["name"])
+    #         nodes[name] = graph._create_node(op_ref)
 
-        # Create every node before restoring inputs, allowing forward references.
-        for name, record in graph_data["nodes"].items():
-            args, kwargs = record.get("args", []), record.get("kwargs", {})
-            nodes[name].set_inputs(
-                *[_decode_value(value, nodes) for value in args],
-                **{key: _decode_value(value, nodes) for key, value in kwargs.items()},
-            )
-        return graph
+    #     # Create every node before restoring inputs, allowing forward references.
+    #     for name, record in graph_data["nodes"].items():
+    #         args, kwargs = record.get("args", []), record.get("kwargs", {})
+    #         nodes[name].set_inputs(
+    #             *[_decode_value(value, nodes) for value in args],
+    #             **{key: _decode_value(value, nodes) for key, value in kwargs.items()},
+    #         )
+    #     return graph
 
 
 if __name__ == "__main__":

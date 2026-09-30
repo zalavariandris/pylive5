@@ -165,8 +165,6 @@ class ScriptModuleRT(AbstractModule):
         if not isinstance(name, (str, type(None))):
             raise TypeError("name must be a string or None")
         
-        
-        
         self._functions_cache: dict[str, FunctionType] = {}
         self._evaluated_script: str = "" # used to track the last successfully evaluated script. necessary to determine dependency changes in the code itself.
         self._script = ""
