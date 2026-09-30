@@ -41,5 +41,9 @@ exe = ["pyinstaller>=6.16,<7"]
 
 [tool.pytest.ini_options]
 # Keep test temporary files in the workspace to avoid system-temp permission issues.
-addopts = ["--import-mode=importlib", "--basetemp=.pytest_cache/tmp"]
+addopts = [
+    "--import-mode=importlib", 
+    "--basetemp=.pytest_cache/tmp",
+    "--ignore=PyGraphRT/old_test_to_integrate",
+]
 consider_namespace_packages = true

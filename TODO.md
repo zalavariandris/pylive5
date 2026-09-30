@@ -21,10 +21,10 @@
 
 - [ ] consider addin a rename method to the node_ref. it would probaly change the NodeRef hash. so it might not be a good idea. Unless NodeRefs are used by their objectid under the hood, and not its hash.
 **The Book Keeping problem**
-I think the current architecture has a deply routed problem. We call it the book keeping problem.
-Collection items, like a node, a link, or an operator and especialy their relationships are sometimes kept in seperate places. we must decide who is the owner not just the object, but the relationshsip as well.
-Also, the signals emitted from the Graph, or Modules must be enough, to keep that in sync for example with QAbstractItemModels. So the proxy model does not need bookkeping, to notify the views. This is a deep architectural question. Probably structural changes, like removeing nodes adding link, or deleting operators have to emit pre adn post signals. Otherwise, the model cant keep in sync without bookkeeping.
-Basically we wanna make sure, that there are only on book. on source of truth. And that is easaly queriable and sends apprpriate notifications, so it could have basically a clone.
+I think the current architecture has a deply routed problem. We call it the *book keeping problem*.
+Collection items, like a node, a link, or an operator and especialy their relationships are sometimes kept in seperate places. we must decide who is the owner not just the object, but the relationshsip as well. Basically we wanna make sure, that there are only on book, the source of truth.
+Also, the signals emitted from the Graph, or Modules must be enough, to keep that in sync for example with QAbstractItemModels. So the proxy model does not need bookkeping, to notify the views. This is a deep architectural question. Probably structural changes, like removeing nodes adding links, or deleting operators have to emit pre and post signals. An alternative to redesign the signal emitting architecture, to include change data eg: what was removed, or on value change, prev and next values. The goal is to be able to keep another object in sync by using the signals without storing the previous value on this side.
+
 
 - [x] use two way .relations for node-to-operators in GrahpRT. A relation must be stored in one place.!
       This is a  architectural role. Currently the GraphDefinition responsibility to store node-operator relations.

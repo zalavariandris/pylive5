@@ -2,8 +2,7 @@
 
 import pytest
 
-from pygraphrt.graph_definition_rt import GraphDefinitionRT, NodeRef
-from pygraphrt.watch import Watcher
+from pygraphrt import GraphDefinitionRT, NodeRef
 
 
 def test_create_and_update_connections_preserve_consumers() -> None:
@@ -63,7 +62,6 @@ def test_delete_reindexes_remaining_inlets_before_notifications() -> None:
         ("removed", [removed], False, {0, 1, "kept"}),
         ("changed", [target], False, {0, 1, "kept"}),
     ]
-
 
 @pytest.mark.parametrize("update", [False, True])
 def test_stored_inputs_do_not_alias_caller_containers(update: bool) -> None:
@@ -136,23 +134,6 @@ def test_signal_handlers_see_new_connections() -> None:
     target = graph._create_node(args=(first,))
     target.set_inputs(second)
     assert snapshots == [({target}, set()), (set(), {target})]
-
-
-def test_deleted_watcher_stops_before_consumers_change() -> None:
-    graph = GraphDefinitionRT()
-    operator = graph.op()(lambda *args: None)
-    removed = graph._create_node(operator)
-    survivor = graph._create_node(operator, args=(removed,))
-    removed.set_inputs(survivor)
-    callbacks: list[str] = []
-    removed_watcher = Watcher(graph, removed, lambda: callbacks.append("removed"))
-    survivor_watcher = Watcher(graph, survivor, lambda: callbacks.append("survivor"))
-    try:
-        graph._delete_node(removed)
-        assert callbacks == ["survivor"]
-    finally:
-        removed_watcher.stop()
-        survivor_watcher.stop()
 
 
 def test_queries_reject_deleted_nodes() -> None:

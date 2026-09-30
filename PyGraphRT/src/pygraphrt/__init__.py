@@ -5,14 +5,17 @@ from .graph_definition_rt import (
 
 from .graph_executor import (
     GraphExecutorRT,
-    MemoryCache,
-    HistoryMemoryCache,
-    DummyCache,
+    NodeExecution,
     ExecutionPending,
     ExecutionRunning,
     ExecutionSuccess,
-    ExecutionFailure,
-    NodeExecution
+    ExecutionFailure
+)
+
+from .graph_cache import (
+    MemoryCache,
+    HistoryMemoryCache,
+    DummyCache,
 )
 
 from .abstract_module_rt import (

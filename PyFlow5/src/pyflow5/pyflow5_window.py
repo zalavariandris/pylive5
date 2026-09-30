@@ -3,6 +3,7 @@ import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
 from pyflow5.viewer_view import Viewer
+from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QItemSelection, QItemSelectionModel, QModelIndex
 
 from qtpy.QtCore import (
@@ -449,8 +450,9 @@ class PyFlow5Window(QMainWindow):
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
-                selected_op = selected_index.data(ModulesOperatorsTreeModel.OperatorRole)
-                if selected_op:
+                selected_op = self._document.modules_model.mapToSource(selected_index)
+                
+                if selected_op and isinstance(selected_op, ScriptOperatorRef):
                     self._document.graph_model.addNode(selected_op, scene_pos)
         finally:
             dialog.deleteLater()

@@ -5,33 +5,32 @@ implementation, which rejects duplicate operator names.
 """
 
 import random
+from textwrap import dedent
 
-from pygraphrt.inline_module import InlineModuleRT
+from pygraphrt import ScriptModuleRT
 import pytest
 import pygraphrt as rt
 
-
-
 @pytest.fixture
-def hello_operator(module: InlineModuleRT) -> rt.Operator:
-    def hello():
-        return "Hello"
-    return module._create_operator(hello)
-
-@pytest.fixture
-def module() -> InlineModuleRT:
-    module = InlineModuleRT()
+def module() -> ScriptModuleRT:
+    module = ScriptModuleRT()
+    module.set_script("def hello(): return 'Hello'")
     return module
 
-@pytest.fixture()
-def graph(request: pytest.FixtureRequest) -> rt.GraphDefinitionRT:
+
+@pytest.fixture
+def hello_operator(module: ScriptModuleRT) -> rt.Operator:
+    
+    return module.get_operator_by_name("hello")
+
+@pytest.fixture
+def graph() -> rt.GraphDefinitionRT:
     graph = rt.GraphDefinitionRT()
     return graph
 
 @pytest.fixture
 def hello_node(hello_operator, graph: rt.GraphDefinitionRT) -> rt.NodeRef:
     return graph._create_node(hello_operator)
-
 
 def _execute_node(node: rt.NodeRef) -> None:
     """helper function to execute a node and return its result
@@ -46,8 +45,9 @@ class Test_CreateNode:
         assert node_ref in graph.nodes()
 
     def test_create_node_with_op(self, graph: rt.GraphDefinitionRT) -> None:
-        im = InlineModuleRT()
-        op = im._create_operator(lambda x: x)
+        im = ScriptModuleRT()
+        im.set_script("def identity(x): return x")
+        op = im.get_operator_by_name("identity")
         
         node_ref = graph._create_node(op)
         assert node_ref in graph.nodes()
@@ -81,8 +81,9 @@ class Test_UpdateNode:
         E = rt.GraphExecutorRT(graph)
         node = graph._create_node()
 
-        im = InlineModuleRT()
-        op = im._create_operator(lambda: "Hello")
+        im = ScriptModuleRT()
+        im.set_script("def hello(): return 'Hello'")
+        op = im.get_operator_by_name("hello")
         graph._update_node(node, op, [], {})
 
         assert E.execute(node).result == "Hello"
@@ -92,10 +93,9 @@ class Test_UpdateNode:
         E = rt.GraphExecutorRT(graph)
         node = graph._create_node()
 
-        im = InlineModuleRT()
-        def func(x):
-            return x
-        op = im._create_operator(func)
+        im = ScriptModuleRT()
+        im.set_script("def func(x): return x")
+        op = im.get_operator_by_name("func")
         graph._update_node(node, op, [42], {})
 
         E = rt.GraphExecutorRT(graph)
@@ -106,10 +106,9 @@ class Test_UpdateNode:
         E = rt.GraphExecutorRT(graph)
         node = graph._create_node()
 
-        im = InlineModuleRT()
-        def func(x, y):
-            return x + y
-        op = im._create_operator(func)
+        im = ScriptModuleRT()
+        im.set_script("def func(x, y): return x + y")
+        op = im.get_operator_by_name("func")
         graph._update_node(node, op, [1], {"y": 2})
 
         assert E.execute(node).result == 3

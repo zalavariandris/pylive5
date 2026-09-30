@@ -70,9 +70,10 @@ class GraphExecutorRT(QObject):
         super().__init__()
         self._graph: GraphDefinitionRT = graph
         self._profiler = Profiler()
-        self._cache = cache if cache is not None else DummyCache(self._graph)
+        self._cache = cache if cache is not None else DummyCache()
         
     def execute(self, root:NodeRef, profile: bool = True)->NodeExecution:
+        print(f"Executing node: {root}")
         """Evaluate pure operators with immutable inputs and operator data.
 
         Upstream signatures are reduced to Python hashes, so dependency hash
@@ -127,7 +128,7 @@ class GraphExecutorRT(QObject):
                 entry = self._cache.save(node_ref, fingerprints[node_ref], value)
 
         self.executed.emit({
-            node_ref: ancestors_output[node_ref] 
+            node_ref: ExecutionSuccess(node_ref, ancestors_output[node_ref]) 
             for node_ref in ancestors
         })
         return ExecutionSuccess(root, ancestors_output[root]) 

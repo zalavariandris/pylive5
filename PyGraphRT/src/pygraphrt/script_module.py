@@ -1,12 +1,12 @@
 """Runtime representation of a script module.
 """
 
-from annotationlib import Format
-from collections.abc import Callable
-from importlib.metadata.diagnose import inspect
 import sys
 from types import FunctionType, MappingProxyType, ModuleType
 from typing import Iterable, Literal, Any, Mapping
+import inspect
+from annotationlib import Format
+
 from qtpy.QtCore import Signal, QObject
 
 
@@ -110,6 +110,9 @@ class ScriptOperatorRef(AbstractOperator):
     def get_module(self) -> ScriptModuleRT:
         return self._module
 
+    def __str__(self) -> str:
+        return f"Op({self._module.get_display_name()}.{self._name})"
+
     def fingerprint(self) -> int:
         # todo: review if this is sufficient for fingerprinting functions
         if func:=self._module._functions_cache.get(self._name, None):
@@ -117,8 +120,10 @@ class ScriptOperatorRef(AbstractOperator):
         else:
             return hash((self._name, None))
 
-    def __func_sig(self):
-        func = self._module._functions_cache[self._name]
+    def __func_sig(self)->inspect.Signature|None:
+        func = self._module._functions_cache.get(self._name, None)
+        if func is None:
+            return None
         # Live edits can leave annotation names unfinished (e.g. s instead of str).
         if sys.version_info >= (3, 14):
             return inspect.signature(func, annotation_format=Format.FORWARDREF)
@@ -126,6 +131,8 @@ class ScriptOperatorRef(AbstractOperator):
 
     def get_parameters(self) -> Mapping[str, ParameterData]:
         sig = self.__func_sig()
+        if sig is None:
+            return MappingProxyType({})
         params = {}
         for name, param in sig.parameters.items():
             param_data = ParameterData(

@@ -53,9 +53,7 @@ def test_model_without_mapping_helpers(
         assert operator_index.parent() == module_index
         assert model.rowCount(operator_index) == 0
         assert operator_index.data() == "same"
-        assert operator_index.data(model.OperatorRole)() == value
-        assert operator_index.data(model.ModuleRole) is None
-        assert operator_index.data(model.SourceRole) is None
+        assert model.mapToSource(operator_index)() == value
         assert model.flags(operator_index) & Qt.ItemFlag.ItemIsSelectable
 
 

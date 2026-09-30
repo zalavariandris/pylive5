@@ -46,6 +46,8 @@ def test_linkin_intermediate_nodes_invalidates_output_node():
     script_module = rt.ScriptModuleRT()
     script_module.operators_added
     script_module.set_script("dummy_script")
+    module_registry = rt.ModuleRegistry()
+    module_registry.add_module(script_module)
     graph = rt.GraphDefinitionRT()
     invalidator = rt.GraphInvalidator(graph, module_registry)
 

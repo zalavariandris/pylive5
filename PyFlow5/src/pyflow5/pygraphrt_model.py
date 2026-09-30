@@ -1,6 +1,7 @@
 from collections import defaultdict
 from logging import warning
 from typing import Iterable, override, Any
+import warnings
 
 from pytools import UniqueNameGenerator
 
@@ -24,39 +25,58 @@ from qdageditor5.models.abstract_dag_model import (
 import pygraphrt as rt
 
 
-
 class PyFlowRTModel(AbstractDAGModel):
-    ResultsRole = Qt.ItemDataRole.UserRole+1
+    ExecutionRole = Qt.ItemDataRole.UserRole+1
     ResolutionRole = Qt.ItemDataRole.UserRole+2
 
-    def __init__(self, graph: rt.GraphDefinitionRT, executor: rt.GraphExecutorRT, resolver: rt.GraphResolver): 
+    def __init__(self, 
+        graph: rt.GraphDefinitionRT, 
+        registry: rt.ModuleRegistry,
+        invalidator: rt.GraphInvalidator,
+        executor: rt.GraphExecutorRT
+    ):
         super().__init__()
         self._graph: rt.GraphDefinitionRT = graph
+        self._registry: rt.ModuleRegistry = registry
+        self._invalidator: rt.GraphInvalidator = invalidator
         self._executor: rt.GraphExecutorRT = executor
-        self._resolver: rt.GraphResolver = resolver
-        @self._resolver.nodes_invalidated.connect
-        def _on_resolutions_changed(nodes: list[rt.NodeRef]):
-            self.nodeDataChanged.emit(tuple([node_ref.get_name() for node_ref in nodes]), tuple([self.ResolutionRole]))
-
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
-        self._observed_modules:set[rt.AbstractModule] = set()
-        self._connect_runtime()
-        self._results: dict[NodeName, Any] = {}
 
-    def setRT(self, graph: rt.GraphDefinitionRT, executor: rt.GraphExecutorRT, resolver: rt.GraphResolver, positions=None):
-        # TODO: "the relationship between the graph components are fragile for now. this has to be reviewd"
-        warning.warn("the relationship between the graph components are fragile for now. this has to be reviewd") 
-        assert executor._graph is graph, "Executor's graph must match the provided graph."
-        self._beginResetModel()
-        self._disconnect_runtime()
-        self._graph = graph
-        self._executor = executor
-        self._resolver = resolver
-        self._positions = defaultdict(lambda: (0.0, 0.0), positions or {})
-        self._connect_runtime()
-        self._endResetModel()
+        self._executions: dict[NodeName, rt.NodeExecution] = {}
 
-    def reset(self) -> None:
+        @self._invalidator.nodes_invalidated.connect
+        def on_nodes_invalidated(nodes: list[rt.NodeRef]):
+            print("Nodes invalidated: ", [node_ref.get_name() for node_ref in nodes])
+            for node_ref in nodes:
+                if node_ref.get_name() in self._executions:
+                    del self._executions[node_ref.get_name()]
+
+            self.nodesDataChanged.emit(
+                tuple([self.mapFromSource(node_ref) for node_ref in nodes]), 
+                tuple([self.ExecutionRole])
+            ) # list[NodeT], roles: list[int]
+
+            for node_ref in nodes:
+                self._executor.execute(node_ref)
+
+        @self._executor.executed.connect
+        def on_executed(results: dict[rt.NodeRef, rt.NodeExecution]):
+            print("Nodes executed: ", [node_ref.get_name() for node_ref in results.keys()])
+            changed_nodenames: list[NodeName] = []
+            for node_ref, execution in results.items():
+                if node_name := self.mapFromSource(node_ref):
+                    self._executions[node_name] = execution
+                    changed_nodenames.append(node_name)
+
+            self.nodesDataChanged.emit(
+                tuple(changed_nodenames), 
+                tuple([self.ExecutionRole])
+            ) # list[NodeT], roles: list[int]
+
+    def setRT(self, graph: rt.GraphDefinitionRT, positions=None):
+        raise NotImplementedError("setRT method is not implemented yet.")
+
+    def reset_graph_from_scratch(self) -> None:
         """Recover presentation state from the current runtime without changing it.
 
         Call after a failed mutation has unwound, not from a mutation signal handler.
@@ -71,65 +91,58 @@ class PyFlowRTModel(AbstractDAGModel):
         self._refresh_module_subscriptions()
         self._endResetModel()
 
-    def _connect_runtime(self):
-        self._graph.nodes_added.connect(self._refresh_module_subscriptions)
-        self._graph.nodes_removed.connect(self._refresh_module_subscriptions)
-        self._graph.nodes_changed.connect(self._on_runtime_nodes_changed)
-        self._refresh_module_subscriptions()
+    # def __connect_runtime(self):
+    #     self._graph.nodes_added.connect(self._refresh_module_subscriptions)
+    #     self._graph.nodes_removed.connect(self._refresh_module_subscriptions)
+    #     self._graph.nodes_changed.connect(self._on_runtime_nodes_changed)
+    #     self._refresh_module_subscriptions()
 
-    def _disconnect_runtime(self):
-        self._graph.nodes_added.disconnect(self._refresh_module_subscriptions)
-        self._graph.nodes_removed.disconnect(self._refresh_module_subscriptions)
-        self._graph.nodes_changed.disconnect(self._on_runtime_nodes_changed)
-        for module in self._observed_modules:
-            self._disconnect_module(module)
-        self._observed_modules.clear()
+    # def _disconnect_runtime(self):
+    #     self._graph.nodes_added.disconnect(self._refresh_module_subscriptions)
+    #     self._graph.nodes_removed.disconnect(self._refresh_module_subscriptions)
+    #     self._graph.nodes_changed.disconnect(self._on_runtime_nodes_changed)
+    #     for module in self._observed_modules:
+    #         self._disconnect_module(module)
+    #     self._observed_modules.clear()
 
-    def _disconnect_module(self, module):
-        for signal in (module.operators_added, module.operators_removed,
-                       module.operators_changed):
-            signal.disconnect(self._on_operators_changed)
+    # def _disconnect_module(self, module):
+    #     for signal in (module.operators_added, module.operators_removed,
+    #                    module.operators_changed):
+    #         signal.disconnect(self._on_operators_changed)
 
-    @Slot(list)
-    def _refresh_module_subscriptions(self, nodes=None):
-        modules = {ref.module for node in self._graph.nodes()
-                   if (ref := node.get_operator()) is not None}
-        for module in self._observed_modules - modules:
-            self._disconnect_module(module)
-        for module in modules - self._observed_modules:
-            for signal in (module.operators_added, module.operators_removed,
-                           module.operators_changed):
-                signal.connect(self._on_operators_changed)
-        self._observed_modules = modules
+    # @Slot(list)
+    # def _on_runtime_nodes_changed(self, nodes: list[rt.NodeRef]):
+    #     self._refresh_module_subscriptions()
+    #     self._notify_node_presentation([node.get_name() for node in nodes], [])
 
-    def _notify_node_presentation(self, names, roles):
-        if names:
-            self.nodeDataChanged.emit(tuple(names), tuple(roles))
-            for name in names:
-                self.inletsChanged.emit(name)
+    # @Slot(list)
+    # def _on_operators_changed(self, operators):
+    #     changed = set(operators)
+    #     self._notify_node_presentation([
+    #         node.get_name() for node in self._graph.nodes()
+    #         if node.get_operator() in changed
+    #     ], [])
 
-    @Slot(list)
-    def _on_runtime_nodes_changed(self, nodes: list[rt.NodeRef]):
-        self._refresh_module_subscriptions()
-        self._notify_node_presentation([node.get_name() for node in nodes], [])
+    # @Slot(list)
+    # def _refresh_module_subscriptions(self, nodes=None):
+    #     modules = {ref.get_module() for node in self._graph.nodes()
+    #                if (ref := node.get_operator()) is not None}
+    #     for module in self._observed_modules - modules:
+    #         self._disconnect_module(module)
+    #     for module in modules - self._observed_modules:
+    #         for signal in (module.operators_added, module.operators_removed,
+    #                        module.operators_changed):
+    #             signal.connect(self._on_operators_changed)
+    #     self._observed_modules = modules
 
-    @Slot(list)
-    def _on_operators_changed(self, operators):
-        changed = set(operators)
-        self._notify_node_presentation([
-            node.get_name() for node in self._graph.nodes()
-            if node.get_operator() in changed
-        ], [])
+    # def _notify_node_presentation(self, names, roles):
+    #     if names:
+    #         self.nodeDataChanged.emit(tuple(names), tuple(roles))
+    #         for name in names:
+    #             self.inletsChanged.emit(name)
 
-    # nodes
-    @override
-    def nodes(self)->Iterable[NodeName]:
-        return [
-            node_ref.get_name() 
-            for node_ref in self._graph.nodes()
-        ]
-
-    def getNode(self, node_name:NodeName)->rt.NodeRef|None:
+    # = Mapping Source =
+    def mapToSource(self, node_name:NodeName)->rt.NodeRef|None:
         # todo: consider caching node references by name for faster lookup
         # find noderef by the name
         for node_ref in self._graph.nodes():
@@ -137,81 +150,64 @@ class PyFlowRTModel(AbstractDAGModel):
                 return node_ref
         return None
 
+    def mapFromSource(self, node_ref: rt.NodeRef) -> NodeName | None:
+        return node_ref.get_name() if node_ref is not None else None
+
+    # OVERRIDES 
+    # - READ
     @override
-    def nodePosition(self, node_name:NodeName)->QPointF:
-        if node_name in self._positions:
-            x, y = self._positions[node_name]
-            return QPointF(x, y)
-        else:
-            return QPointF(0.0, 0.0)
+    def nodes(self)->Iterable[NodeName]:
+        return [
+            self.mapFromSource(node_ref)
+            for node_ref in self._graph.nodes()
+        ]
 
     @override
-    def setNodePosition(self, node_name:NodeName, position:QPointF|None):
-        if position:
-            self._positions[node_name] = (position.x(), position.y())
-        else:
-            del self._positions[node_name]
-
-    def setNodeData(self, node: NodeName, role: int, value: Any) -> bool:
-        node_ref = self.getNode(node)
-        if node_ref is None:
-            return False
-        match role:
-            case self.ResultsRole:
-                self._results[node_ref] = value
-                self.nodeDataChanged.emit((node,), tuple([role]))
-                return True
-            case _:
-                return False
-
-    @override
-    def nodeData(self, node: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        node_ref = self.getNode(node)
+    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        node_ref = self.mapToSource(node_name)
         if node_ref is None:
             return None
+        
         match role:
             case Qt.ItemDataRole.DisplayRole:
-                return node_ref.get_operator()
-            
-            case Qt.ItemDataRole.BackgroundRole:
-                match self._resolver.resolution(node_ref):
-                    case self._resolver.ResolutionFailure():
-                        return QColor(Qt.GlobalColor.red)
-                    case self._resolver.ResolutionSuccess():
-                        return None
-                    case _:
-                        return None
+                if op:=node_ref.get_operator():
+                    return f"{node_ref.get_name()}({op.get_name()})"
+                else:
+                    return f"{node_ref.get_name()}(-None-)"
 
-            case self.ResultsRole:
-                match self._executor.execute(node_ref):
-                    case rt.ExecutionPending():
-                        return None
-                    case rt.ExecutionRunning():
-                        return None
-                    case rt.ExecutionSuccess() as success:
-                        return success.result
-                    case rt.ExecutionFailure() as failure:
-                        return failure.reason
-                    case _:
-                        return None
-                    
-                # return self._results.get(node_ref, None)
+            case Qt.ItemDataRole.BackgroundRole:
+                if op:=node_ref.get_operator():
+                    return QColor(128,128,128,255)
+                else:
+                    return QColor.red()
+
+            case self.ExecutionRole:
+                if node_name in self._executions:
+                    match self._executions.get(node_name):
+                        case rt.ExecutionPending():
+                            return None
+                        case rt.ExecutionRunning():
+                            return None
+                        case rt.ExecutionSuccess() as success:
+                            return success.result
+                        case rt.ExecutionFailure() as failure:
+                            return failure.reason
+                        case _:
+                            return None
+                else:
+                    warnings.warn(f"No execution result for node: '{node_name}'")
+                    return None
             
             case _:
                 return None
 
-    def removeNodes(self, nodes:Iterable[NodeName]):
-        self._beginRemoveNodes(nodes)
-        for node_name in list(nodes):
-            node_ref = self.getNode(node_name)
-            assert node_ref is not None, f"Node '{node_name}' not found"
+    @override
+    def inlets(self, node:NodeName)->Iterable[InletName]:
+        if node_ref := self.mapToSource(node):
+            inlets, _ = self.__node_inlets(node_ref)
+            yield from inlets
 
-            self._graph._delete_node(node_ref)
-            self._positions.pop(node_name, None)
-        self._endRemoveNodes()
-
-    # ports
-    def _node_inlets(self, node_ref: rt.NodeRef):
+    def __node_inlets(self, node_ref: rt.NodeRef):
         """Return declared inlets and actual bindings, including invalid extras."""
         op = node_ref.get_operator()
         parameters = list(op.get_parameters()) if op is not None else []
@@ -227,12 +223,6 @@ class PyFlowRTModel(AbstractDAGModel):
         bindings.extend(kwargs.items())
         inlets = list(dict.fromkeys([*parameters, *(name for name, _ in bindings)]))
         return inlets, bindings
-
-    @override
-    def inlets(self, node:NodeName)->Iterable[InletName]:
-        if node_ref := self.getNode(node):
-            inlets, _ = self._node_inlets(node_ref)
-            yield from inlets
 
     @override
     def outlets(self, node:NodeName)->Iterable[OutletName]:
@@ -255,17 +245,18 @@ class PyFlowRTModel(AbstractDAGModel):
     def nodeCellData(self, node_name: NodeName, cell: CellIdx, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         return None
 
-    # links
-    def _node_input_links(self, node_ref: rt.NodeRef)->Iterable[DirectionalLinkId]:
-        _, bindings = self._node_inlets(node_ref)
-        for inlet, value in bindings:
-            if isinstance(value, rt.NodeRef):
-                yield value.get_name(), 'out', node_ref.get_name(), inlet
+    @override
+    def nodePosition(self, node_name:NodeName)->QPointF:
+        if node_name in self._positions:
+            x, y = self._positions[node_name]
+            return QPointF(x, y)
+        else:
+            return QPointF(0.0, 0.0)
 
     @override
     def inLinks(self, node_name:NodeName, inlet_name:InletName)->Iterable[DirectionalLinkId]:
-        if node_ref := self.getNode(node_name):
-            for link in self._node_input_links(node_ref):
+        if node_ref := self.mapToSource(node_name):
+            for link in self.__node_input_links(node_ref):
                 if link[3] == inlet_name:
                     yield link
 
@@ -281,7 +272,7 @@ class PyFlowRTModel(AbstractDAGModel):
     @override
     def links(self)->Iterable[DirectionalLinkId]:
         for node_ref in self._graph.nodes():
-            yield from self._node_input_links(node_ref)
+            yield from self.__node_input_links(node_ref)
 
     @override
     def linkSource(self, link:DirectionalLinkId) -> tuple[NodeName|OutletName]|None:
@@ -293,12 +284,40 @@ class PyFlowRTModel(AbstractDAGModel):
         source, outlet, target, inlet = link
         return target, inlet
 
+    def __node_input_links(self, node_ref: rt.NodeRef)->Iterable[DirectionalLinkId]:
+        _, bindings = self.__node_inlets(node_ref)
+        for inlet, value in bindings:
+            if isinstance(value, rt.NodeRef):
+                yield value.get_name(), 'out', node_ref.get_name(), inlet
+
+    # - WRITES
+    @override
+    def setNodePosition(self, node_name:NodeName, position:QPointF|None):
+        if position:
+            self._positions[node_name] = (position.x(), position.y())
+        else:
+            del self._positions[node_name]
+
+    # @override
+    # def setNodeData(self, node: NodeName, role: int, value: Any) -> bool:
+    #     node_ref = self.mapToSource(node)
+    #     if node_ref is None:
+    #         return False
+    #     match role:
+    #         case self.ResultsRole:
+    #             self._results[node_ref] = value
+    #             self.nodeDataChanged.emit((node,), tuple([role]))
+    #             return True
+    #         case _:
+    #             return False
+
+    # - MUTATIONS
     @override
     def removeLinks(self, links:Iterable[DirectionalLinkId])->bool:
         self._beginRemoveLinks(links)
         for link in list(links):
             source, outlet, target, inlet = link
-            target_rt:rt.NodeRef = self.getNode(target)
+            target_rt:rt.NodeRef = self.mapToSource(target)
             args, kwargs = target_rt.get_inputs()
             op = target_rt.get_operator()
             inlets = op.get_parameters().keys()
@@ -325,10 +344,20 @@ class PyFlowRTModel(AbstractDAGModel):
         self._endRemoveLinks() # todo: check if QAbstractItemModel return values for these kind of methods
         return True
 
+    def removeNodes(self, nodes:Iterable[NodeName]):
+        self._beginRemoveNodes(nodes)
+        for node_name in list(nodes):
+            node_ref = self.mapToSource(node_name)
+            assert node_ref is not None, f"Node '{node_name}' not found"
+
+            self._graph._delete_node(node_ref)
+            self._positions.pop(node_name, None)
+        self._endRemoveNodes()
+
     def addLink(self, source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName)->None:
         self._beginAddLinks([(source, outlet, target, inlet)])
-        target_ref = self.getNode(target)
-        source_ref = self.getNode(source)
+        target_ref = self.mapToSource(target)
+        source_ref = self.mapToSource(source)
         assert target_ref is not None, f"Target node '{target}' not found"
         assert source_ref is not None, f"Source node '{source}' not found"
         args, kwargs = target_ref.get_inputs()
@@ -352,15 +381,15 @@ class PyFlowRTModel(AbstractDAGModel):
         print(f"Updated inputs for target node '{target}': args={new_args}, kwargs={new_kwargs}")
         self._endAddLinks()
 
-    def addNode(self, operator:rt.OperatorRef, position:QPointF|None=None)->bool:
+    def addNode(self, operator:rt.AbstractOperator, position:QPointF|None=None)->bool:
         """
         position: QPointF|None, in scene coordinates"""
-        assert isinstance(operator, rt.OperatorRef), f"operator must be an instance of OperatorRef, got: {operator}"
-        new_node_name = operator.name
+        assert isinstance(operator, rt.AbstractOperator), f"operator must be an instance of AbstractOperator, got: {operator}"
+        new_node_name = operator.get_name()
         node_names = [ref.get_name() for ref in self._graph.nodes()]
         unique_name = UniqueNameGenerator(existing_names=node_names)(new_node_name)
         self._beginAddNodes([unique_name])
-        new_node_ref = self._graph.node()(operator, name=unique_name)
+        new_node_ref = self._graph._create_node(operator, name=unique_name)
         if position:
             self._positions[new_node_ref.get_name()] = position.x(), position.y()
         self._endAddNodes()

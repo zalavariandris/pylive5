@@ -1,10 +1,11 @@
 from pygraphrt import (
     AbstractModule,
-    OperatorRef,
     GraphDefinitionRT,
     ImportModuleRT,
     ScriptModuleRT
 )
+from pygraphrt.abstract_operator import AbstractOperator
+from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, QObject, Qt
 
 import pygraphrt as rt
@@ -13,12 +14,10 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
     """One-column tree reading modules and operators from a graph runtime.
 
     Module indexes have internal ID zero. Operator indexes store their parent
-    module's row plus one. Mapping helpers are conveniences for callers; Qt
-    overrides do not depend on them.
+    module's row plus one. Mapping helpers translate between these indexes and
+    the registered modules and operators.
     """
 
-    ModuleRole = int(Qt.ItemDataRole.UserRole) + 1
-    OperatorRole = int(Qt.ItemDataRole.UserRole) + 2
     SourceRole = int(Qt.ItemDataRole.UserRole) + 4
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -80,47 +79,84 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
     def data(
         self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole
     ) -> object | None:
-        if self._registry is None or not index.isValid():
-            return None
-        if index.model() is not self or index.column() != 0:
+        item:AbstractModule | AbstractOperator | None = self.mapToSource(index)
+        if item is None:
             return None
 
-        modules = self._registry.modules()
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
+            match item:
+                case ImportModuleRT() as im:
+                    return im.get_display_name()
+                case ScriptModuleRT() as sm:
+                    return sm.get_display_name()
+                case ScriptOperatorRef() as operator:
+                    return operator.get_name()
+                case _:
+                    assert False, f"Unexpected item type in modules and operators tree: {item}"
+        
+        if role == self.SourceRole and isinstance(item, ScriptModuleRT):
+            return item.get_source()
+        
+        return None
+
+    def mapToSource(
+        self, index: QModelIndex
+    ) -> AbstractModule | AbstractOperator | None:
+        if self._registry is None:
+            return None
+
+        if not index.isValid():
+            return None
+        
+        if index.model() is not self:
+            return None
+
+        if index.column() != 0:
+            return None
+
+        modules = list(self._registry.modules())
         module_id = index.internalId()
         module_row = index.row() if module_id == 0 else module_id - 1
         if not 0 <= module_row < len(modules):
             return None
 
-        item: AbstractModule | OperatorRef = modules[module_row]
-        if module_id != 0:
-            operators = list(item.operators())
-            if not 0 <= index.row() < len(operators):
-                return None
-            item = operators[index.row()]
+        module = modules[module_row]
+        if module_id == 0:
+            return module
 
-        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            match item:
-                case AbstractModule():
-                    return item.get_display_name()
-                case OperatorRef():
-                    return item.get_name()
-                case _:
-                    return None
-        if role == self.ModuleRole and isinstance(item, AbstractModule):
-            return item
-        if role == self.OperatorRole and isinstance(item, OperatorRef):
-            return item
-        if role == self.SourceRole and isinstance(item, ScriptModuleRT):
-            return item.get_source()
-        return None
+        operators = list(module.operators())
+        if not 0 <= index.row() < len(operators):
+            return None
+        return operators[index.row()]
+
+    def mapFromSource(
+        self, source: AbstractModule | AbstractOperator | None
+    ) -> QModelIndex:
+        if self._registry is None:
+            return QModelIndex()
+
+        if not isinstance(source, (AbstractModule, AbstractOperator)):
+            return QModelIndex()
+
+        for module_row, module in enumerate(self._registry.modules()):
+            module_index = self.index(module_row, 0)
+            if source is module:
+                return module_index
+
+            if isinstance(source, AbstractOperator):
+                for operator_row, operator in enumerate(module.operators()):
+                    if operator == source:
+                        return self.index(operator_row, 0, module_index)
+
+        return QModelIndex()
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
-        if (
-            self.data(index, self.ModuleRole) is None
-            and self.data(index, self.OperatorRole) is None
-        ):
-            return Qt.ItemFlag.NoItemFlags
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        item = self.mapToSource(index)
+        match item:
+            case AbstractModule() | AbstractOperator():
+                return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            case _:
+                return Qt.ItemFlag.NoItemFlags
 
     def headerData(
         self,
@@ -145,7 +181,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         if role != self.SourceRole or not isinstance(value, str):
             return False
 
-        module = self.data(index, self.ModuleRole)
+        module = self.mapToSource(index)
         if not isinstance(module, ScriptModuleRT):
             return False
 
@@ -164,7 +200,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         if self._registry is None:
             return False
 
-        module = self.data(index, self.ModuleRole)
+        module = self.mapToSource(index)
         if not isinstance(module, ImportModuleRT):
             return False
 
@@ -174,33 +210,4 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         self.endRemoveRows()
         return True
 
-    def mapToSource(
-        self, index: QModelIndex
-    ) -> AbstractModule | OperatorRef | None:
-        item = self.data(index, self.ModuleRole)
-        if item is None:
-            item = self.data(index, self.OperatorRole)
-        return item if isinstance(item, (AbstractModule, OperatorRef)) else None
 
-    def mapFromSource(
-        self, source: AbstractModule | OperatorRef
-    ) -> QModelIndex:
-        if self._registry is None:
-            return QModelIndex()
-
-        module = source.module if isinstance(source, OperatorRef) else source
-        try:
-            module_row = self._registry.modules().index(module)
-        except ValueError:
-            return QModelIndex()
-
-        module_index = self.index(module_row, 0)
-        if isinstance(source, AbstractModule):
-            return module_index
-
-        try:
-            operator_row = list(module.operators()).index(source)
-        except ValueError:
-            return QModelIndex()
-
-        return self.index(operator_row, 0, module_index)

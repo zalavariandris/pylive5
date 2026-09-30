@@ -152,7 +152,7 @@ class DirectionalGraphView5(QFrame):
                 (model.modelReset,
                     self._on_model_reset),
 
-                (model.nodeDataChanged, self._on_node_presentation_changed),
+                (model.nodesDataChanged, self._on_node_presentation_changed),
                 (model.inletsChanged, self._on_node_presentation_changed),
                 (model.outletsChanged, self._on_node_presentation_changed),
 

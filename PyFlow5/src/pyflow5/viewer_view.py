@@ -6,14 +6,10 @@ from typing import TYPE_CHECKING
 
 
 from pyflow5.pygraphrt_model import PyFlowRTModel
-from pygraphrt.errors import GraphExecutionError
-from pygraphrt.graph_executor import ExecutionFailure, ExecutionSuccess, NodeExecution
+
+from pygraphrt.graph_executor import ExecutionFailure, ExecutionSuccess
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import (
-    QAbstractItemModel,
-    QObject,
-    QPoint,
-    QPointF,
     Qt,
     Signal,
     Slot
@@ -40,7 +36,7 @@ class Viewer(QWidget):
         viewer_header = QHBoxLayout()
         viewer_header.addWidget(QLabel("Viewer", self))
         viewer_header.addStretch()
-        self._viewer_lock_switch = QCheckBox("Lock", self)
+        self._viewer_lock_switch = QCheckBox("-node-", self)
         self._viewer_lock_switch.setToolTip("Keep viewing this output when the selection changes.")
         self._viewer_lock_switch.setChecked(False)
         self._viewer_lock_switch.toggled.connect(lambda checked: None)
@@ -60,7 +56,7 @@ class Viewer(QWidget):
         if self._current_nodename is None:
             self._display_widget.clear()
         else:
-            data = self._model.nodeData(self._current_nodename, self._model.ResultsRole) if self._model else None
+            data = self._model.nodeData(self._current_nodename, self._model.ExecutionRole) if self._model else None
             self._display_widget.display(data)
 
     def model(self):
@@ -77,9 +73,11 @@ class Viewer(QWidget):
             # Connect new model signals
             self._model_connections = [
                 (model.modelReset, self._on_model_reset),
-                (model.nodeDataChanged, self._on_node_data_changed),
+                (model.nodesDataChanged, self._on_node_data_changed),
                 (model.nodesRemoved, self._on_nodes_removed)
             ]
+            for signal, slot in self._model_connections:
+                signal.connect(slot)
         
         self._model = model
         self.setCurrentNodeName(None)
@@ -87,39 +85,26 @@ class Viewer(QWidget):
     def currentNodeName(self):
         return self._current_nodename
 
-    def setCurrentNodeName(self, node_name:NodeName|None):
+    def setCurrentNodeName(self, node_name:NodeName|None)->bool:
         assert node_name is None or isinstance(node_name, str)
+        if self._viewer_lock_switch.isChecked():
+            print("- Lock is checked, cant set current node")
+            # todo: i dont ike this api design.
+            # either the Viewer should listen to the selection model directly, or
+            # create a wrapper reusable widget with eg a breadcrump, that 
+            # has controls to update on selection or not. This would be useful 
+            # in other widgets detail-views as well.
+            return
+
         self._current_nodename = node_name
-        if self._watcher:
-            self._watcher.stop()
-            self._watcher = None
-
-        if self._model and self._current_nodename is not None:
-            node_ref = self._model.getNode(self._current_nodename)
-            self._watcher = rt.watch(
-                self._model._graph, 
-                node_ref, 
-                self._on_watch_triggered
-            )
-
-        self._on_watch_triggered()
         self._update_display()
-
-    def _on_watch_triggered(self):
-        try:
-            node_ref = self._model.getNode(self._current_nodename)
-            if node_ref is not None:
-                result = self._model._executor.execute(node_ref)
-                self._model.setNodeData(self._current_nodename, self._model.ResultsRole, result)
-
-        except GraphExecutionError as err:
-            traceback.print_exc()
-            self._model.setNodeData(self._current_nodename, self._model.ResultsRole, err)
+        return True
 
     def _on_model_reset(self):
         self.setCurrentNodeName(None)
 
     def _on_node_data_changed(self, nodes, roles):
+        print(f"Viewer->_on_node_data_changed {{nodes={nodes}, roles={roles}}}")
         if self._current_nodename in nodes:
             self._update_display()
 
@@ -128,13 +113,32 @@ class Viewer(QWidget):
             self.setCurrentNodeName(None)
 
     def _update_display(self):
+        print(f"Viewer->_update_display {{current_nodename={self._current_nodename}}}")
         if self._current_nodename is None:
+            self._viewer_lock_switch.setText("-no node selected-")
             self._display_widget.clear()
+            return
+        
         if self._model is None: 
+            self._viewer_lock_switch.setText("! no model !")
             self._display_widget.clear()
+            return
 
-        data = self._model.nodeData(self._current_nodename, self._model.ResultsRole)
-        self._display_widget.display(data)
+        result = self._model.nodeData(self._current_nodename, self._model.ExecutionRole)
+        self._viewer_lock_switch.setText(f"{self._current_nodename}")
+        self._display_widget.display(result)
+        # match result:
+        #     case ExecutionFailure() as failure:
+        #         self._display_widget.display(failure.reason)
+        #     case ExecutionSuccess() as success:
+        #         self._display_widget.display(success.result)
+        #     case None:
+        #         self._display_widget.display("Node has not been executed yet.")
+        #     case _:
+        #         self._display_widget.clear()
+        #         assert False, f"Unexpected execution state got: {execution}"
+                
+        # self._display_widget.display(execution)
         # match data:
         #     case Exception():
         #         self._display_widget.display(data)

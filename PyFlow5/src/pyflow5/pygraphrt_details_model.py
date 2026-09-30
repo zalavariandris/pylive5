@@ -37,7 +37,7 @@ class GraphDetailsModel(QAbstractListModel):
         self._node:NodeName | None = None
         self._rows: list[_Input] = []
         self._description:str = ""
-        graph_model.nodeDataChanged.connect(self._on_nodes_changed)
+        graph_model.nodesDataChanged.connect(self._on_nodes_changed)
         graph_model.nodesAboutToBeRemoved.connect(self._on_nodes_removed)
         graph_model.modelAboutToBeReset.connect(self._clear)
         graph_model.modelReset.connect(self._clear)
@@ -46,13 +46,13 @@ class GraphDetailsModel(QAbstractListModel):
         return self._node
 
     def setNode(self, node:NodeName|None)->None:
-        if node is not None and self._graph_model.getNode(node) is None:
+        if node is not None and self._graph_model.mapToSource(node) is None:
             node = None
         if node == self._node:
             return
         self.beginResetModel()
         self._node = node
-        self._rows, self._description = self._read_node()
+        self._rows, self._description = self.__read_node()
         self.endResetModel()
         self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, 0)
 
@@ -66,10 +66,10 @@ class GraphDetailsModel(QAbstractListModel):
     def _on_nodes_changed(self, nodes:list[NodeName], roles:list[int])->None:
         if self._node is None or self._node not in nodes:
             return
-        if self._graph_model.getNode(self._node) is None:
+        if self._graph_model.mapToSource(self._node) is None:
             self.setNode(None)
             return
-        rows, description = self._read_node()
+        rows, description = self.__read_node()
         self._description = description
         if [row.key for row in rows] != [row.key for row in self._rows]:
             self.beginResetModel()
@@ -81,7 +81,7 @@ class GraphDetailsModel(QAbstractListModel):
                 self.dataChanged.emit(self.index(0), self.index(len(rows) - 1), [])
         self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, 0)
 
-    def _read_node(self):
+    def __read_node(self):
         """Read the current node and return its input rows and description.
 
         Returns:
@@ -89,66 +89,65 @@ class GraphDetailsModel(QAbstractListModel):
         """
         if self._node is None:
             return [], ""
-        node = self._graph_model.getNode(self._node)
-        operator = node.get_operator()
+        node = self._graph_model.mapToSource(self._node)
+        
+        input_rows:list[_Input] = []
+        description: str = "- No operator -"
+        if operator := node.get_operator():
+            description = f"{operator}"
 
-        description = (
-            f"{operator.module.get_display_name()}.{operator.name}"
-            if operator is not None else "No operator"
-        )
-  
-        parameters = operator.get_parameters()
-        names = list(parameters)
-        args, kwargs = node.get_inputs()
-        rows = []
+            parameters = operator.get_parameters()
+            names = list(parameters)
+            args, kwargs = node.get_inputs()
+            
 
-        for position, (name, parameter) in enumerate(parameters.items()):
-            default = parameter.default
-            if default is ParameterData._empty:
-                default = UNSET
-            annotation = parameter.annotation
-            if annotation is ParameterData._empty:
-                annotation = None
-            if position < len(args):
-                value, binding = args[position], "literal"
-            elif name in kwargs:
-                value, binding = kwargs[name], "literal"
-            elif default is not UNSET:
-                value, binding = default, "default"
-            else:
-                value, binding = UNSET, "missing"
-            row = _Input(("parameter", name), name, value, annotation, default, binding)
-            if binding == "missing":
-                row.error = "Required input is not bound."
-            if position < len(args) and name in kwargs:
-                row.error = "Input is bound both positionally and by keyword."
-            rows.append(row)
+            for position, (name, parameter) in enumerate(parameters.items()):
+                default = parameter.default
+                if default is ParameterData._empty:
+                    default = UNSET
+                annotation = parameter.annotation
+                if annotation is ParameterData._empty:
+                    annotation = None
+                if position < len(args):
+                    value, binding = args[position], "literal"
+                elif name in kwargs:
+                    value, binding = kwargs[name], "literal"
+                elif default is not UNSET:
+                    value, binding = default, "default"
+                else:
+                    value, binding = UNSET, "missing"
+                row = _Input(("parameter", name), name, value, annotation, default, binding)
+                if binding == "missing":
+                    row.error = "Required input is not bound."
+                if position < len(args) and name in kwargs:
+                    row.error = "Input is bound both positionally and by keyword."
+                input_rows.append(row)
 
-        # Retain malformed bindings after live signature changes.
-        for position in range(len(names), len(args)):
-            rows.append(_Input(
-                ("argument", position), f"Argument {position + 1}", args[position],
-                binding="literal", error="No matching parameter.",
-            ))
-        for name, value in kwargs.items():
-            duplicate = name in names and names.index(name) < len(args)
-            if name not in parameters or duplicate:
-                rows.append(_Input(
-                    ("keyword", name), f"{name} (keyword)" if duplicate else name,
-                    value, binding="literal",
-                    error="Duplicate keyword binding." if duplicate else "No matching parameter.",
+            # Retain malformed bindings after live signature changes.
+            for position in range(len(names), len(args)):
+                input_rows.append(_Input(
+                    ("argument", position), f"Argument {position + 1}", args[position],
+                    binding="literal", error="No matching parameter.",
                 ))
+            for name, value in kwargs.items():
+                duplicate = name in names and names.index(name) < len(args)
+                if name not in parameters or duplicate:
+                    input_rows.append(_Input(
+                        ("keyword", name), f"{name} (keyword)" if duplicate else name,
+                        value, binding="literal",
+                        error="Duplicate keyword binding." if duplicate else "No matching parameter.",
+                    ))
 
-        for row in rows:
-            if isinstance(row.value, NodeRef):
-                row.binding = "connection"
-                row.connection = (row.value.get_name(), "out")
-                row.value = UNSET
-                if self._graph_model.getNode(row.connection[0]) is None:
-                    row.error = "Connected node is missing."
-            elif row.annotation is None and row.value is not UNSET:
-                row.annotation = type(row.value)
-        return rows, description
+            for row in input_rows:
+                if isinstance(row.value, NodeRef):
+                    row.binding = "connection"
+                    row.connection = (row.value.get_name(), "out")
+                    row.value = UNSET
+                    if self._graph_model.mapToSource(row.connection[0]) is None:
+                        row.error = "Connected node is missing."
+                elif row.annotation is None and row.value is not UNSET:
+                    row.annotation = type(row.value)
+        return input_rows, description
 
     def rowCount(self, parent=QModelIndex()):
         return 0 if parent.isValid() else len(self._rows)
@@ -191,7 +190,7 @@ class GraphDetailsModel(QAbstractListModel):
     def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
         if role != Qt.ItemDataRole.EditRole or not self.flags(index) & Qt.ItemFlag.ItemIsEditable:
             return False
-        node = self._graph_model.getNode(self._node)
+        node = self._graph_model.mapToSource(self._node)
         if node is None:
             return False
         row = self._rows[index.row()]

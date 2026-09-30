@@ -17,7 +17,6 @@ from .pygraphrt_details_model import GraphDetailsModel
 from .pygraphrt_model import PyFlowRTModel
 
 
-
 class PyFlowDocument(QObject):
     def __init__(self, parent:QObject|None=None):
         super().__init__(parent=parent)
@@ -25,7 +24,8 @@ class PyFlowDocument(QObject):
         self._graph = rt.GraphDefinitionRT()
         self._executor = rt.GraphExecutorRT(self._graph)
         self._module_registry = rt.ModuleRegistry()
-        local_module = rt.ScriptModuleRT(name="<local>")
+        self._invalidator = rt.GraphInvalidator(self._graph, self._module_registry)
+        local_module = rt.ScriptModuleRT(name="_local_")
         local_module.set_script(dedent("""\
         def the_name():
             return "Mása"
@@ -37,11 +37,14 @@ class PyFlowDocument(QObject):
             return "Hello!"
         """)) 
         self._module_registry.add_module(local_module)
-        self._resolver = rt.GraphResolver(self._graph, self._module_registry)
 
         # Models
-        self.graph_model = PyFlowRTModel(self._graph, self._executor, self._resolver)
-
+        self.graph_model = PyFlowRTModel(
+            self._graph, 
+            self._module_registry, 
+            self._invalidator,
+            self._executor
+        )
 
         self.modules_model = ModulesOperatorsTreeModel(parent=self)
         self.modules_model.setRegistry(self._module_registry)
@@ -102,7 +105,7 @@ class PyFlowDocument(QObject):
     def reset_graph(self):
         """Recover the model/view while preserving the current runtime and script."""
         # self.setOutputNode(None)
-        self.graph_model.reset()
+        self.graph_model.reset_graph_from_scratch()
         # self.setOutputLocked(False)
 
     # def _sync_output_to_selection(self, *args):

@@ -183,7 +183,7 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     
     qtbot.wait(WAIT_TIME_MS)
 
-    assert isinstance(document.graph_model.nodeData("helloworld", role=PyFlowRTModel.ResultsRole), ExecutionFailure)
+    assert isinstance(document.graph_model.nodeData("helloworld", role=PyFlowRTModel.ExecutionRole), ExecutionFailure)
     qtbot.wait(WAIT_TIME_MS)
     return
     model = document.modules_model
@@ -198,7 +198,7 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     assert operators["the_greeting"]() == "Hey"
     assert operators["helloworld"]("Mása") == "Hello Mása!"
     assert operators["helloworld"]("Mása", "Hey") == "Hey Mása!"
-    assert document.graph_model.getNode("helloworld") == node
+    assert document.graph_model.mapToSource("helloworld") == node
 
     # Add the_name through the operator picker.
     operator_name = "the_name"
