@@ -1,4 +1,22 @@
 # TODO
+
+## Execution lifecycle and future async support
+
+Keep execution synchronous for now, but let the UI consume signals so it can support background execution later.
+
+- [ ] Add a `GraphExecution` report containing an evaluation ID, the requested root, and each relevant node's final state. Publish a fresh snapshot for every evaluation and return the same report from `execute()`.
+- [ ] Assign an evaluation ID before publishing any state updates. Use it to associate notifications with a run and reject obsolete results after graph edits.
+- [ ] Add `evaluation_started(evaluation_id, root)`, `node_execution_changed(evaluation_id, state)`, and `graph_executed(report)` signals. Replace the existing `executed` signal and update its consumers.
+- [ ] Publish pending states before evaluation, running states immediately before operator calls, and terminal states as nodes finish. Cache hits go directly to success; unavailable dependencies produce blocked states while independent branches continue.
+- [ ] Expose the complete `NodeExecution` through `PyFlowRTModel.ExecutionRole`. Export `ExecutionBlocked` from the runtime package and update the viewer and node appearance to distinguish all states.
+- [ ] Include optional `duration_seconds` on success and failure states. Define cache-hit metadata separately; use `None` for unmeasured durations and make `profile=False` actually disable measurement.
+- [ ] Add optional queue/start timestamps when pending and running states become visible. Use a monotonic clock for elapsed time; compute a running duration in the UI rather than repeatedly replacing the state.
+- [ ] Add a future `submit(root) -> UUID` entry point that schedules background execution and returns immediately, using the same notifications and report contract as synchronous execution.
+- [ ] Deliver worker notifications to the model on the UI thread through queued connections so views remain responsive during operator execution.
+- [ ] Evaluate a stable graph/operator snapshot or coordinate edits with active execution. Define cache synchronization and an overlap policy before allowing concurrent evaluations.
+- [ ] Define completion reporting for preparation errors, unexpected executor errors, and future cancellation so the UI cannot remain stuck in a running state. Preserve the distinction between operator failure and an executor/API error.
+- [ ] Test notification order, evaluation IDs, exactly one completion report, cached and blocked states, independent branches, profiling, and rejection of obsolete updates. Add UI-thread delivery tests when background execution is introduced.
+
 ## ExampleApps
 - [ ] Image Grade
   - [ ] node graph, with image operators: 

@@ -182,8 +182,8 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
         """))
     
     qtbot.wait(WAIT_TIME_MS)
-
-    assert isinstance(document.graph_model.nodeData("helloworld", role=PyFlowRTModel.ExecutionRole), ExecutionFailure)
+    current_excecution_data = document.graph_model.nodeData("helloworld", role=PyFlowRTModel.ExecutionRole)
+    assert isinstance(current_excecution_data, Exception), f"Expected an Exception, got: {current_excecution_data}"
     qtbot.wait(WAIT_TIME_MS)
     return
     model = document.modules_model

@@ -6,8 +6,7 @@ from .graph_definition_rt import (
 from .graph_executor import (
     GraphExecutorRT,
     NodeExecution,
-    ExecutionPending,
-    ExecutionRunning,
+    ExecutionBlocked,
     ExecutionSuccess,
     ExecutionFailure
 )

@@ -91,56 +91,6 @@ class PyFlowRTModel(AbstractDAGModel):
         self._refresh_module_subscriptions()
         self._endResetModel()
 
-    # def __connect_runtime(self):
-    #     self._graph.nodes_added.connect(self._refresh_module_subscriptions)
-    #     self._graph.nodes_removed.connect(self._refresh_module_subscriptions)
-    #     self._graph.nodes_changed.connect(self._on_runtime_nodes_changed)
-    #     self._refresh_module_subscriptions()
-
-    # def _disconnect_runtime(self):
-    #     self._graph.nodes_added.disconnect(self._refresh_module_subscriptions)
-    #     self._graph.nodes_removed.disconnect(self._refresh_module_subscriptions)
-    #     self._graph.nodes_changed.disconnect(self._on_runtime_nodes_changed)
-    #     for module in self._observed_modules:
-    #         self._disconnect_module(module)
-    #     self._observed_modules.clear()
-
-    # def _disconnect_module(self, module):
-    #     for signal in (module.operators_added, module.operators_removed,
-    #                    module.operators_changed):
-    #         signal.disconnect(self._on_operators_changed)
-
-    # @Slot(list)
-    # def _on_runtime_nodes_changed(self, nodes: list[rt.NodeRef]):
-    #     self._refresh_module_subscriptions()
-    #     self._notify_node_presentation([node.get_name() for node in nodes], [])
-
-    # @Slot(list)
-    # def _on_operators_changed(self, operators):
-    #     changed = set(operators)
-    #     self._notify_node_presentation([
-    #         node.get_name() for node in self._graph.nodes()
-    #         if node.get_operator() in changed
-    #     ], [])
-
-    # @Slot(list)
-    # def _refresh_module_subscriptions(self, nodes=None):
-    #     modules = {ref.get_module() for node in self._graph.nodes()
-    #                if (ref := node.get_operator()) is not None}
-    #     for module in self._observed_modules - modules:
-    #         self._disconnect_module(module)
-    #     for module in modules - self._observed_modules:
-    #         for signal in (module.operators_added, module.operators_removed,
-    #                        module.operators_changed):
-    #             signal.connect(self._on_operators_changed)
-    #     self._observed_modules = modules
-
-    # def _notify_node_presentation(self, names, roles):
-    #     if names:
-    #         self.nodeDataChanged.emit(tuple(names), tuple(roles))
-    #         for name in names:
-    #             self.inletsChanged.emit(name)
-
     # = Mapping Source =
     def mapToSource(self, node_name:NodeName)->rt.NodeRef|None:
         # todo: consider caching node references by name for faster lookup
@@ -184,9 +134,7 @@ class PyFlowRTModel(AbstractDAGModel):
             case self.ExecutionRole:
                 if node_name in self._executions:
                     match self._executions.get(node_name):
-                        case rt.ExecutionPending():
-                            return None
-                        case rt.ExecutionRunning():
+                        case rt.ExecutionBlocked():
                             return None
                         case rt.ExecutionSuccess() as success:
                             return success.result

@@ -35,27 +35,42 @@ from .graph_cache import (
 
 @dataclass(frozen=True)
 class ExecutionPending:
+    """Represents node execution state that is pending."""
     node: NodeRef
 
 @dataclass(frozen=True)
 class ExecutionRunning:
+    """Represents node execution state that is currently running."""
     node: NodeRef
 
 @dataclass(frozen=True)
 class ExecutionSuccess:
+    """Represents node execution state that has succeeded."""
     node: NodeRef
     result: Any
+    duration_seconds: float | None = None
 
 @dataclass(frozen=True)
 class ExecutionFailure:
+    """Represents node execution state that has failed
+    due to an error."""
     node: NodeRef
     reason: str|Exception
+    duration_seconds: float | None = None
+
+@dataclass(frozen=True)
+class ExecutionBlocked:
+    """Represents node execution state that is blocked
+    due to unavailable dependencies."""
+    node: NodeRef
+    blocked_by: frozenset[NodeRef]
 
 NodeExecution = (
     ExecutionPending
     | ExecutionRunning
     | ExecutionSuccess
     | ExecutionFailure
+    | ExecutionBlocked
 )
 
 # @dataclass(frozen=True)
@@ -94,42 +109,62 @@ class GraphExecutorRT(QObject):
 
         # execute nodes
         fingerprints = self._cache._build_fingerprints(sorted_ancestors)
-        ancestors_output: dict[NodeRef, Any] = {} # store node output temporary
+        outputs: dict[NodeRef, Any] = {} # store node output temporary
+        exceptions: dict[NodeRef, Exception] = {} # store node execution status temporary
+        blocked: dict[NodeRef, ExecutionBlocked] = {} # store blocked nodes temporary
         for node_ref in sorted_ancestors:
             node_data = self._graph._nodes[node_ref]
-            
-            if entry:=self._cache.lookup(node_ref, fingerprints[node_ref]):
-                ancestors_output[node_ref] = entry.value
-            else:
-                args, kwargs = node_data.get_inputs()
-                
+            args, kwargs = node_data.get_inputs()
 
+            unavailable = frozenset(
+                value
+                for value in (*args, *kwargs.values())
+                if isinstance(value, NodeRef) and value not in outputs
+            )
+
+            if unavailable:
+                blocked[node_ref] = ExecutionBlocked(
+                    node=node_ref,
+                    blocked_by=unavailable,
+                )
+                continue
+
+            if entry:=self._cache.lookup(node_ref, fingerprints[node_ref]):
+                outputs[node_ref] = entry.value
+            else:
                 resolved_args = [
-                    ancestors_output[value] if isinstance(value, NodeRef) else value
+                    outputs[value] if isinstance(value, NodeRef) else value
                     for value in args
                 ]
 
                 resolved_kwargs = {
-                    key: ancestors_output[value] if isinstance(value, NodeRef) else value
+                    key: outputs[value] if isinstance(value, NodeRef) else value
                     for key, value in kwargs.items()
                 }
 
-                with self._profiler.profile(node_ref):
-                    if operator := node_ref.get_operator():
-                        try:
-                            value = operator(*resolved_args, **resolved_kwargs)
-                        except Exception as error:
-                            return ExecutionFailure(node_ref, reason=error)
-                            raise GraphExecutionError(str(error), node_ref) from error
-                    else:
-                        return ExecutionFailure(node_ref, reason="Node cannot be executed because its operator is missing.")
+                try:
+                    operator = node_ref.get_operator()
+                    with self._profiler.profile(node_ref):
+                        output = operator(*resolved_args, **resolved_kwargs)
+                    
+                except Exception as error:
+                    exceptions[node_ref] = error
+                else:
+                    outputs[node_ref] = output
+                    entry = self._cache.save(node_ref, fingerprints[node_ref], outputs.get(node_ref))
 
-                ancestors_output[node_ref] = value
-                entry = self._cache.save(node_ref, fingerprints[node_ref], value)
-
-        self.executed.emit({
-            node_ref: ExecutionSuccess(node_ref, ancestors_output[node_ref]) 
-            for node_ref in ancestors
+        # merge execution results
+        executions: dict[NodeRef, NodeExecution] = dict()
+        executions.update({
+            node_ref: ExecutionSuccess(node_ref, output) 
+            for node_ref, output in outputs.items()
         })
-        return ExecutionSuccess(root, ancestors_output[root]) 
+        executions.update({
+            node_ref: ExecutionFailure(node_ref, error) 
+            for node_ref, error in exceptions.items()
+        })
+        executions.update(blocked)
+
+        self.executed.emit(executions)
+        return executions[root]
 
