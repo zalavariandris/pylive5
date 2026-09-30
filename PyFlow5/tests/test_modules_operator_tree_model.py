@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pygraphrt.abstract_operator import AbstractOperator
 import pytest
 from pytestqt.modeltest import ModelTester
 from pytestqt.qtbot import QtBot
@@ -10,13 +11,14 @@ from myqtx.selection_dialog import SelectionDialog
 from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
 from pyflow5.pyflow5_document import PyFlowDocument
 from pyflow5.pyflow5_window import ModuleDetailsView
-from pygraphrt.abstract_module_rt import OperatorRef
-from pygraphrt.graph_definition_rt import GraphDefinitionRT
+
+import pygraphrt as rt
+
 
 
 @pytest.fixture
 def model(qtbot: QtBot, tmp_path: Path) -> ModulesOperatorsTreeModel:
-    graph = GraphDefinitionRT()
+    graph = rt.GraphDefinitionRT()
     graph.local().set_script("def same() -> int: return 1")
     model = ModulesOperatorsTreeModel()
     model.setGraph(graph)
@@ -66,11 +68,11 @@ def test_mapping_round_trips_and_invalid_indexes(
         for child_row in range(model.rowCount(module_index)):
             operator_index = model.index(child_row, 0, module_index)
             operator = model.mapToSource(operator_index)
-            assert isinstance(operator, OperatorRef)
+            assert isinstance(operator, rt.AbstractOperator)
             assert model.mapFromSource(operator) == operator_index
 
     foreign = ModulesOperatorsTreeModel()
-    foreign.setGraph(GraphDefinitionRT())
+    foreign.setGraph(rt.GraphDefinitionRT())
     for index in [
         QModelIndex(),
         foreign.index(0, 0),

@@ -266,9 +266,6 @@ class GraphDefinitionRT(QObject):
             )
             changed_nodes.append(dependent)
 
-        if changed_nodes:
-            self.nodes_changed.emit(changed_nodes)
-
         # Detach the deleted node from its own input sources.
         for source in self.__input_links(self._nodes[node_ref]):
             del self._out_links[source][node_ref]
@@ -278,6 +275,9 @@ class GraphDefinitionRT(QObject):
 
         # All state is consistent; watchers of the deleted node can stop first.
         self.nodes_removed.emit([node_ref])
+
+        if changed_nodes:
+            self.nodes_changed.emit(changed_nodes)
         
 
     def nodes(self) -> list[NodeRef]:
