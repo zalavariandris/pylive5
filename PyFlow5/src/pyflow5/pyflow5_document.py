@@ -6,6 +6,7 @@ import traceback
 
 from pygraphrt.errors import GraphExecutionError
 from pygraphrt import ScriptModuleRT
+from pygraphrt.graph_serializer import GraphSerializer
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
 
@@ -60,80 +61,6 @@ class PyFlowDocument(QObject):
 
         # self._watcher:rt.Watcher|None = None
 
-    def addNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
-        assert operator_index.isValid(), "Operator index must be valid."
-        assert operator_index.model() is self.modules_model, "Operator index must belong to the modules model."
-        selected_op_ref = operator_index.data(ModulesOperatorsTreeModel.OperatorRole)
-        if selected_op_ref:
-            self.graph_model.addNode(selected_op_ref, scene_pos or QPointF(0, 0))
-
-    def deleteSelectedNodes(self):
-        selected_nodes = self.graphselection_model.selectedNodes()
-        self.graph_model.removeNodes(selected_nodes)
-
-
-    # def setOutputNode(self, node_name: NodeName|None) -> None:
-    #     # assert isinstance(node_name, (NodeName, type(None))), f"Expected NodeName or None, got {type(node_name)}"
-    #     if self._output_node == node_name:
-    #         return
-    #     self._output_node = node_name
-
-    #     if self._watcher:
-    #         self._watcher.stop()
-    #         self._watcher = None
-
-    #     if self._output_node is not None:
-    #         output_node_ref = self.graph_model.getNode(self._output_node)
-    #         self._watcher = rt.watch(self._G, output_node_ref, self._on_watcher_triggered)
-
-    #     self._on_watcher_triggered()
-
-    # def _execute(self):
-    #     try:
-    #         node_ref = self.graph_model.getNode(self._output_node)
-    #         result = self._G.execute(node_ref)
-    #         self.graph_model.setNodeData(self._output_node, self.graph_model.ResultsRole, result)
-
-    #     except GraphExecutionError as err:
-    #         traceback.print_exc()
-    #         self.graph_model.setNodeData(self._output_node, self.graph_model.ResultsRole, err)
-
-    # @Slot()
-    # def _on_watcher_triggered(self):
-    #     self._execute()
-
-    def reset_graph(self):
-        """Recover the model/view while preserving the current runtime and script."""
-        # self.setOutputNode(None)
-        self.graph_model.reset_graph_from_scratch()
-        # self.setOutputLocked(False)
-
-    # def _sync_output_to_selection(self, *args):
-    #     if self._output_locked:
-    #         return
-    #     selection = self.graphselection_model
-    #     selected = selection.selectedNodes()
-    #     current = selection.currentNode()
-    #     if current in selected:
-    #         node = current
-    #     elif len(selected) == 1:
-    #         node = selected[0]
-    #     elif self._output_node is not None and self._output_node in selected:
-    #         node = self._output_node
-    #     else:
-    #         node = None
-    #     self.setOutputNode(node)
-
-    def save(self, file_path: str | Path) -> None:
-        """Save the runtime and node positions as UTF-8 JSON."""
-        data = self._graph.todict()
-        for name, record in data.get("graph", {}).get("nodes", {}).items():
-            position = self.graph_model.nodePosition(name)
-            record["position"] = [position.x(), position.y()]
-
-        text = json.dumps(data, indent=4)
-        Path(file_path).write_text(text, encoding="utf-8")
-
     def open(self, file_path: str | Path) -> None:
         """Load a JSON file, retaining the document and its models."""
         data = json.loads(Path(file_path).read_text(encoding="utf-8"))
@@ -162,6 +89,38 @@ class PyFlowDocument(QObject):
         except Exception as e:
             traceback.print_exc()
             raise e
-            
+
+    def save(self, file_path: str | Path) -> None:
+            """Save the runtime and node positions as UTF-8 JSON."""
+            serializer = GraphSerializer(self._graph)
+            data = serializer.todict()
+    
+            # inject position
+            for name, record in data.get("graph", {}).get("nodes", {}).items():
+                position = self.graph_model.nodePosition(name)
+                record["position"] = [position.x(), position.y()]
+    
+            text = json.dumps(data, indent=4)
+            Path(file_path).write_text(text, encoding="utf-8")
+    
+    
+
+    def addNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
+        assert operator_index.isValid(), "Operator index must be valid."
+        assert operator_index.model() is self.modules_model, "Operator index must belong to the modules model."
+        selected_op_ref = operator_index.data(ModulesOperatorsTreeModel.OperatorRole)
+        if selected_op_ref:
+            self.graph_model.addNode(selected_op_ref, scene_pos or QPointF(0, 0))
+
+    def deleteSelectedNodes(self):
+        selected_nodes = self.graphselection_model.selectedNodes()
+        self.graph_model.removeNodes(selected_nodes)
+
+    def reset_graph(self):
+        """Recover the model/view while preserving the current runtime and script."""
+        # self.setOutputNode(None)
+        self.graph_model.reset_graph_from_scratch()
+        # self.setOutputLocked(False)
+
     def importModule(self, file_path: str) -> None:
         self.modules_model.importModule(file_path)

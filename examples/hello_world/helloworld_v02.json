@@ -1,5 +1,5 @@
 {
-    "version": 1,
+    "version": 2,
     "_local_": "def the_greeting():\n    return \"Hey\"\n\ndef the_name():\n    return \"M\u00e1sa\"\n    \ndef hello(name:str, greeting:str=\"Hello\"):\n    return f\"{greeting} {name}!\"",
     "graph": {
         "nodes": {

@@ -147,7 +147,7 @@ class GraphSerializer:
 
         # frontmatter
         data = {
-            "version": "0.1.2"
+            "version": 3
         }
 
         # modules

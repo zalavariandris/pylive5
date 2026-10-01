@@ -270,6 +270,11 @@ class GraphDefinitionRT(QObject):
         for source in self.__input_links(self._nodes[node_ref]):
             del self._out_links[source][node_ref]
 
+        operator: AbstractOperator | None = (
+            self._operator_to_nodes.parent_of(node_ref)
+        )
+        self._operator_to_nodes.delete(node_ref, operator)
+
         del self._out_links[node_ref]
         del self._nodes[node_ref]
 

@@ -171,10 +171,10 @@ class PyFlow5Window(QMainWindow):
 
         file_menu = QMenu("File", self)
         menubar.addMenu(file_menu)
-        file_menu.addAction("New",     lambda: None)
-        file_menu.addAction("Open Graph",    lambda: self.openGraph())
-        file_menu.addAction("Save Graph",    lambda: self.saveGraph())
-        file_menu.addAction("Save Graph As", lambda: None)
+        file_menu.addAction("New",           lambda: None).setShortcut("Ctrl+N")
+        file_menu.addAction("Open Graph",    lambda: self.openGraph()).setShortcut("Ctrl+O")
+        file_menu.addAction("Save Graph",    lambda: self.saveGraph()).setShortcut("Ctrl+S")
+        file_menu.addAction("Save Graph As", lambda: None).setShortcut("Ctrl+Shift+S")
         file_menu.addSeparator()
         file_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
 
