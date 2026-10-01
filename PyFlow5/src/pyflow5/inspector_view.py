@@ -7,6 +7,8 @@ from qtpy.QtWidgets import (
     QCheckBox, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget,
 )
 
+import myqtx
+from myqtx.color_editor_widget import ColorEdit
 from .inspector_roles import InspectorRole, UNSET
 
 
@@ -21,6 +23,22 @@ class InspectorEditor:
     read: Callable[[], Any]
     write: Callable[[Any], None]
     committed: Any = None
+
+def _color_editor(index:QModelIndex, parent:QWidget|None=None)->InspectorEditor:
+    widget = ColorEdit(parent)
+    color_type = type(index.data(Qt.ItemDataRole.EditRole))
+
+    def write(color):
+        nonlocal color_type
+        color_type = type(color)
+        widget.setColor(color.r, color.g, color.b, color.a)
+
+    return InspectorEditor(
+        widget,
+        lambda: color_type(*widget.color()),
+        write,
+        widget.valueChanged,
+    )
 
 def _text_editor(value_type):
     def create(index, parent):

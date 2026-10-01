@@ -4,11 +4,9 @@ from textwrap import dedent
 from typing import TYPE_CHECKING
 from pyflow5.viewer_view import Viewer
 from pygraphrt.script_module import ScriptOperatorRef
-from qtpy.QtCore import QAbstractItemModel, QItemSelection, QItemSelectionModel, QModelIndex
+from qtpy.QtCore import QAbstractItemModel, QModelIndex
 
 from qtpy.QtCore import (
-    QObject,
-    QPoint,
     QPointF,
     Qt,
     Signal,
@@ -17,231 +15,39 @@ from qtpy.QtCore import (
 
 from qtpy.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QCheckBox,
     QFileDialog,
     QLabel,
     QDialog,
-    QHBoxLayout,
     QListView,
     QMenu,
     QMenuBar,
     QMessageBox,
     QPlainTextEdit, 
     QSplitter,
-    QTableView, 
     QVBoxLayout, 
     QWidget, 
-    QMainWindow, 
-    QAction,
-    QToolBar
+    QMainWindow
 )
 
-from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
-
-if TYPE_CHECKING:
-    from qdageditor5.models.abstract_dag_model import (
-        InletName, 
-        NodeName, 
-        OutletName, 
-        DirectionalLinkId
-    )
-
-from myqtx.color_editor_widget import ColorEdit
+# widgets
 from myqtx.selection_dialog import SelectionDialog
-import myqtx
-
-from QScriptEdit2.script_edit import ScriptEdit2
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
-from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKeywordsCompleter
 
+# models
+from qdageditor5.models.abstract_dag_model import (
+    InletName, 
+    NodeName, 
+    OutletName, 
+    DirectionalLinkId
+)
 from .pyflow5_document import PyFlowDocument
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
 
-
+# views
+from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 from .inspector_view import InspectorEditor, InspectorView
-
-def _color_editor(index:QModelIndex, parent:QWidget=None)->InspectorEditor:
-    widget = ColorEdit(parent)
-    color_type = type(index.data(Qt.ItemDataRole.EditRole))
-
-    def write(color):
-        nonlocal color_type
-        color_type = type(color)
-        widget.setColor(color.r, color.g, color.b, color.a)
-
-    return InspectorEditor(
-        widget,
-        lambda: color_type(*widget.color()),
-        write,
-        widget.valueChanged,
-    )
-
-
-class ModuleDetailsView(QWidget):
-    # consider refactoring this class using a QDataWidgetMapper
-    def __init__(self, parent:QWidget=None):
-        super().__init__(parent=parent)
-        
-        self._model:QAbstractItemModel = None
-        self._model_connections = []
-
-        self._current_index: QModelIndex = QModelIndex()
-
-        # self._code_editor = ScriptEdit2(self)
-        self._title_label = QLabel(self)
-        self._code_editor = ScriptEditAdvanced(
-            completer=None,
-            parent=self
-        )
-        self._code_editor.textChanged.connect(self._on_editor_text_changed)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(self._title_label)
-        layout.addWidget(self._code_editor)
-        self.setLayout(layout)
-
-        self._update_display()
-
-
-    def model(self):
-        return self._model
-
-    def setModel(self, model: QAbstractItemModel|None):
-        if self._model:
-            for signal, slot in self._model_connections:
-                signal.disconnect(slot)
-            self._model_connections.clear()
-
-        if model:
-            self._model_connections = [
-                (model.modelReset,  self._on_model_reset),
-                (model.dataChanged, self._on_data_changed),
-                (model.rowsRemoved, self._on_rows_removed)
-            ]
-        self._model = model
-        self.setCurrentIndex(QModelIndex())
-
-    # def setSelectionModel(self, selection_model: QItemSelectionModel|None):
-    #     prev_current = QModelIndex()
-    #     if self._selection_model:
-    #         for signal, slot in self._selection_connections:
-    #             signal.disconnect(slot)
-    #         self._selection_connections.clear()
-    #         prev_current = self._selection_model.currentIndex()
-
-    #     next_current = QModelIndex()
-    #     if selection_model:
-    #         self._selection_connections = [
-    #             (selection_model.currentChanged, self._on_current_changed),
-    #             (selection_model.selectionChanged, self._on_selection_changed)
-    #         ]
-    #         for signal, slot in self._selection_connections:
-    #             signal.connect(slot)
-    #         next_current = selection_model.currentIndex()
-    #     self._selection_model = selection_model
-    #     self._on_current_changed(next_current, prev_current)
-
-    # def selectionModel(self):
-    #     return self._selection_model
-
-    def _on_editor_text_changed(self):
-        if not self._current_index.isValid():
-            return
-
-        assert self._current_index.model() is self._model
-
-        new_text = self._code_editor.toPlainText()
-        self._model.setData(self._current_index, new_text, ModulesOperatorsTreeModel.SourceRole)
-
-    # def _on_current_changed(self, current: QModelIndex, previous: QModelIndex):
-    #     if self._model is None:
-    #         return
-        
-    #     index = self._selection_model.currentIndex()
-    #     self._show_index(index)
-
-    # def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
-    #     if self._model is None:
-    #         return
-        
-    #     last_selected = selected.indexes()[-1] if selected.indexes() else QModelIndex()
-        
-    #     self._show_index(last_selected)
-    #     return True
-        
-    def setCurrentIndex(self, index: QModelIndex):
-        if index == self._current_index:
-            return
-        
-        if index.model() != self._model:
-            return
-        
-        self._current_index = index
-        self._update_display()
-
-    def _update_display(self):
-        if not self._current_index.isValid():
-            self._title_label.setText("<No Selection>")
-            with myqtx.blockingSignals(self._code_editor):
-                self._code_editor.clear()
-                self._code_editor.setEnabled(False)
-            return
-
-        self._title_label.setText(self._current_index.data(Qt.ItemDataRole.DisplayRole))
-        with myqtx.blockingSignals(self._code_editor):
-            text = self._current_index.data(ModulesOperatorsTreeModel.SourceRole)
-            self._code_editor.setPlainText(text)
-            self._code_editor.setEnabled(True)
-
-    def currentIndex(self) -> QModelIndex:
-        return self._current_index
-
-    @Slot()
-    def _on_model_reset(self):
-        if not self._current_index.isValid():
-            return
-
-        current = self._selection_model.currentIndex()
-        if not current.isValid():
-            return
-        
-        self._title_label.setText(current.data(Qt.ItemDataRole.DisplayRole))
-        with myqtx.blockingSignals(self._code_editor):
-            text = current.data(ModulesOperatorsTreeModel.SourceRole)
-            self._code_editor.setPlainText(text)
-            self._code_editor.setEnabled(True)
-
-    @Slot()
-    def _on_data_changed(self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list[int] = []):
-        if not self._current_index.isValid():
-            return
-
-        current = self._selection_model.currentIndex()
-        if not current.isValid():
-            return
-        
-        if current.parent() == topLeft.parent() and topLeft.row() <= current.row() <= bottomRight.row():
-            self._title_label.setText(current.data(Qt.ItemDataRole.DisplayRole))
-            with myqtx.blockingSignals(self._code_editor):
-                text = current.data(ModulesOperatorsTreeModel.SourceRole)
-                self._code_editor.setPlainText(text)
-                self._code_editor.setEnabled(True)
-    
-    @Slot()
-    def _on_rows_removed(self, parent: QModelIndex, start: int, end: int):
-        if not self._current_index.isValid():
-            return
-
-        current = self._selection_model.currentIndex()
-        if not current.isValid():
-            return
-        
-        if current.parent() == parent and start <= current.row() <= end:
-            self._title_label.setText("<No Selection>")
-            with myqtx.blockingSignals(self._code_editor):
-                self._code_editor.clear()
-                self._code_editor.setEnabled(False)
+from .module_details_view import ModuleDetailsView
 
 
 class PyFlow5Window(QMainWindow):
@@ -503,14 +309,5 @@ class PyFlow5Window(QMainWindow):
                     case _:
                         print(f"Unknown script module state: {state}")
                         self._code_editor._linter.clear()
-
-            case ScriptEdit2():
-                match self._document.scriptmodule().get_state():
-                    case SyntaxError() as e:
-                        self._code_editor.showError(e)
-                    case Exception() as e:
-                        self._code_editor.showError(e)
-                    case "VALID":
-                        self._code_editor.clearError()
-                    case _:
-                        pass
+            case _:
+                assert False, f"Unknown code editor type {self._code_editor}"

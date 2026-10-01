@@ -1,9 +1,17 @@
 # TODO
 
+## fix open and save
+- [ ]
+
+## GraphView
+- a delegate, to draw custom nodes. with potentially custom roles in a custom GraphModel.
+
+## Inspector
+- register InspectorInputs
+
 ## Execution lifecycle and future async support
-
+**Prepare for Async GraphExecutor** (ptobalby after refactoring the even system)
 Keep execution synchronous for now, but let the UI consume signals so it can support background execution later.
-
 - [ ] Add a `GraphExecution` report containing an evaluation ID, the requested root, and each relevant node's final state. Publish a fresh snapshot for every evaluation and return the same report from `execute()`.
 - [ ] Assign an evaluation ID before publishing any state updates. Use it to associate notifications with a run and reject obsolete results after graph edits.
 - [ ] Add `evaluation_started(evaluation_id, root)`, `node_execution_changed(evaluation_id, state)`, and `graph_executed(report)` signals. Replace the existing `executed` signal and update its consumers.
@@ -38,6 +46,7 @@ Keep execution synchronous for now, but let the UI consume signals so it can sup
 - [ ] we somehow need to indicate, when an ImportModule has a path, but the file does not exist.
 
 - [ ] consider addin a rename method to the node_ref. it would probaly change the NodeRef hash. so it might not be a good idea. Unless NodeRefs are used by their objectid under the hood, and not its hash.
+
 **The Book Keeping problem**
 I think the current architecture has a deply routed problem. We call it the *book keeping problem*.
 Collection items, like a node, a link, or an operator and especialy their relationships are sometimes kept in seperate places. we must decide who is the owner not just the object, but the relationshsip as well. Basically we wanna make sure, that there are only on book, the source of truth.

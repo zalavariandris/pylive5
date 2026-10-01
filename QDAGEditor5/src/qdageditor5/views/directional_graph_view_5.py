@@ -29,6 +29,7 @@ from qtpy.QtCore import (
 )
 
 from qtpy.QtGui import (
+    QBrush,
     QColor,
     QCursor,
     QFont,
@@ -38,6 +39,7 @@ from qtpy.QtGui import (
     QMouseEvent,
     QPainterPath,
     QPainterPathStroker,
+    QPalette,
     QPen,
     QPixmap, 
     QTransform,
@@ -55,6 +57,8 @@ from qtpy.QtWidgets import (
     QWidget,
     QAction
 )
+
+from .graph_view_delegate import StyledNodeDelegate
 
 from qdageditor5.utils import geo
 
@@ -102,6 +106,7 @@ def bounding_rect(rects: list[QRectF]) -> QRectF:
     return united_rect
 
 
+
 class DirectionalGraphView5(QFrame):
     requestLink = Signal(str, str, str, str) # source, outlet, target, inlet
     requestNode = Signal(QPointF, object) # scene_pos, tuple[NodeName, OutletName] | None
@@ -115,6 +120,7 @@ class DirectionalGraphView5(QFrame):
         self._model_connections = []
         self._selection_model: GraphSelectionModel | None = None
         self._selection_model_connections = []
+        self._nodes_delegate = StyledNodeDelegate()
         self._hovered_item: _GraphItemId | None = None
 
         self._tool: DraggingNodeToolData | LinkingToolData | RectSelectionToolData | PanAndZoomToolData | None = None
@@ -220,42 +226,26 @@ class DirectionalGraphView5(QFrame):
 
     # nodes delegate
     def _nodeRect(self, node: NodeName)->QRectF:
-        """return rectangle of the node in view coordinates (scaled and moved by pan/zoom)"""
-        center = self._model.nodePosition(node)
-        w, h = 65, 16
-        scene_rect = QRectF(center.x() - w/2, center.y() - h/2, w, h)
-        return scene_rect
+        if self._model is None:
+            return QRectF()
+
+        return self._nodes_delegate.rect(self._model, node)
+
+    def _nodeShape(self, node: NodeName) -> QPainterPath:
+        return self._nodes_delegate.shape(self._model, node)
 
     def _paintNode(self, painter: QPainter, option: QStyleOptionViewItem, node: NodeName|None):
-        palette = self.style().standardPalette()
-        if option.state & QStyle.StateFlag.State_Selected:
-            brush = QColor(0, 120, 215)
-        elif option.state & QStyle.StateFlag.State_MouseOver:
-            brush = palette.highlight()
-        else:
-            brush = palette.base()
+        model = self._model
 
-        scene_rect = self._nodeRect(node)
-
-        if self._model and self._model.nodeData(node, Qt.ItemDataRole.BackgroundRole) is not None:
-            brush = self._model.nodeData(node, Qt.ItemDataRole.BackgroundRole)
-
-        # paint background
-        painter.setPen(QPen(palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
-        painter.setBrush(brush)
-        painter.drawRoundedRect(scene_rect, 5, 5)
-
-        # paint text
-        painter.setPen(palette.text().color())
-        painter.setFont(QFont("Courier", 9))
-        painter.drawText(scene_rect, Qt.AlignmentFlag.AlignCenter, f"{node}")
+        self._nodes_delegate.paint(painter, option, model, node)
 
     # inlets delegate
     def _inletPos(self, node: NodeName, inlet: InletName) -> QPointF:
-        ports = list(self._model.inlets(node))
+        assert self._model is not None
         node_rect = self._nodeRect(node)
         
         # outlet may be stale for a frame if the model just changed
+        ports = list(self._model.inlets(node))
         idx = ports.index(inlet) if inlet in ports else 0
         w, h = 7, 7
         spacing = 10
@@ -287,7 +277,7 @@ class DirectionalGraphView5(QFrame):
         scene_pos = self._inletPos(node, inlet)
         w, h = 7, 7
         scene_rect = QRectF(scene_pos.x() - w/2, scene_pos.y() - h/2, w, h)
-        palette = self.style().standardPalette()
+        palette = option.palette
 
         painter.setPen(Qt.PenStyle.NoPen)
         if option.state & QStyle.StateFlag.State_MouseOver:
@@ -341,7 +331,7 @@ class DirectionalGraphView5(QFrame):
         scene_pos = self._outletPos(node, outlet)
         w, h = 7, 7
         scene_rect = QRectF(scene_pos.x() - w/2, scene_pos.y() - h/2, w, h)
-        palette = self.style().standardPalette()
+        palette:QPalette = option.palette
 
         painter.setPen(Qt.PenStyle.NoPen)
         if option.state & QStyle.StateFlag.State_MouseOver:
@@ -354,7 +344,7 @@ class DirectionalGraphView5(QFrame):
         painter.drawRoundedRect(scene_rect, 5, 5)
         if option.state & QStyle.StateFlag.State_MouseOver:
             painter.setPen(QPen(palette.highlight().color()))
-            text_rect = QFontMetrics(self.font()).boundingRect(f"{outlet}")
+            text_rect = QFontMetrics(option.font).boundingRect(f"{outlet}")
             painter.drawText(scene_rect.bottomLeft()-QPointF(text_rect.topRight()), f"{outlet}")
 
     # links delegate
@@ -380,13 +370,13 @@ class DirectionalGraphView5(QFrame):
             return None
 
     def _paintLink(self, painter: QPainter, option: QStyleOptionViewItem, link:DirectionalLinkId|None):
-        palette = self.style().standardPalette()
+        palette = option.palette
         
         if option.state & QStyle.StateFlag.State_MouseOver:
             painter.setPen(QPen(palette.highlight().color(), 3))
         else:
             painter.setPen(QPen(palette.text().color(), 2))
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
 
         link_path:QPainterPath = self._linkShape(link)
         painter.drawPath(link_path)
@@ -491,7 +481,8 @@ class DirectionalGraphView5(QFrame):
                         return _GraphItemId('outlet', (node, outlet))
                 
             if self._nodeRect(node).contains(scene_pos):
-                return _GraphItemId('node', node)
+                if self._nodeShape(node).contains(scene_pos):
+                    return _GraphItemId('node', node)
             
         for link in self._model.links():
             source, outlet = self._model.linkSource(link)
@@ -570,6 +561,7 @@ class DirectionalGraphView5(QFrame):
             if isinstance(self._tool, LinkingToolData) and link == self._tool._source[1]:
                 continue # skip drawing the link if is being dragged by the tool
             link_option = QStyleOptionViewItem()
+            link_option.initFrom(self)
             link_option.state = QStyle.StateFlag.State_Enabled
             if ('head', link) == self._hovered_item or ('tail', link) == self._hovered_item:
                 link_option.state |= QStyle.StateFlag.State_MouseOver
@@ -581,6 +573,7 @@ class DirectionalGraphView5(QFrame):
             node_rect = self._nodeRect(node)
             if dirty_scene_rect.intersects(node_rect):
                 node_option = QStyleOptionViewItem()
+                node_option.initFrom(self)
                 node_option.state = QStyle.StateFlag.State_Enabled
                 if ('node', node) == self._hovered_item:
                     node_option.state |= QStyle.StateFlag.State_MouseOver
@@ -596,6 +589,7 @@ class DirectionalGraphView5(QFrame):
                 inlet_rect = self._inletRect(node, inlet)
                 if dirty_scene_rect.intersects(inlet_rect):                
                     inlet_option = QStyleOptionViewItem()
+                    inlet_option.initFrom(self)
                     inlet_option.state = QStyle.StateFlag.State_Enabled
                     if ('inlet', (node, inlet)) == self._hovered_item:
                         inlet_option.state |= QStyle.StateFlag.State_MouseOver
@@ -614,6 +608,7 @@ class DirectionalGraphView5(QFrame):
                 outlet_rect = self._outletRect(node, outlet)
                 if dirty_scene_rect.intersects(outlet_rect):
                     outlet_option = QStyleOptionViewItem()
+                    outlet_option.initFrom(self)
                     outlet_option.state = QStyle.StateFlag.State_Enabled
                     if ('outlet', (node, outlet)) == self._hovered_item:
                         outlet_option.state |= QStyle.StateFlag.State_MouseOver

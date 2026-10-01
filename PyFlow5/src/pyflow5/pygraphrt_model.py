@@ -121,9 +121,9 @@ class PyFlowRTModel(AbstractDAGModel):
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 if op:=node_ref.get_operator():
-                    return f"{node_ref.get_name()}({op.get_name()})"
+                    return f"{node_ref.get_name()} ({op.get_name()})"
                 else:
-                    return f"{node_ref.get_name()}(-None-)"
+                    return f"{node_ref.get_name()} (-None-)"
 
             case Qt.ItemDataRole.BackgroundRole:
                 if op:=node_ref.get_operator():

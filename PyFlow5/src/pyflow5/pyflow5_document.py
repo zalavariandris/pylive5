@@ -47,7 +47,7 @@ class PyFlowDocument(QObject):
         )
 
         self.modules_model = ModulesOperatorsTreeModel(parent=self)
-        self.modules_model.setRegistry(self._module_registry)
+        self.modules_model.setSourceRegistry(self._module_registry)
         self.modulesselection_model = QItemSelectionModel(self.modules_model)
 
         self.graphselection_model = GraphSelectionModel(self.graph_model)

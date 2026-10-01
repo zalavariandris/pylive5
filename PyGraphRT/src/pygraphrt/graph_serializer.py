@@ -65,8 +65,6 @@ def _decode_value(value):
     raise ValueError(f"Invalid tagged input: {value!r}")
 
 
-
-
 class GraphSerializer:
     def __init__(self, graph:GraphDefinitionRT, registry:ModuleRegistry, *, base_dir:Path|None=None):
         self._base_dir = base_dir

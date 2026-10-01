@@ -14,7 +14,7 @@ def model() -> ModulesOperatorsTreeModel:
         module.set_script("def same() -> int: return 1\ndef extra() -> int: return 2")
         registry.add_module(module)
     model = ModulesOperatorsTreeModel()
-    model.setRegistry(registry)
+    model.setSourceRegistry(registry)
     return model
 
 
@@ -70,7 +70,7 @@ def test_unknown_and_removed_sources(model: ModulesOperatorsTreeModel) -> None:
 def test_mapping_without_registry(model: ModulesOperatorsTreeModel) -> None:
     index = model.index(0, 0)
     module = model.mapToSource(index)
-    model.setRegistry(None)
+    model.setSourceRegistry(None)
     assert model.mapToSource(index) is None
     assert not model.mapFromSource(module).isValid()
 

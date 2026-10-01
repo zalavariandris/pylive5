@@ -6,6 +6,7 @@ from typing import (
     Iterable
 )
 
+from qdageditor5.models.graph_model_index import GraphModelIndex
 from qtpy.QtCore import (
     QObject, 
     Qt,
@@ -140,7 +141,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         """Return an iterable of all node keys in the model."""
         pass
     
-    def has_node(self, node: NodeName) -> bool:
+    def hasNode(self, node: NodeName) -> bool:
         """Check if a node exists in the model."""
         return node in self.nodes()
 
