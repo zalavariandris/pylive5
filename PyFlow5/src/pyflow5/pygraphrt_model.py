@@ -1,5 +1,6 @@
 from collections import defaultdict
 from logging import warning
+from textwrap import dedent
 from typing import Iterable, override, Any
 import warnings
 
@@ -24,6 +25,9 @@ from qdageditor5.models.abstract_dag_model import (
 
 import pygraphrt as rt
 
+from qdageditor5.core.item_data_roles import (
+    NodeDataRole
+)
 
 class PyFlowRTModel(AbstractDAGModel):
     ExecutionRole = Qt.ItemDataRole.UserRole+1
@@ -121,15 +125,23 @@ class PyFlowRTModel(AbstractDAGModel):
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 if op:=node_ref.get_operator():
-                    return f"{node_ref.get_name()} ({op.get_name()})"
+                    return op.get_name()
                 else:
-                    return f"{node_ref.get_name()} (-None-)"
+                    return "-NoOp-"
 
             case Qt.ItemDataRole.BackgroundRole:
                 if op:=node_ref.get_operator():
-                    return QColor(128,128,128,255)
+                    return None
                 else:
                     return QColor.red()
+
+            case NodeDataRole.LeadingRole:
+                return f"{node_ref.get_name()}"
+
+            case NodeDataRole.TrailingRole:
+                return dedent("""\
+                    computed
+                    cached""")
 
             case self.ExecutionRole:
                 if node_name in self._executions:

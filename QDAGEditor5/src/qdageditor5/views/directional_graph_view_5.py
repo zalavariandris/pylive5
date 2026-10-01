@@ -34,6 +34,7 @@ from qtpy.QtGui import (
     QCursor,
     QFont,
     QFontMetrics,
+    QFontMetricsF,
     QPaintEvent,
     QPainter,
     QMouseEvent,
@@ -97,7 +98,7 @@ class PanAndZoomToolData:
     _pan_begin: QPointF
     _zoom_begin: float
 
-def bounding_rect(rects: list[QRectF]) -> QRectF:
+def _bounding_rect(rects: list[QRectF]) -> QRectF:
     if not rects:
         return QRectF()
     united_rect = rects[0]
@@ -172,22 +173,22 @@ class DirectionalGraphView5(QFrame):
 
                 (model.nodesAdded, 
                     lambda nodes: self.updateScene(
-                        bounding_rect([self._get_affected_rect(node) 
+                        _bounding_rect([self._get_affected_rect(node) 
                                    for node in nodes]))),
 
                 (model.nodesAboutToBeRemoved, 
                     lambda nodes: self.updateScene(
-                        bounding_rect([self._get_affected_rect(node) 
+                        _bounding_rect([self._get_affected_rect(node) 
                                    for node in nodes]))),
 
                 (model.linksAdded, 
                     lambda links: [self.updateScene(
-                        bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
+                        _bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
                                    for link in links]))]),
 
                 (model.linksAboutToBeRemoved, 
                     lambda links: [self.updateScene(
-                        bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
+                        _bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
                                    for link in links]))]),
             ]
             for signal, slot in self._model_connections:
@@ -224,25 +225,37 @@ class DirectionalGraphView5(QFrame):
         self._selection_model = selection_model
         self.update()
 
+    def _createStyleOption(self, node: NodeName) -> QStyleOptionViewItem:
+        option = QStyleOptionViewItem()
+        option.initFrom(self)
+        option.state = QStyle.StateFlag.State_Enabled
+        option.font = self.font()
+        option.fontMetrics = QFontMetrics(option.font)
+        if ('node', node) == self._hovered_item:
+            option.state |= QStyle.StateFlag.State_MouseOver
+        if self._selection_model is not None:
+            if node in self._selection_model.selectedNodes():
+                option.state |= QStyle.StateFlag.State_Selected
+        return option
+
     # nodes delegate
-    def _nodeRect(self, node: NodeName)->QRectF:
+    def _nodeRect(self, option: QStyleOptionViewItem, node: NodeName)->QRectF:
         if self._model is None:
             return QRectF()
 
-        return self._nodes_delegate.rect(self._model, node)
+        return self._nodes_delegate.rect(option, self._model, node)
 
-    def _nodeShape(self, node: NodeName) -> QPainterPath:
-        return self._nodes_delegate.shape(self._model, node)
+    def _nodeShape(self, option: QStyleOptionViewItem, node: NodeName) -> QPainterPath:
+        return self._nodes_delegate.shape(option, self._model, node)
 
     def _paintNode(self, painter: QPainter, option: QStyleOptionViewItem, node: NodeName|None):
-        model = self._model
-
-        self._nodes_delegate.paint(painter, option, model, node)
+        self._nodes_delegate.paint(painter, option, self._model, node)
 
     # inlets delegate
     def _inletPos(self, node: NodeName, inlet: InletName) -> QPointF:
         assert self._model is not None
-        node_rect = self._nodeRect(node)
+        option = self._createStyleOption(node)
+        node_rect = self._nodeShape(option, node).boundingRect()
         
         # outlet may be stale for a frame if the model just changed
         ports = list(self._model.inlets(node))
@@ -294,10 +307,11 @@ class DirectionalGraphView5(QFrame):
 
     # outlets delegate
     def _outletPos(self, node: NodeName, outlet: OutletName) -> QPointF:
-        ports = list(self._model.outlets(node))
-        node_scene_rect = self._nodeRect(node)
+        option = self._createStyleOption(node)
+        node_scene_rect = self._nodeShape(option, node).boundingRect()
         
         # outlet may be stale for a frame if the model just changed
+        ports = list(self._model.outlets(node))
         idx = ports.index(outlet) if outlet in ports else 0
         w, h = 7, 7
         spacing = 10
@@ -441,7 +455,8 @@ class DirectionalGraphView5(QFrame):
     # methods
     def _get_affected_rect(self, node: NodeName) -> QRectF:
         # get the node rectangle
-        node_rect = self._nodeRect(node).adjusted(-2, -2, 2, 2)
+        option = self._createStyleOption(node)
+        node_rect = self._nodeRect(option, node).adjusted(-2, -2, 2, 2)
 
         # get the ports rectangle
         ports_rect = QRectF()
@@ -479,9 +494,10 @@ class DirectionalGraphView5(QFrame):
                 if self._outletRect(node, outlet).contains(scene_pos):
                     if self._outletShape(node, outlet).contains(scene_pos):
                         return _GraphItemId('outlet', (node, outlet))
-                
-            if self._nodeRect(node).contains(scene_pos):
-                if self._nodeShape(node).contains(scene_pos):
+
+            option = self._createStyleOption(node)
+            if self._nodeRect(option, node).contains(scene_pos):
+                if self._nodeShape(option, node).contains(scene_pos):
                     return _GraphItemId('node', node)
             
         for link in self._model.links():
@@ -570,16 +586,9 @@ class DirectionalGraphView5(QFrame):
 
         # draw nodes and ports
         for node in self._model.nodes():
-            node_rect = self._nodeRect(node)
+            node_rect = self._nodeRect(self._createStyleOption(node), node)
             if dirty_scene_rect.intersects(node_rect):
-                node_option = QStyleOptionViewItem()
-                node_option.initFrom(self)
-                node_option.state = QStyle.StateFlag.State_Enabled
-                if ('node', node) == self._hovered_item:
-                    node_option.state |= QStyle.StateFlag.State_MouseOver
-                if self._selection_model is not None:
-                    if node in self._selection_model.selectedNodes():
-                        node_option.state |= QStyle.State_Selected
+                node_option = self._createStyleOption(node)
 
                 painter.save()
                 self._paintNode(painter, option=node_option, node=node)
@@ -765,7 +774,7 @@ class DirectionalGraphView5(QFrame):
                 
                 nodes_intersecting = []
                 for node in self._model.nodes():
-                    if self._nodeRect(node).intersects(new_rect):
+                    if self._nodeRect(self._createStyleOption(node), node).intersects(new_rect):
                         nodes_intersecting.append(node)
 
                 if self._selection_model is not None:   
@@ -783,7 +792,7 @@ class DirectionalGraphView5(QFrame):
                 if self._hovered_item is not None:
                     match self._hovered_item:
                         case ('node', _):
-                            new_rect = self._nodeRect(self._hovered_item[1]).adjusted(-2, -2, 2, 2)
+                            new_rect = self._nodeRect(self._createStyleOption(self._hovered_item[1]), self._hovered_item[1]).adjusted(-2, -2, 2, 2)
                             prev_rect = new_rect
                         case ('inlet', _):
                             node, inlet = self._hovered_item[1]
@@ -811,7 +820,7 @@ class DirectionalGraphView5(QFrame):
 
                     case ('node', _):
                         node_under_mouse:NodeName = item_under_mouse[1]
-                        new_rect = self._nodeRect(node_under_mouse).adjusted(-2, -2, 2, 2)
+                        new_rect = self._nodeRect(self._createStyleOption(node_under_mouse), node_under_mouse).adjusted(-2, -2, 2, 2)
                         self._hovered_item = ('node', node_under_mouse)
 
                     case ('head', _):
@@ -867,7 +876,7 @@ class DirectionalGraphView5(QFrame):
 
                 nodes_intersecting = []
                 for node in self._model.nodes():
-                    if self._nodeRect(node).intersects(selection_rect):
+                    if self._nodeRect(self._createStyleOption(node), node).intersects(selection_rect):
                         nodes_intersecting.append(node)
 
                 if self._selection_model is not None:   
@@ -982,7 +991,7 @@ class DirectionalGraphView5(QFrame):
         if self._hovered_item is not None:
             match self._hovered_item:
                 case ('node', _):
-                    self.updateScene(self._nodeRect(self._hovered_item[1]).adjusted(-2, -2, 2, 2))
+                    self.updateScene(self._nodeRect(self._createStyleOption(self._hovered_item[1]), self._hovered_item[1]).adjusted(-2, -2, 2, 2))
                 case ('inlet', _):
                     node, inlet = self._hovered_item[1]
                     self.updateScene(self._inletRect(node, inlet).adjusted(-2, -2, 2, 2))
@@ -1005,7 +1014,7 @@ class DirectionalGraphView5(QFrame):
             nodes = self._selection_model.selectedNodes()
         else:
             nodes = self._model.nodes()
-        scene_bounding_rect = reduce(lambda r, n: r.united(self._nodeRect(n)), nodes, QRectF())
+        scene_bounding_rect = reduce(lambda r, n: r.united(self._nodeRect(self._createStyleOption(n), n)), nodes, QRectF())
         if scene_bounding_rect.isNull():
             return
         view_rect = self.rect()
@@ -1026,7 +1035,7 @@ class DirectionalGraphView5(QFrame):
         print("Centering nodes in view")
         if self._model is None:
             return
-        bounding_rect = reduce(lambda r, n: r.united(self._nodeRect(n)), self._model.nodes(), QRectF())
+        bounding_rect = reduce(lambda r, n: r.united(self._nodeRect(self._createStyleOption(n), n)), self._model.nodes(), QRectF())
         if bounding_rect.isNull():
             return
         view_rect = self.rect()

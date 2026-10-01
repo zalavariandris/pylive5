@@ -15,7 +15,7 @@ from qtpy.QtCore import (
 
 from qdageditor5.models.standard_dag_model import NodeName
 from qdageditor5.core.item_data_roles import (
-    ShapeDataRole, 
+    NodeDataRole,
     ShapeData
 )
 
