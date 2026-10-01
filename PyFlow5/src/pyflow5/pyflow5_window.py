@@ -177,6 +177,7 @@ class PyFlow5Window(QMainWindow):
         file_menu.addAction("Save Graph As", lambda: None).setShortcut("Ctrl+Shift+S")
         file_menu.addSeparator()
         file_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
+        file_menu.addAction("Add Local Module", lambda: self.addLocalModule())
 
         edit_menu = QMenu("Edit", self)
         menubar.addMenu(edit_menu)
@@ -221,6 +222,9 @@ class PyFlow5Window(QMainWindow):
         # `Local` is the first editable module in every graph.
         self._modules_listview.setCurrentIndex(model.index(0, 0))
         self._code_editor.setFocus()
+
+    def addLocalModule(self):
+        self._document.addLocalModule()
 
     def importModule(self):
         # open file browser dialog
@@ -274,7 +278,7 @@ class PyFlow5Window(QMainWindow):
         print(path)
         if path:
             try:
-                self._document.open(path)
+                self._document = PyFlowDocument.fromfile(path)
             except Exception as error:
                 QMessageBox.warning(self, "Cannot open graph", str(error))
 

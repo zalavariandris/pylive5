@@ -4,10 +4,7 @@ from pathlib import Path
 from textwrap import dedent
 import traceback
 
-from pygraphrt.errors import GraphExecutionError
-from pygraphrt import ScriptModuleRT
-from pygraphrt.graph_serializer import GraphSerializer
-from qdageditor5.models.abstract_dag_model import NodeName
+
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
 
 import pygraphrt as rt
@@ -19,25 +16,30 @@ from .pygraphrt_model import PyFlowRTModel
 
 
 class PyFlowDocument(QObject):
-    def __init__(self, parent:QObject|None=None):
+    def __init__(self, 
+        graph: rt.GraphDefinitionRT|None=None, 
+        registry: rt.ModuleRegistry|None=None,
+        parent:QObject|None=None
+    ):
         super().__init__(parent=parent)
         # RT
-        self._graph = rt.GraphDefinitionRT()
+        self._module_registry = registry or rt.ModuleRegistry()
+        self._graph = graph or rt.GraphDefinitionRT()
+
         self._executor = rt.GraphExecutorRT(self._graph)
-        self._module_registry = rt.ModuleRegistry()
         self._invalidator = rt.GraphInvalidator(self._graph, self._module_registry)
-        local_module = rt.ScriptModuleRT(name="_local_")
-        local_module.set_script(dedent("""\
-        def the_name():
-            return "Mása"
+        # local_module = rt.ScriptModuleRT(name="_local_")
+        # local_module.set_script(dedent("""\
+        # def the_name():
+        #     return "Mása"
 
-        def the_greeting():
-            return "Hey"
+        # def the_greeting():
+        #     return "Hey"
 
-        def hello_world():
-            return "Hello!"
-        """)) 
-        self._module_registry.add_module(local_module)
+        # def hello_world():
+        #     return "Hello!"
+        # """)) 
+        # self._module_registry.add_module(local_module)
 
         # Models
         self.graph_model = PyFlowRTModel(
@@ -58,41 +60,20 @@ class PyFlowDocument(QObject):
         )
         # self.graphselection_model.nodesSelectionChanged.connect(self._sync_output_to_selection)
         # self.graphselection_model.currentNodeChanged.connect(self._sync_output_to_selection)
-
         # self._watcher:rt.Watcher|None = None
 
-    def open(self, file_path: str | Path) -> None:
-        """Load a JSON file, retaining the document and its models."""
-        data = json.loads(Path(file_path).read_text(encoding="utf-8"))
-        new_registry = rt.ModuleRegistry()
-        new_graph_rt = rt.GraphDefinitionRT.fromdict(data)
-        new_executor = rt.GraphExecutorRT(new_graph_rt)
-        new_resolver = rt.GraphResolver(new_graph_rt, new_registry)
-        positions: dict[str, tuple[float, float]] = {}
-        for name, record in data.get("graph", {}).get("nodes", {}).items():
-            position = record.get("position", [0, 0])
-            if (not isinstance(position, (list, tuple)) or len(position) != 2
-                    or any(type(v) not in (int, float) or not math.isfinite(v) for v in position)):
-                raise ValueError(f"Invalid position for node {name!r}")
-            positions[name] = tuple(position)
-
-        try:
-            # self.setOutputNode(None)
-            # self.setOutputLocked(False)
-            self._graph = new_graph_rt
-            self.modules_model.setGraph(new_graph_rt)
-            self.graph_model.setRT(new_graph_rt, positions)
-            if self.modules_model.rowCount():
-                self.modulesselection_model.setCurrentIndex(
-                    self.modules_model.index(0, 0), QItemSelectionModel.SelectionFlag.ClearAndSelect
-                )
-        except Exception as e:
-            traceback.print_exc()
-            raise e
+    @classmethod
+    def fromfile(cls, file_path: str | Path) -> "PyFlowDocument":
+        path = Path(file_path).resolve()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        deserializer = rt.GraphDeserializer(base_dir=path.parent)
+        registry, graph = deserializer.fromdict(data)
+        doc = cls(graph=graph, registry=registry)
+        return doc
 
     def save(self, file_path: str | Path) -> None:
             """Save the runtime and node positions as UTF-8 JSON."""
-            serializer = GraphSerializer(self._graph)
+            serializer = rt.GraphSerializer(self._graph)
             data = serializer.todict()
     
             # inject position
@@ -102,8 +83,6 @@ class PyFlowDocument(QObject):
     
             text = json.dumps(data, indent=4)
             Path(file_path).write_text(text, encoding="utf-8")
-    
-    
 
     def addNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
         assert operator_index.isValid(), "Operator index must be valid."
@@ -121,6 +100,14 @@ class PyFlowDocument(QObject):
         # self.setOutputNode(None)
         self.graph_model.reset_graph_from_scratch()
         # self.setOutputLocked(False)
+    def addLocalModule(self) -> None:
+        existing_module_names = {module.name() for module in self._module_registry.modules()}
+        import pytools
+        generator = pytools.UniqueNameGenerator(existing_module_names)
+        unique_name = generator("_local_")
+        local_module = rt.ScriptModuleRT(name=unique_name)
+        local_module.set_script("") 
+        self._module_registry.add_module(local_module)
 
     def importModule(self, file_path: str) -> None:
         self.modules_model.importModule(file_path)
