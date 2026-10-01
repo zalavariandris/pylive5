@@ -191,13 +191,29 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         module.set_script(value)
         return True
 
-    def importModule(self, file_path: str) -> None:
+    def addEmbeddedModule(self, name:str|None = None) -> QModelIndex|None:
+        assert self._registry is not None, "Graph must be initialized before adding a module."
+        
+        existing_module_names = {module.get_display_name() for module in self._registry.modules()}
+        import pytools
+        generator = pytools.UniqueNameGenerator(existing_module_names)
+        unique_name = generator("_local_")
+        script_module = rt.ScriptModuleRT(name=unique_name)
+        script_module.set_script("") 
+        row = self.rowCount()
+        self.beginInsertRows(QModelIndex(), row, row)
+        self._registry.add_module(script_module)
+        self.endInsertRows()
+        return self.index(row, 0)
+
+    def importModule(self, file_path: str) -> QModelIndex|None:
         assert self._registry is not None, "Graph must be initialized before importing a module."
         module = ImportModuleRT(file_path)
         row = self.rowCount()
         self.beginInsertRows(QModelIndex(), row, row)
         self._registry.add_module(module)
         self.endInsertRows()
+        return self.index(row, 0)
 
     def removeModule(self, index: QModelIndex) -> bool:
         if self._registry is None:

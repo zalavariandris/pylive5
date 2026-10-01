@@ -1,7 +1,12 @@
 # TODO
 
+## Inspector dev
+- [ ] 
+
 ## fix open and save
-- [ ] Fix saving opening in the GUI
+- [ ] open the lates graph, on launch
+- [ ] Recents
+- [x] Fix saving opening in the GUI
 
 ## GraphView
 - a delegate, to draw custom nodes. with potentially custom roles in a custom GraphModel.

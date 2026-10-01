@@ -25,7 +25,7 @@ global WAIT_TIME_MS
 WAIT_TIME_MS = 1000
 
 
-def test_create_node_from_local_script(qtbot: QtBot) -> None:
+def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     # - Open Appplication Window with new document
     print("opening window")
     window = PyFlow5Window()
@@ -44,6 +44,9 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     assert window._module_details_view.currentIndex() == QModelIndex()
     code_editor = window._module_details_view._code_editor
     assert not window._module_details_view._code_editor.isEnabled()
+
+    # - Create a new embedded module
+    document.addEmbeddedModule("_local_")
     
     # - Click the local module in the modules view to select it
     modules_listview = window._modules_listview
@@ -185,132 +188,12 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     current_excecution_data = document.graph_model.nodeData("helloworld", role=PyFlowRTModel.ExecutionRole)
     assert isinstance(current_excecution_data, Exception), f"Expected an Exception, got: {current_excecution_data}"
     qtbot.wait(WAIT_TIME_MS)
-    return
-    model = document.modules_model
-    local_module_index = model.index(0, 0)
-    operators: dict[str, rt.OperatorRef] = {
-        model.index(row, 0, local_module_index).data():
-        model.index(row, 0, local_module_index).data(ModulesOperatorsTreeModel.OperatorRole)
-        for row in range(model.rowCount(local_module_index))
-    }
-    assert set(operators) == {"the_name", "the_greeting", "helloworld"}
-    assert operators["the_name"]() == "Mása"
-    assert operators["the_greeting"]() == "Hey"
-    assert operators["helloworld"]("Mása") == "Hello Mása!"
-    assert operators["helloworld"]("Mása", "Hey") == "Hey Mása!"
-    assert document.graph_model.mapToSource("helloworld") == node
 
-    # Add the_name through the operator picker.
-    operator_name = "the_name"
-    modules_model = document.modules_model
-    local_module_index = modules_model.index(0, 0)
-    for row in range(modules_model.rowCount(local_module_index)):
-        operator_index = modules_model.index(row, 0, local_module_index)
-        if operator_index.data() == operator_name:
-            break
-    else:
-        raise AssertionError(f"Local operator {operator_name!r} is missing from the selector")
-
-    operator = operator_index.data(ModulesOperatorsTreeModel.OperatorRole)
-    assert isinstance(operator, rt.OperatorRef)
-    assert operator.module is document._graph.local()
-
-    # Ctrl+P blocks in QDialog.exec(), so queue the dialog clicks on a timer.
-    dialog_driver = QTimer(window)
-    dialog_driver.setSingleShot(True)
-    dialog_driver.timeout.connect(
-        lambda: QApplication.activeModalWidget()._operator_tree.scrollTo(operator_index)
-    )
-    dialog_driver.timeout.connect(
-        lambda: qtbot.mouseClick(
-            (tree := QApplication.activeModalWidget()._operator_tree).viewport(),
-            Qt.MouseButton.LeftButton,
-            pos=tree.visualRect(operator_index).center(),
-        )
-    )
-    dialog_driver.timeout.connect(
-        lambda: qtbot.waitUntil(
-            lambda: QApplication.activeModalWidget().selected_index() == operator_index
-        )
-    )
-    dialog_driver.timeout.connect(lambda: qtbot.wait(WAIT_TIME_MS))
-    dialog_driver.timeout.connect(
-        lambda: qtbot.mouseClick(
-            QApplication.activeModalWidget()._buttons.button(QDialogButtonBox.StandardButton.Ok),
-            Qt.MouseButton.LeftButton,
-        )
-    )
-    # Close the modal loop if a queued interaction fails, so pytest can finish.
-    dialog_timeout = QTimer(window)
-    dialog_timeout.setSingleShot(True)
-    dialog_timeout.timeout.connect(lambda: QApplication.activeModalWidget().reject())
-    window.activateWindow()
-    qtbot.waitUntil(window.isActiveWindow)
-    code_editor.setFocus()
-    dialog_driver.start(WAIT_TIME_MS)
-    dialog_timeout.start(5000)
-    try:
-        qtbot.keyClick(code_editor, Qt.Key.Key_P, Qt.KeyboardModifier.ControlModifier)
-    finally:
-        dialog_driver.stop()
-        dialog_timeout.stop()
-
-    # Add the_greeting through the operator picker.
-    operator_name = "the_greeting"
-    modules_model = document.modules_model
-    local_module_index = modules_model.index(0, 0)
-    for row in range(modules_model.rowCount(local_module_index)):
-        operator_index = modules_model.index(row, 0, local_module_index)
-        if operator_index.data() == operator_name:
-            break
-    else:
-        raise AssertionError(f"Local operator {operator_name!r} is missing from the selector")
-
-    operator = operator_index.data(ModulesOperatorsTreeModel.OperatorRole)
-    assert isinstance(operator, rt.OperatorRef)
-    assert operator.module is document._graph.local()
-
-    # Ctrl+P blocks in QDialog.exec(), so queue the dialog clicks on a timer.
-    dialog_driver = QTimer(window)
-    dialog_driver.setSingleShot(True)
-    dialog_driver.timeout.connect(
-        lambda: QApplication.activeModalWidget()._operator_tree.scrollTo(operator_index)
-    )
-    dialog_driver.timeout.connect(
-        lambda: qtbot.mouseClick(
-            (tree := QApplication.activeModalWidget()._operator_tree).viewport(),
-            Qt.MouseButton.LeftButton,
-            pos=tree.visualRect(operator_index).center(),
-        )
-    )
-    dialog_driver.timeout.connect(
-        lambda: qtbot.waitUntil(
-            lambda: QApplication.activeModalWidget().selected_index() == operator_index
-        )
-    )
-    dialog_driver.timeout.connect(lambda: qtbot.wait(WAIT_TIME_MS))
-    dialog_driver.timeout.connect(
-        lambda: qtbot.mouseClick(
-            QApplication.activeModalWidget()._buttons.button(QDialogButtonBox.StandardButton.Ok),
-            Qt.MouseButton.LeftButton,
-        )
-    )
-    # Close the modal loop if a queued interaction fails, so pytest can finish.
-    dialog_timeout = QTimer(window)
-    dialog_timeout.setSingleShot(True)
-    dialog_timeout.timeout.connect(lambda: QApplication.activeModalWidget().reject())
-    window.activateWindow()
-    qtbot.waitUntil(window.isActiveWindow)
-    code_editor.setFocus()
-    dialog_driver.start(WAIT_TIME_MS)
-    dialog_timeout.start(5000)
-    try:
-        qtbot.keyClick(code_editor, Qt.Key.Key_P, Qt.KeyboardModifier.ControlModifier)
-    finally:
-        dialog_driver.stop()
-        dialog_timeout.stop()
-
-    assert set(document.graph_model.nodes()) == {"helloworld", "the_name", "the_greeting"}
+    # Add 'the_name' and the 'the_greeting' NODE through the operator picker.
+    add_node_using_the_operator_picker("the_name")
+    qtbot.wait(WAIT_TIME_MS)
+    add_node_using_the_operator_picker("the_greeting")
+    qtbot.wait(WAIT_TIME_MS)
 
     # Arrange the nodes so their ports are visible.
     graph_view = window._graph_view
@@ -336,10 +219,10 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     qtbot.wait(WAIT_TIME_MS)
 
     # Check the displayed result and the document output.
-    label = window._display_widget.label
+    viewer = window._viewer
+    label = viewer._display_widget._label
     qtbot.waitUntil(lambda: label.text() == "Hello Mása!")
     assert label.isVisible()
-    assert document.output_value() == "Hello Mása!"
     qtbot.wait(WAIT_TIME_MS)
 
     # Connect the greeting input and check that it replaces the default.
@@ -359,10 +242,11 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     qtbot.wait(WAIT_TIME_MS)
 
     # Check the displayed result and the document output.
-    label = window._display_widget.label
+    viewer = window._viewer
+    label = viewer._display_widget._label
     qtbot.waitUntil(lambda: label.text() == "Hey Mása!")
     assert label.isVisible()
-    assert document.output_value() == "Hey Mása!"
+
     qtbot.wait(WAIT_TIME_MS)
     assert set(document.graph_model.links()) == {
         ("the_name", "out", "helloworld", "name"),
@@ -376,7 +260,11 @@ def test_create_node_from_local_script(qtbot: QtBot) -> None:
     qtbot.wait(WAIT_TIME_MS)
     qtbot.wait(3000)
 
-
+    # save to  a file
+    # save to  a file
+    output_file = tmp_path / "test_helloworld_userflow_output.json"
+    document.save(str(output_file))
+    
 if __name__ == "__main__":
     import pytest
     WAIT_TIME_MS = 1000

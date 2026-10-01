@@ -50,93 +50,84 @@ from .inspector_view import InspectorEditor, InspectorView
 from .module_details_view import ModuleDetailsView
 
 
+class DetailsView(QWidget):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._model:QAbstractItemModel|None=None
+        self._model_connections: list[tuple[Signal, Slot]] = []
+        self._selection_model: QAbstractItemModel|None = None
+        self._selection_model_connections: list[tuple[Signal, Slot]] = []
+        
+    def setModel(self, model):
+        if self._model:
+            for signal, slot in self._model_connections:
+                signal.disconnect(slot)
+            self._model_connections = []
+            self._model = None
+
+        if model:
+            self._model_connections = [
+                (self._model, self._model.dataChanged),
+                (self._model, self._model.rowsRemoved),
+                (self._model, self._model.modelReset),
+            ]
+            for signal, slot in self._model_connections:
+                signal.connect(slot)
+
+            self._model = model
+
+    def setSelecitonModel(self, selection_model):
+        if selection_model.model() != self._model:
+            raise ValueError("Selection model's model does not match the current model.")
+        
+        if self._selection_model:
+            for signal, slot in self._selection_model_connections:
+                signal.disconnect(slot)
+            self._selection_model_connections = []
+            self._selection_model = None
+
+        if selection_model:
+            self._selection_model_connections = [
+                (selection_model, selection_model.currentChanged),
+            ]
+            for signal, slot in self._selection_model_connections:
+                signal.connect(slot)
+
+            self._selection_model = selection_model
+
 class PyFlow5Window(QMainWindow):
     def __init__(self, parent=None)->None:
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
 
-        # setup Model
+        # Setup Model
         self._document:PyFlowDocument = PyFlowDocument()
-
-        # Setup UI
-        # self.setupActions()
 
         # - Setup modules view -
         self._modules_listview = QListView(self)
-        self._modules_listview.setModel(self._document.modules_model)
         self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._modules_listview.setSelectionModel(self._document.modulesselection_model)
+        
 
         # - Setup modules details view -
         self._module_details_view = ModuleDetailsView(self)
-        self._module_details_view.setModel(self._document.modules_model)
-        self._document.modulesselection_model.selectionChanged.connect(
-            lambda selected, deselected: 
-            self._module_details_view.setCurrentIndex(
-                selected.indexes()[0] if selected.indexes() else QModelIndex())
-        )
-        self._module_details_view
-
+        
         # - Setup graphview -
         self._graph_view = DirectionalGraphView5(self)
-        self._graph_view.setModel(self._document.graph_model)
-        self._graph_view.setSelectionModel(self._document.graphselection_model)
-        self._graph_view.layout_nodes()
-        self._graph_view.fitNodes()
-
-        @Slot()
+        @self._graph_view.requestNode.connect
         def _on_request_node(scene_pos:QPointF, source:NodeName):
             # show a dialog with a multiselection of operator in GraphRT
             self.openOperatorDialog(scene_pos=scene_pos, source=source)
-        self._graph_view.requestNode.connect(_on_request_node)
 
-        @Slot()
+        @self._graph_view.requestLink.connect
         def _on_request_link(source:NodeName, outlet:OutletName, target:NodeName, inlet:InletName):
             self._document.graph_model.addLink(source, outlet, target, inlet)
-        self._graph_view.requestLink.connect(_on_request_link)
 
         # - Setup node inspector -
         self._inspector_view = InspectorView(self)
-        self._inspector_view.setModel(self._document.graphdetails_model)
-        # self._inspector_view.setSelectionModel(self._document.graphselectionmodel)
-
-        # - Setup display widget -
-
-        self._document.graphselection_model.nodesSelectionChanged.connect(
-            lambda selected, deselected: print(selected, deselected)
-        )
         
+        # - Setup display widget -
         self._viewer = Viewer(self)
-        self._viewer.setModel(self._document.graph_model)
-        self._document.graphselection_model.nodesSelectionChanged.connect(
-            lambda selected, deselected: 
-            self._viewer.setCurrentNodeName(
-                next(iter(selected)) if selected else None)
-        )
-        # self._document._graphselection_model.selectionChanged.connect(
-        #     lambda selected, deselected: 
-        #     self._viewer.setCurrentNodeName(
-        #         selected.indexes()[0] if selected.indexes() else None)
-        # )
-
-        # viewer = QWidget(self)
-        # viewer_layout = QVBoxLayout(viewer)
-        # viewer_layout.setContentsMargins(0, 0, 0, 0)
-        # viewer_header = QHBoxLayout()
-        # viewer_header.addWidget(QLabel("Viewer", viewer))
-        # viewer_header.addStretch()
-        # self._viewer_lock_switch = QCheckBox("Lock", viewer)
-        # self._viewer_lock_switch.setToolTip("Keep viewing this output when the selection changes.")
-        # self._viewer_lock_switch.setChecked(self._document.isOutputLocked())
-        # self._viewer_lock_switch.toggled.connect(self._document.setOutputLocked)
-        # self._document.output_lock_changed.connect(self._viewer_lock_switch.setChecked)
-        # viewer_header.addWidget(self._viewer_lock_switch)
-        # viewer_layout.addLayout(viewer_header)
-        # self._display_widget = myqtx.DisplayWidget(viewer)
-        # viewer_layout.addWidget(self._display_widget)
-
-
-
+        
         # - Serialization widget -
         self._serialization_window = QDialog(self)
         self._serialization_window.setWindowTitle("Serialization")
@@ -157,13 +148,53 @@ class PyFlow5Window(QMainWindow):
         splitter.setSizes([100, 350, 400, 260, 350])
         self.resize(1460, 600)
 
-
         self.setCentralWidget(splitter)
 
         self._graph_view.setFocus()
 
-        # - Initial results update -
-        # self._document._execute()
+        self._connectDocument()
+
+    def _connectDocument(self):
+        self._modules_listview.setModel(self._document.modules_model)
+        self._modules_listview.setSelectionModel(self._document.modulesselection_model)
+        self._module_details_view.setModel(self._document.modules_model)
+        self._module_details_view.setSelectionModel(self._document.modulesselection_model)
+        self._graph_view.setModel(self._document.graph_model)
+        self._graph_view.setSelectionModel(self._document.graphselection_model)
+        self._graph_view.layout_nodes()
+        self._graph_view.fitNodes()
+        self._inspector_view.setModel(self._document.graphdetails_model)
+        self._viewer.setModel(self._document.graph_model)
+        self._viewer.setSelectionModel(self._document.graphselection_model)
+
+        # todo: with the inspector, reconsider setting the CurrentIndex directly, 
+        # and remove setSelectionModel methods
+        # (as well as using that pattern with the other detail views as well)
+        # when a new document is created the signals from the document will
+        # go away with the old document anyway. Meanwhile signals from the view, will
+        # target the new document
+
+
+    def newDocument(self) -> None:
+        self._document = PyFlowDocument()
+        self._connectDocument()
+
+    def openDocument(self) -> None:
+        # # open file browser dialog
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open file",
+            "",
+            "JSON files (*.json)",
+        )
+        print(path)
+        if path:
+            try:
+                self._document = PyFlowDocument.fromfile(path)
+            except Exception as error:
+                QMessageBox.warning(self, "Cannot open graph", str(error))
+            else:
+                self._connectDocument()
 
     def setupMenubar(self):
         menubar: QMenuBar = self.menuBar()
@@ -172,8 +203,8 @@ class PyFlow5Window(QMainWindow):
         file_menu = QMenu("File", self)
         menubar.addMenu(file_menu)
         file_menu.addAction("New",           lambda: None).setShortcut("Ctrl+N")
-        file_menu.addAction("Open Graph",    lambda: self.openGraph()).setShortcut("Ctrl+O")
-        file_menu.addAction("Save Graph",    lambda: self.saveGraph()).setShortcut("Ctrl+S")
+        file_menu.addAction("Open Graph",    lambda: self.openDocument()).setShortcut("Ctrl+O")
+        file_menu.addAction("Save Graph",    lambda: self.saveDocument()).setShortcut("Ctrl+S")
         file_menu.addAction("Save Graph As", lambda: None).setShortcut("Ctrl+Shift+S")
         file_menu.addSeparator()
         file_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
@@ -224,7 +255,7 @@ class PyFlow5Window(QMainWindow):
         self._code_editor.setFocus()
 
     def addLocalModule(self):
-        self._document.addLocalModule()
+        self._document.addEmbeddedModule()
 
     def importModule(self):
         # open file browser dialog
@@ -267,22 +298,9 @@ class PyFlow5Window(QMainWindow):
         finally:
             dialog.deleteLater()
 
-    def openGraph(self) -> None:
-        # # open file browser dialog
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open file",
-            "",
-            "JSON files (*.json)",
-        )
-        print(path)
-        if path:
-            try:
-                self._document = PyFlowDocument.fromfile(path)
-            except Exception as error:
-                QMessageBox.warning(self, "Cannot open graph", str(error))
+    
 
-    def saveGraph(self) -> None:
+    def saveDocument(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save file",

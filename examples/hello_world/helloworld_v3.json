@@ -1,0 +1,53 @@
+{
+    "version": 3,
+    "modules": {
+        "_local_": {
+            "type": "embedded",
+            "source": "def the_name():\n    return \"M\u00e1sa\"\n    \ndef the_greeting():\n    return \"Hey\"\n    \ndef hello_world(name:str, greeting:str=\"Hello\"):\n    return f\"{greeting} {name}!\" "
+        }
+    },
+    "graph": {
+        "nodes": {
+            "hello_world": {
+                "operator": {
+                    "module": "_local_",
+                    "name": "hello_world"
+                },
+                "kwargs": {
+                    "name": {
+                        "type": "node",
+                        "name": "the_name"
+                    },
+                    "greeting": {
+                        "type": "node",
+                        "name": "the_greeting"
+                    }
+                },
+                "position": [
+                    181.0,
+                    389.0
+                ]
+            },
+            "the_greeting": {
+                "operator": {
+                    "module": "_local_",
+                    "name": "the_greeting"
+                },
+                "position": [
+                    255.0,
+                    230.0
+                ]
+            },
+            "the_name": {
+                "operator": {
+                    "module": "_local_",
+                    "name": "the_name"
+                },
+                "position": [
+                    110.0,
+                    268.0
+                ]
+            }
+        }
+    }
+}

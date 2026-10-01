@@ -28,18 +28,6 @@ class PyFlowDocument(QObject):
 
         self._executor = rt.GraphExecutorRT(self._graph)
         self._invalidator = rt.GraphInvalidator(self._graph, self._module_registry)
-        # local_module = rt.ScriptModuleRT(name="_local_")
-        # local_module.set_script(dedent("""\
-        # def the_name():
-        #     return "Mása"
-
-        # def the_greeting():
-        #     return "Hey"
-
-        # def hello_world():
-        #     return "Hello!"
-        # """)) 
-        # self._module_registry.add_module(local_module)
 
         # Models
         self.graph_model = PyFlowRTModel(
@@ -56,11 +44,28 @@ class PyFlowDocument(QObject):
         self.graphselection_model = GraphSelectionModel(self.graph_model)
         self.graphdetails_model = GraphDetailsModel(self.graph_model, self)
         self.graphselection_model.currentNodeChanged.connect(
-            lambda current, previous: self.graphdetails_model.setNode(current)
+            self._sync_inspector_to_selection
+        )
+        self.graphselection_model.nodesSelectionChanged.connect(
+            self._sync_inspector_to_selection
         )
         # self.graphselection_model.nodesSelectionChanged.connect(self._sync_output_to_selection)
         # self.graphselection_model.currentNodeChanged.connect(self._sync_output_to_selection)
         # self._watcher:rt.Watcher|None = None
+
+    def _sync_inspector_to_selection(self, *_args: object) -> None:
+        selection = self.graphselection_model
+        selected = selection.selectedNodes()
+        current = selection.currentNode()
+
+        if current in selected:
+            node = current
+        elif len(selected) == 1:
+            node = selected[0]
+        else:
+            node = None
+
+        self.graphdetails_model.setNode(node)
 
     @classmethod
     def fromfile(cls, file_path: str | Path) -> "PyFlowDocument":
@@ -72,17 +77,17 @@ class PyFlowDocument(QObject):
         return doc
 
     def save(self, file_path: str | Path) -> None:
-            """Save the runtime and node positions as UTF-8 JSON."""
-            serializer = rt.GraphSerializer(self._graph)
-            data = serializer.todict()
-    
-            # inject position
-            for name, record in data.get("graph", {}).get("nodes", {}).items():
-                position = self.graph_model.nodePosition(name)
-                record["position"] = [position.x(), position.y()]
-    
-            text = json.dumps(data, indent=4)
-            Path(file_path).write_text(text, encoding="utf-8")
+        """Save the runtime and node positions as UTF-8 JSON."""
+        serializer = rt.GraphSerializer(self._graph, self._module_registry)
+        data = serializer.todict()
+
+        # inject position
+        for name, record in data.get("graph", {}).get("nodes", {}).items():
+            position = self.graph_model.nodePosition(name)
+            record["position"] = [position.x(), position.y()]
+
+        text = json.dumps(data, indent=4)
+        Path(file_path).write_text(text, encoding="utf-8")
 
     def addNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
         assert operator_index.isValid(), "Operator index must be valid."
@@ -100,14 +105,16 @@ class PyFlowDocument(QObject):
         # self.setOutputNode(None)
         self.graph_model.reset_graph_from_scratch()
         # self.setOutputLocked(False)
-    def addLocalModule(self) -> None:
-        existing_module_names = {module.name() for module in self._module_registry.modules()}
-        import pytools
-        generator = pytools.UniqueNameGenerator(existing_module_names)
-        unique_name = generator("_local_")
-        local_module = rt.ScriptModuleRT(name=unique_name)
-        local_module.set_script("") 
-        self._module_registry.add_module(local_module)
+    def addEmbeddedModule(self, name="_local_") -> None:
+        if module_idx := self.modules_model.addEmbeddedModule(name):
+            self.modulesselection_model.setCurrentIndex(
+                module_idx, 
+                QItemSelectionModel.ClearAndSelect
+            )
 
     def importModule(self, file_path: str) -> None:
-        self.modules_model.importModule(file_path)
+        if module_idx := self.modules_model.importModule(file_path):
+            self.modulesselection_model.setCurrentIndex(
+                module_idx, 
+                QItemSelectionModel.ClearAndSelect
+            )

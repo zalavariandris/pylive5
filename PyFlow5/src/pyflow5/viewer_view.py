@@ -9,6 +9,7 @@ from pyflow5.pygraphrt_model import PyFlowRTModel
 
 from pygraphrt.graph_executor import ExecutionFailure, ExecutionSuccess
 from qdageditor5.models.abstract_dag_model import NodeName
+from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qtpy.QtCore import (
     Qt,
     Signal,
@@ -29,7 +30,7 @@ import pygraphrt as rt
 
 
 class Viewer(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None)->None:
         super().__init__(parent)
         viewer_layout = QVBoxLayout(self)
         viewer_layout.setContentsMargins(0, 0, 0, 0)
@@ -47,7 +48,9 @@ class Viewer(QWidget):
         viewer_layout.addWidget(self._display_widget)
 
         self._model:PyFlowRTModel|None = None
-        self._model_connections = []
+        self._model_connections: list[tuple[Signal, Slot]] = []
+        self._selection_model: GraphSelectionModel|None = None
+        self._selection_model_connections: list[tuple[Signal, Slot]] = []
         self._current_nodename:NodeName|None = None
 
         self._watcher:rt.Watcher|None = None
@@ -65,8 +68,11 @@ class Viewer(QWidget):
     def setModel(self, model: PyFlowRTModel|None):
         if self._model:
             # Disconnect previous connections
-            for connection in self._model_connections:
-                connection.disconnect()
+            for signal, slot in self._model_connections:
+                try:
+                    signal.disconnect(slot)
+                except TypeError as err:
+                    print(f"Failed to disconnect signal {signal} from slot {slot} due to {err}")
             self._model_connections.clear()
             
         if model:
@@ -94,11 +100,33 @@ class Viewer(QWidget):
             # create a wrapper reusable widget with eg a breadcrump, that 
             # has controls to update on selection or not. This would be useful 
             # in other widgets detail-views as well.
-            return
+            return False
 
         self._current_nodename = node_name
         self._update_display()
         return True
+
+    def setSelectionModel(self, graphselection: GraphSelectionModel):
+        if graphselection is self._selection_model:
+            return
+        
+        if self._selection_model:
+            for signal, slot in self._selection_model_connections:
+                signal.disconnect(slot)
+            self._selection_model_connections = []
+            self._selection_model = None
+
+        if graphselection:
+            self._selection_model_connections = [
+                (
+                    graphselection.nodesSelectionChanged, 
+                    lambda selected, deselected: 
+                    self.setCurrentNodeName(next(iter(selected)) if selected else None)
+                )
+            ]
+            for signal, slot in self._selection_model_connections:
+                signal.connect(slot)
+            self._selection_model = graphselection
 
     def _on_model_reset(self):
         self.setCurrentNodeName(None)

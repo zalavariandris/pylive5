@@ -1,6 +1,6 @@
 
 
-from qtpy.QtCore import QAbstractItemModel, QModelIndex
+from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex
 
 from qtpy.QtCore import (
     Qt,
@@ -28,6 +28,8 @@ class ModuleDetailsView(QWidget):
         
         self._model:QAbstractItemModel|None = None
         self._model_connections: list[tuple[Signal, Slot]] = []
+        self._selection_model: QItemSelectionModel|None = None
+        self._selection_model_connections: list[tuple[Signal, Slot]] = []
 
         self._current_index: QModelIndex = QModelIndex()
 
@@ -60,7 +62,10 @@ class ModuleDetailsView(QWidget):
     def setModel(self, model: QAbstractItemModel|None):
         if self._model:
             for signal, slot in self._model_connections:
-                signal.disconnect(slot)
+                try:
+                    signal.disconnect(slot)
+                except TypeError as err:
+                    print(f"Failed to disconnect signal {signal} from slot {slot} due to {err}")
             self._model_connections.clear()
 
         if model:
@@ -71,6 +76,29 @@ class ModuleDetailsView(QWidget):
             ]
         self._model = model
         self.setCurrentIndex(QModelIndex())
+
+    def selection(self):
+        return self._selection_model if hasattr(self, "_selection_model") else None
+
+    def setSelectionModel(self, selection_model:QItemSelectionModel):
+        if self._selection_model is not None:
+            for signal, slot in self._selection_model_connections:
+                signal.disconnect(slot)
+            self._selection_model_connections.clear()
+            self._selection_model = None
+
+        if selection_model:
+            self._selection_model_connections = [
+                (selection_model.selectionChanged, 
+                 lambda selected, deselected: 
+                    self.setCurrentIndex(selected.indexes()[0] if selected.indexes() else QModelIndex())
+                )
+            ]
+
+            for signal, slot in self._selection_model_connections:
+                signal.connect(slot)
+
+            self._selection_model = selection_model
 
     @Slot()
     def _on_model_reset(self):
