@@ -259,4 +259,7 @@ class ScriptModuleRT(AbstractModule):
             return ScriptOperatorRef(self, name)
         return default
 
+    def create_placeholder_operator(self, name: str) -> ScriptOperatorRef:
+        return ScriptOperatorRef(self, name)
+
         

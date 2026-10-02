@@ -1,5 +1,11 @@
 # TODO
 
+- [ ] fix saving and loading broken graphs
+      `create_placeholder_operator`
+      when saving and opening a broken graph, the node operators loose binding to the broken operator
+      so when i fix the script, it will note bind back, instead, the node seem to hold None as teh operator.
+      his is broken on open, and probably on save as well.
+
 ## Inspector dev
 - [ ] expose the inlets, based on the operator, and the actual inputs. 
 - [x] create a TreeView using the rt.GraphDefinition and rt.moduleRegistry directly.
