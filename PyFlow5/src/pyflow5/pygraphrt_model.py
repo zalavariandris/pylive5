@@ -256,7 +256,7 @@ class PyFlowRTModel(AbstractDAGModel):
         if position:
             self._positions[node_name] = (position.x(), position.y())
         else:
-            del self._positions[node_name]
+            self._positions.pop(node_name, None)
 
     # @override
     # def setNodeData(self, node: NodeName, role: int, value: Any) -> bool:

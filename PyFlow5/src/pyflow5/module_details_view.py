@@ -83,7 +83,10 @@ class ModuleDetailsView(QWidget):
     def setSelectionModel(self, selection_model:QItemSelectionModel):
         if self._selection_model is not None:
             for signal, slot in self._selection_model_connections:
-                signal.disconnect(slot)
+                try:
+                    signal.disconnect(slot)
+                except TypeError as err:
+                    print(f"Failed to disconnect signal {signal} from slot {slot} due to {err}")
             self._selection_model_connections.clear()
             self._selection_model = None
 

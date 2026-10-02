@@ -9,6 +9,7 @@ from qtpy.QtCore import QAbstractItemModel, QModelIndex
 from qtpy.QtCore import (
     QPointF,
     Qt,
+    QTimer,
     Signal,
     Slot
 )
@@ -25,6 +26,7 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QPlainTextEdit, 
     QSplitter,
+    QTreeView,
     QVBoxLayout, 
     QWidget, 
     QMainWindow
@@ -49,6 +51,9 @@ from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 from .inspector_view import InspectorEditor, InspectorView
 from .module_details_view import ModuleDetailsView
 
+from qtpy.QtCore import QSettings
+
+from pathlib import Path
 
 class DetailsView(QWidget):
     def __init__(self, parent=None) -> None:
@@ -95,19 +100,16 @@ class DetailsView(QWidget):
 
             self._selection_model = selection_model
 
+
 class PyFlow5Window(QMainWindow):
     def __init__(self, parent=None)->None:
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
 
-        # Setup Model
-        self._document:PyFlowDocument = PyFlowDocument()
-
         # - Setup modules view -
         self._modules_listview = QListView(self)
         self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         
-
         # - Setup modules details view -
         self._module_details_view = ModuleDetailsView(self)
         
@@ -123,7 +125,8 @@ class PyFlow5Window(QMainWindow):
             self._document.graph_model.addLink(source, outlet, target, inlet)
 
         # - Setup node inspector -
-        self._inspector_view = InspectorView(self)
+        # self._inspector_view = InspectorView(self)
+        self._node_tree_view = QTreeView(self)
         
         # - Setup display widget -
         self._viewer = Viewer(self)
@@ -136,14 +139,29 @@ class PyFlow5Window(QMainWindow):
         self._serialization_widget = QPlainTextEdit(self._serialization_window)
         serialization_layout.addWidget(self._serialization_widget)
 
-        self.setupMenubar()
+        # - Settings
+        self._settings = QSettings(
+            QSettings.Format.IniFormat, # format
+            QSettings.Scope.UserScope, # scope
+            "BABLab", # organization
+            "PyFlow5" # application
+        )
+
+        self._recent_graphs: list[str] = self._settings.value(
+            "recentGraphs", [], type=list
+        )
+
+        self._session_path = (
+            Path(self._settings.fileName()).parent / "session.json"
+        )
 
         # - Add widgets to splitter -
         splitter = QSplitter(self)
         splitter.addWidget(self._modules_listview)
         splitter.addWidget(self._module_details_view)
         splitter.addWidget(self._graph_view)
-        splitter.addWidget(self._inspector_view)
+        # splitter.addWidget(self._inspector_view)
+        splitter.addWidget(self._node_tree_view)
         splitter.addWidget(self._viewer)
         splitter.setSizes([100, 350, 400, 260, 350])
         self.resize(1460, 600)
@@ -152,20 +170,44 @@ class PyFlow5Window(QMainWindow):
 
         self._graph_view.setFocus()
 
-        self._connectDocument()
+        # Setup Model
+        self._document:PyFlowDocument|None = None
 
-    def _connectDocument(self):
-        self._modules_listview.setModel(self._document.modules_model)
-        self._modules_listview.setSelectionModel(self._document.modulesselection_model)
-        self._module_details_view.setModel(self._document.modules_model)
-        self._module_details_view.setSelectionModel(self._document.modulesselection_model)
-        self._graph_view.setModel(self._document.graph_model)
-        self._graph_view.setSelectionModel(self._document.graphselection_model)
-        self._graph_view.layout_nodes()
-        self._graph_view.fitNodes()
-        self._inspector_view.setModel(self._document.graphdetails_model)
-        self._viewer.setModel(self._document.graph_model)
-        self._viewer.setSelectionModel(self._document.graphselection_model)
+        # Create a new document and connect it to the window
+        # Load the last session if it exists
+        if self._session_path.exists():
+            new_document = PyFlowDocument().fromfile(str(self._session_path))
+        else:
+            new_document = PyFlowDocument()
+
+        self.setupMenubar()
+        self._connectDocument(new_document)
+
+    def _connectDocument(self, document: PyFlowDocument):
+        if self._document is not None:
+            # Disconnect signals from the old document if necessary
+            ...
+            # clear the document
+            self._document = None
+
+        if document:
+            self._modules_listview.setModel(document.modules_model)
+            self._modules_listview.setSelectionModel(document.modulesselection_model)
+            self._module_details_view.setSelectionModel(document.modulesselection_model)
+            self._graph_view.setModel(document.graph_model)
+            self._graph_view.setSelectionModel(document.graphselection_model)
+            self._graph_view.layout_nodes()
+            # Fit after the window's startup layout has been established.
+            QTimer.singleShot(0, self._graph_view.fitNodes)
+            self._node_tree_view.setModel(document.nodes_tree_model)
+            document.nodes_tree_model.modelReset.connect(
+                lambda: self._node_tree_view.expandAll())
+            # self._inspector_view.setModel(document.graphdetails_model)
+            self._viewer.setModel(document.graph_model)
+            self._viewer.setSelectionModel(document.graphselection_model)
+
+            # set the new document
+            self._document = document
 
         # todo: with the inspector, reconsider setting the CurrentIndex directly, 
         # and remove setSelectionModel methods
@@ -174,36 +216,54 @@ class PyFlow5Window(QMainWindow):
         # go away with the old document anyway. Meanwhile signals from the view, will
         # target the new document
 
-
     def newDocument(self) -> None:
-        self._document = PyFlowDocument()
-        self._connectDocument()
+        self._connectDocument(PyFlowDocument())
 
-    def openDocument(self) -> None:
-        # # open file browser dialog
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open file",
-            "",
-            "JSON files (*.json)",
-        )
-        print(path)
+    def openDocument(self, path: str = "") -> None:
+        if not path:
+            # open file browser dialog
+            path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Open file",
+                "",
+                "JSON files (*.json)",
+            )
+
         if path:
             try:
-                self._document = PyFlowDocument.fromfile(path)
+                document = PyFlowDocument.fromfile(path)
             except Exception as error:
                 QMessageBox.warning(self, "Cannot open graph", str(error))
             else:
-                self._connectDocument()
+                self._connectDocument(document)
+                self._rememberGraph(path)
+        
+    def _rememberGraph(self, path: str) -> None:
+        path = os.path.abspath(path)
+        path_key = os.path.normcase(path)
+
+        previous = [
+            existing
+            for existing in self._recent_graphs
+            if os.path.normcase(existing) != path_key
+        ]
+        self._recent_graphs = [path, *previous][:5]
+
+        self._settings.setValue("recentGraphs", self._recent_graphs)
+        self._settings.sync()
 
     def setupMenubar(self):
         menubar: QMenuBar = self.menuBar()
-        menubar.addAction("Restart Graph", self._document.reset_graph)
+        menubar.addAction("Restart Graph", lambda: self._document.reset_graph())
 
         file_menu = QMenu("File", self)
         menubar.addMenu(file_menu)
         file_menu.addAction("New",           lambda: None).setShortcut("Ctrl+N")
         file_menu.addAction("Open Graph",    lambda: self.openDocument()).setShortcut("Ctrl+O")
+        recents_menu = QMenu("Recent Graphs", self)
+        for recent in self._recent_graphs:
+            recents_menu.addAction(recent, lambda path=recent: self.openDocument(path))
+        file_menu.addMenu(recents_menu)
         file_menu.addAction("Save Graph",    lambda: self.saveDocument()).setShortcut("Ctrl+S")
         file_menu.addAction("Save Graph As", lambda: None).setShortcut("Ctrl+Shift+S")
         file_menu.addSeparator()
@@ -223,11 +283,11 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Select None", lambda: None)
         edit_menu.addSeparator()
 
-        edit_menu.addAction("Restart Graph", self._document.reset_graph)
+        edit_menu.addAction("Restart Graph", lambda: self._document.reset_graph())
         edit_menu.addSeparator()
 
         edit_menu.addAction("New Node", self.openOperatorDialog).setShortcut("Ctrl+P")
-        edit_menu.addAction("Delete Nodes", self._document.deleteSelectedNodes).setShortcut("Del")
+        edit_menu.addAction("Delete Nodes", lambda: self._document.deleteSelectedNodes()).setShortcut("Del")
         edit_menu.addAction("Duplicate Nodes", lambda: None)
         edit_menu.addSeparator()
 
@@ -298,7 +358,13 @@ class PyFlow5Window(QMainWindow):
         finally:
             dialog.deleteLater()
 
-    
+    def closeEvent(self, event):
+        # Save session path before closing
+        try:
+            self._document.save(self._session_path)
+        except Exception as error:
+            QMessageBox.warning(self, "Cannot save session", str(error))
+        event.accept()
 
     def saveDocument(self) -> None:
         path, _ = QFileDialog.getSaveFileName(

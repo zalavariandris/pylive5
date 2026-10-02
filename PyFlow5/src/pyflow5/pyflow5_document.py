@@ -13,6 +13,7 @@ from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
 from .pygraphrt_details_model import GraphDetailsModel
 from .pygraphrt_model import PyFlowRTModel
+from .nodes_tree_model import NodesTreeModel
 
 
 class PyFlowDocument(QObject):
@@ -49,6 +50,8 @@ class PyFlowDocument(QObject):
         self.graphselection_model.nodesSelectionChanged.connect(
             self._sync_inspector_to_selection
         )
+
+        self.nodes_tree_model = NodesTreeModel(self._graph, self._module_registry)
         # self.graphselection_model.nodesSelectionChanged.connect(self._sync_output_to_selection)
         # self.graphselection_model.currentNodeChanged.connect(self._sync_output_to_selection)
         # self._watcher:rt.Watcher|None = None

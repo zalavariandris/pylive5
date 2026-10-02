@@ -1006,29 +1006,38 @@ class DirectionalGraphView5(QFrame):
         self._pan = QPointF(0, 0)
         self.update()
 
-    def fitNodes(self, limit_zoom=True):
-        print("Fitting nodes to view")
+    def fitNodes(self, limit_zoom: bool = True) -> None:
         if self._model is None:
             return
-        if self._selection_model.hasNodesSelection():
+
+        view_rect = QRectF(self.contentsRect())
+        if view_rect.isEmpty():
+            return
+
+        if (
+            self._selection_model is not None
+            and self._selection_model.hasNodesSelection()
+        ):
             nodes = self._selection_model.selectedNodes()
         else:
             nodes = self._model.nodes()
-        scene_bounding_rect = reduce(lambda r, n: r.united(self._nodeRect(self._createStyleOption(n), n)), nodes, QRectF())
-        if scene_bounding_rect.isNull():
-            return
-        view_rect = self.rect()
-        if view_rect.isNull():
-            return
-        # _nodeRect is already in scene coordinates, so the new zoom is just pixels-per-scene-unit
-        scale_x = view_rect.width() / scene_bounding_rect.width()
-        scale_y = view_rect.height() / scene_bounding_rect.height()
 
-        self._zoom = min(scale_x, scale_y)
-        print(f"Calculated zoom: {self._zoom}", f"Limit zoom: {limit_zoom}")
-        if limit_zoom and self._zoom > 1.0:
-            self._zoom = 1.0
-        self._pan = QPointF(view_rect.center()) - scene_bounding_rect.center() * self._zoom
+        scene_rect = _bounding_rect([
+            self._nodeRect(self._createStyleOption(node), node)
+            for node in nodes
+        ])
+        if scene_rect.isEmpty():
+            return
+
+        zoom = min(
+            view_rect.width() / scene_rect.width(),
+            view_rect.height() / scene_rect.height(),
+        )
+        if limit_zoom:
+            zoom = min(zoom, 1.0)
+
+        self._zoom = zoom
+        self._pan = view_rect.center() - scene_rect.center() * zoom
         self.update()
 
     def centerNodes(self):

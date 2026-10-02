@@ -13,12 +13,14 @@ import pygraphrt as rt
 class ModulesOperatorsTreeModel(QAbstractItemModel):
     """One-column tree reading modules and operators from a graph runtime.
 
-    Module indexes have internal ID zero. Operator indexes store their parent
-    module's row plus one. Mapping helpers translate between these indexes and
+    Module indexes have internal ID -1. Operator indexes store their parent
+    module's row. Mapping helpers translate between these indexes and
     the registered modules and operators.
     """
 
     SourceRole = int(Qt.ItemDataRole.UserRole) + 4
+
+    NO_PARENT = 0
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -33,9 +35,6 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         self._registry = registry
         self.endResetModel()
 
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        return 1
-
     def index(
         self,
         row: int,
@@ -45,7 +44,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         if not self.hasIndex(row, column, parent):
             return QModelIndex()
 
-        module_id = parent.row() + 1 if parent.isValid() else 0
+        module_id = parent.row() + 1 if parent.isValid() else self.NO_PARENT
         return self.createIndex(row, column, module_id)
 
     def parent(self, child: QModelIndex) -> QModelIndex:  # type: ignore
@@ -55,10 +54,64 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             return QModelIndex()
 
         module_id = child.internalId()
-        if module_id == 0:
+        if module_id == self.NO_PARENT:
             return QModelIndex()
 
-        return self.index(module_id - 1, 0)
+        return self.index(module_id-1, 0)
+
+    def mapToSource(
+            self, index: QModelIndex
+        ) -> AbstractModule | AbstractOperator | None:
+            if self._registry is None:
+                return None
+    
+            if not index.isValid():
+                return None
+            
+            if index.model() is not self:
+                return None
+    
+            if index.column() != 0:
+                return None
+    
+            modules = list(self._registry.modules())
+            module_id = index.internalId()
+            module_row = index.row() if module_id == self.NO_PARENT else module_id -1
+            if not 0 <= module_row < len(modules):
+                return None
+    
+            module = modules[module_row]
+            if module_id == self.NO_PARENT:
+                return module
+    
+            operators = list(module.operators())
+            if not 0 <= index.row() < len(operators):
+                return None
+            return operators[index.row()]
+    
+    def mapFromSource(
+        self, source: AbstractModule | AbstractOperator | None
+    ) -> QModelIndex:
+        if self._registry is None:
+            return QModelIndex()
+
+        if not isinstance(source, (AbstractModule, AbstractOperator)):
+            return QModelIndex()
+
+        for module_row, module in enumerate(self._registry.modules()):
+            module_index = self.index(module_row, 0)
+            if source is module:
+                return module_index
+
+            if isinstance(source, AbstractOperator):
+                for operator_row, operator in enumerate(module.operators()):
+                    if operator == source:
+                        return self.index(operator_row, 0, module_index)
+
+        return QModelIndex()
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 1
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         if self._registry is None:
@@ -70,7 +123,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
 
         if parent.model() is not self or parent.column() != 0:
             return 0
-        if parent.internalId() != 0:
+        if parent.internalId() != self.NO_PARENT:
             return 0
 
         module_row = parent.row()
@@ -102,56 +155,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         
         return None
 
-    def mapToSource(
-        self, index: QModelIndex
-    ) -> AbstractModule | AbstractOperator | None:
-        if self._registry is None:
-            return None
-
-        if not index.isValid():
-            return None
-        
-        if index.model() is not self:
-            return None
-
-        if index.column() != 0:
-            return None
-
-        modules = list(self._registry.modules())
-        module_id = index.internalId()
-        module_row = index.row() if module_id == 0 else module_id - 1
-        if not 0 <= module_row < len(modules):
-            return None
-
-        module = modules[module_row]
-        if module_id == 0:
-            return module
-
-        operators = list(module.operators())
-        if not 0 <= index.row() < len(operators):
-            return None
-        return operators[index.row()]
-
-    def mapFromSource(
-        self, source: AbstractModule | AbstractOperator | None
-    ) -> QModelIndex:
-        if self._registry is None:
-            return QModelIndex()
-
-        if not isinstance(source, (AbstractModule, AbstractOperator)):
-            return QModelIndex()
-
-        for module_row, module in enumerate(self._registry.modules()):
-            module_index = self.index(module_row, 0)
-            if source is module:
-                return module_index
-
-            if isinstance(source, AbstractOperator):
-                for operator_row, operator in enumerate(module.operators()):
-                    if operator == source:
-                        return self.index(operator_row, 0, module_index)
-
-        return QModelIndex()
+    
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         item = self.mapToSource(index)

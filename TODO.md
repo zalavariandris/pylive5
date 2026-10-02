@@ -1,7 +1,14 @@
 # TODO
 
 ## Inspector dev
-- [ ] 
+- [ ] expose the inlets, based on the operator, and the actual inputs. 
+- [x] create a TreeView using the rt.GraphDefinition and rt.moduleRegistry directly.
+      (note: we are dliberatelly bypassing the current GraphModel. 
+      exposing these data might not makes sense for the graph.
+      also the GraphModel interface is not yet finalized. eg using NodeNames instead of 'ModelKey' analoge to the QModelIndex. see other todos.)
+
+## Restore Session
+- [ ] Two details in your current code also need fixing for restoration: fromfile() ignores saved node positions, and _connectDocument() always rearranges the nodes. Imported modules with relative paths also need a stable base directory when the snapshot lives in AppData.  
 
 ## fix open and save
 - [ ] open the lates graph, on launch
