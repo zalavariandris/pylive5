@@ -97,7 +97,12 @@ class DisplayWidget(QWidget):
                 self._label.setStyleSheet("color: red")
                 self._label.setText(f"Exception: {data}")
                 self._update_label_font_size()
-                
+
+            case None:
+                # can we add a striped background for better visibility?
+                self._label.setStyleSheet("color: gray; background: repeating-linear-gradient(45deg, #f0f0f0, #f0f0f0 10px, #e0e0e0 10px, #e0e0e0 20px)")
+                self._label.setText("None")
+                self._update_label_font_size()
 
             case _:
                 self._label.setStyleSheet("color: orange")

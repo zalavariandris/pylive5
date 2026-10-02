@@ -50,11 +50,11 @@ class PyFlowDocument(QObject):
         self.graphselection_model.nodesSelectionChanged.connect(
             self._sync_inspector_to_selection
         )
-
         self.nodes_tree_model = NodesTreeModel(self._graph, self._module_registry)
-        # self.graphselection_model.nodesSelectionChanged.connect(self._sync_output_to_selection)
-        # self.graphselection_model.currentNodeChanged.connect(self._sync_output_to_selection)
-        # self._watcher:rt.Watcher|None = None
+
+        # initial execution
+        for node_ref in self._graph.nodes():
+            self._executor.execute(node_ref)
 
     def _sync_inspector_to_selection(self, *_args: object) -> None:
         selection = self.graphselection_model

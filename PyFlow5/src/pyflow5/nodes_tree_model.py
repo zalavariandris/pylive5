@@ -2,8 +2,11 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import IntEnum
+from pathlib import Path
 from typing import Any
 
+from .inspector_roles import InspectorRole, UNSET
+from pygraphrt.abstract_operator import ParameterData
 from qdageditor5.models.abstract_dag_model import InletName, NodeName
 from qtpy.QtCore import QAbstractItemModel, QAbstractListModel, QModelIndex, Qt
 # from .pygraphrt_model import PyFlowRTModel
@@ -165,7 +168,7 @@ class NodesTreeModel(QAbstractItemModel):
             inlet_shadow = node_shadow.inlet_order[row]
             return self.createIndex(row, column, inlet_shadow)
 
-    def parent(self, index: QModelIndex) -> QModelIndex:
+    def parent(self, index: QModelIndex) -> QModelIndex: # type: ignore
         if not index.isValid() or index.model() is not self:
             return QModelIndex()
 
@@ -192,8 +195,8 @@ class NodesTreeModel(QAbstractItemModel):
         if self._graph is None:
             return 0
 
-        # if parent.model() is not self or parent.column() != 0:
-        #     return 0
+        if parent.isValid() and parent.column() != 0:
+            return 0
 
         handle = parent.internalPointer()
 
@@ -210,60 +213,203 @@ class NodesTreeModel(QAbstractItemModel):
                     assert False, f"Expected a _NodeHandle for a valid parent index, got {handle}"
                     pass
 
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int = ...) -> Any:
-        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
             if section == 0:
                 return "Name"
             elif section == 1:
                 return "Value"
         return None
 
-    def columnCount(self, parent: QModelIndex):
+    def columnCount(self, parent: QModelIndex=QModelIndex())->int:
         return 2
 
-    def _mapToSource(self, index: QModelIndex) -> NodeName | tuple[NodeName, InletName] | None:
-        if self._graph is None:
-            return None
-        if not index.isValid():
-            return None
-        internal_pointer = index.internalPointer()
-        match internal_pointer:
-            case _NodeShadow():
-                return internal_pointer.name
-            case _InputShadow():
-                return (internal_pointer.parent_node.name, internal_pointer.name)
-            case _:
-                return None
+    # def _mapToSource(self, index: QModelIndex) -> NodeName | tuple[NodeName, InletName] | None:
+    #     if self._graph is None:
+    #         return None
+    #     if not index.isValid():
+    #         return None
+    #     internal_pointer = index.internalPointer()
+    #     match internal_pointer:
+    #         case _NodeShadow():
+    #             return internal_pointer.name
+    #         case _InputShadow():
+    #             return (internal_pointer.parent_node.name, internal_pointer.name)
+    #         case _:
+    #             return None
 
-    def data(self, index: QModelIndex, role: int = ...):
+    def _input_details(
+        self, inlet: _InputShadow
+    ) -> tuple[int | str, Any, type | None]:
+        node = inlet.parent_node.rt
+        args, kwargs = node.get_inputs()
+        location = inlet.location
+        parameter = None
+
+        operator = node.get_operator()
+        if operator is not None and isinstance(location, str):
+            parameters = operator.get_parameters()
+            parameter = parameters.get(location)
+
+            if parameter is not None:
+                position = list(parameters).index(location)
+                if position < len(args):
+                    location = position
+
+        if isinstance(location, int):
+            value = args[location]
+        else:
+            value = kwargs.get(location, UNSET)
+
+        default = (
+            parameter.default
+            if parameter is not None
+            else ParameterData._empty
+        )
+
+        annotation = (
+            parameter.annotation
+            if parameter is not None
+            else ParameterData._empty
+        )
+
+        # Support simple postponed annotations without evaluating arbitrary text.
+        if isinstance(annotation, str):
+            annotation = {
+                "int": int,
+                "float": float,
+                "str": str,
+                "Path": Path,
+                "pathlib.Path": Path,
+            }.get(annotation)
+
+        if annotation is ParameterData._empty:
+            annotation = Path if isinstance(value, Path) else type(value)
+
+        value_type = (
+            annotation
+            if annotation in (int, float, str, Path)
+            else None
+        )
+        return location, value, value_type, default
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if self._graph is None:
             return None
 
         if index.isValid() is False:
             return None
 
-        if index.row() >= self.rowCount(QModelIndex()):
+        if index.row() >= self.rowCount(index.parent()):
             return None
 
         shadow = index.siblingAtColumn(0).internalPointer()
 
         match shadow:
             case _NodeShadow() as node_shadow:
-                node_shadow= shadow.rt
+                node_rt = node_shadow.rt
                 match role, index.column():
-                    case Qt.DisplayRole, 0:
-                        return node_shadow.get_name()                    
+                    case Qt.ItemDataRole.DisplayRole, 0:
+                        return node_rt.get_name()                  
 
             case _InputShadow() as inlet_shadow:
-                match role, index.column():
-                    case Qt.DisplayRole, 0:
-                        return f"{inlet_shadow.location}"
-                    case Qt.DisplayRole, 1:
-                        node_rt = inlet_shadow.parent_node.rt
-                        all_inputs = consolidate_inputs_and_parameters(node_rt)
-                        return all_inputs.get(inlet_shadow.location, None)
+                if index.column() == 0:
+                    if role == Qt.ItemDataRole.DisplayRole:
+                        return str(inlet_shadow.location)
+                    return None
+
+                location, value, value_type, default = self._input_details(inlet_shadow)
+
+                if role == InspectorRole.DefaultRole:
+                    return None if default is ParameterData._empty else default
+
+                if role == InspectorRole.TypeRole:
+                    return value_type
+
+                if role == Qt.ItemDataRole.DisplayRole:
+                    if value is UNSET:
+                        if default is ParameterData._empty:
+                            return "Not set"
+                        return f"Default: {default}"
+                    return str(value) if isinstance(value, Path) else value
+
+                if role == InspectorRole.TypeRole:
+                    return value_type
+
+                if role == Qt.ItemDataRole.EditRole:
+                    if isinstance(value, rt.NodeRef) or value_type is None:
+                        return None
+
+                    # Qt chooses its default editor from this value's Python type.
+                    if value is None:
+                        return {
+                            int: 0,
+                            float: 0.0,
+                            str: "",
+                            Path: "",
+                        }[value_type]
+
+                    try:
+                        if value_type is Path:
+                            return str(value)
+                        return value_type(value)
+                    except (TypeError, ValueError, OverflowError):
+                        return {
+                            int: 0,
+                            float: 0.0,
+                            str: "",
+                            Path: "",
+                        }[value_type]
 
             case _:
                 ...
         
         return None
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
+        if not index.isValid() or index.model() is not self:
+            return Qt.ItemFlag.NoItemFlags
+
+        flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        shadow = index.internalPointer()
+
+        if index.column() == 1 and isinstance(shadow, _InputShadow):
+            _, value, value_type, default = self._input_details(shadow)
+            if not isinstance(value, rt.NodeRef) and value_type is not None:
+                flags |= Qt.ItemFlag.ItemIsEditable
+
+        return flags
+
+    def setData(
+        self,
+        index: QModelIndex,
+        value: Any,
+        role: int = Qt.ItemDataRole.EditRole,
+    ) -> bool:
+        if role != Qt.ItemDataRole.EditRole:
+            return False
+        if not self.flags(index) & Qt.ItemFlag.ItemIsEditable:
+            return False
+
+        inlet = index.internalPointer()
+        location, _, value_type, default = self._input_details(inlet)
+        if value_type is None:
+            return False
+
+        node = inlet.parent_node.rt
+        args, kwargs = node.get_inputs()
+        args, kwargs = list(args), dict(kwargs)
+
+        try:
+            value = value_type(value)
+
+            if isinstance(location, int):
+                args[location] = value
+            else:
+                kwargs[location] = value
+
+            node.set_inputs(*args, **kwargs)
+        except (TypeError, ValueError, OverflowError):
+            return False
+
+        return True

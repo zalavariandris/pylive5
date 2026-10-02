@@ -252,12 +252,10 @@ class GraphDeserializer:
             # we probably need to be able to create a OperatorReference by name, even if the operator is missing or broken from the module.
             # this is only true for modules, which strongly own their operators like Importmodule and ScriptModule
             module = registry.find_module_by_name(module_name)
-            operator = module.get_operator_by_name(operator_name)
+            operator: ScriptOperatorRef | None = module.get_operator_by_name(operator_name)
             if operator is None:
-                try:
-                    module.create_placeholder_operator(operator_name)
-                except Exception as e:
-                    print(f"Failed to create operator {operator_name} in module {module_name}: {e}")
+                operator = module.create_placeholder_operator(operator_name)
+
             _operator_by_nodename[node_name] = operator
 
         # == collect operator information for each node ==

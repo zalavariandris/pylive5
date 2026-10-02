@@ -14,6 +14,8 @@ from qtpy.QtCore import (
     Slot
 )
 
+from qtpy.QtGui import QCloseEvent
+
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -248,13 +250,15 @@ class PyFlow5Window(QMainWindow):
         self._settings.setValue("recentGraphs", self._recent_graphs)
         self._settings.sync()
 
+    
+
     def setupMenubar(self):
         menubar: QMenuBar = self.menuBar()
         menubar.addAction("Restart Graph", lambda: self._document.reset_graph())
 
         file_menu = QMenu("File", self)
         menubar.addMenu(file_menu)
-        file_menu.addAction("New",           lambda: None).setShortcut("Ctrl+N")
+        file_menu.addAction("New",           lambda: self.newDocument()).setShortcut("Ctrl+N")
         file_menu.addAction("Open Graph",    lambda: self.openDocument()).setShortcut("Ctrl+O")
         recents_menu = QMenu("Recent Graphs", self)
         for recent in self._recent_graphs:
@@ -353,9 +357,21 @@ class PyFlow5Window(QMainWindow):
     def closeEvent(self, event):
         # Save session path before closing
         try:
+            self._session_path.parent.mkdir(parents=True, exist_ok=True)
             self._document.save(self._session_path)
         except Exception as error:
-            QMessageBox.warning(self, "Cannot save session", str(error))
+            answer = QMessageBox.warning(
+                self,
+                "Cannot save session",
+                f"The session could not be saved:\n{error}\n\n"
+                "Close the app anyway? Unsaved changes may be lost.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+
         event.accept()
 
     def saveDocument(self) -> None:
