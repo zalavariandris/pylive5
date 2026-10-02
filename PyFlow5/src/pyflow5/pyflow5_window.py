@@ -184,15 +184,11 @@ class PyFlow5Window(QMainWindow):
         self._connectDocument(new_document)
 
     def _connectDocument(self, document: PyFlowDocument):
-        if self._document is not None:
-            # Disconnect signals from the old document if necessary
-            ...
-            # clear the document
-            self._document = None
-
+        # Keep the old document alive until its views have disconnected.
         if document:
             self._modules_listview.setModel(document.modules_model)
             self._modules_listview.setSelectionModel(document.modulesselection_model)
+            self._module_details_view.setModel(document.modules_model)
             self._module_details_view.setSelectionModel(document.modulesselection_model)
             self._graph_view.setModel(document.graph_model)
             self._graph_view.setSelectionModel(document.graphselection_model)
@@ -308,11 +304,12 @@ class PyFlow5Window(QMainWindow):
             lambda _: serialization_action.setChecked(False)
         )
 
-    def editLocalDefinitions(self):
-        model = self._document.modules_proxy_model
-        # `Local` is the first editable module in every graph.
+    def editLocalDefinitions(self) -> None:
+        model = self._document.modules_model
+        if model.rowCount() == 0:
+            self._document.addEmbeddedModule()
         self._modules_listview.setCurrentIndex(model.index(0, 0))
-        self._code_editor.setFocus()
+        self._module_details_view._code_editor.setFocus()
 
     def addLocalModule(self):
         self._document.addEmbeddedModule()

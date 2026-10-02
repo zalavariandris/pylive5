@@ -193,6 +193,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             return False
 
         module.set_script(value)
+        self.dataChanged.emit(index, index, [self.SourceRole])
         return True
 
     def addEmbeddedModule(self, name:str|None = None) -> QModelIndex|None:

@@ -26,10 +26,41 @@ class _NodeShadow:
     inlet_order: list[_InputShadow]
 
 
-def consolidate_inputs_and_parameters(node_rt: _NodeShadow) -> Mapping[str|int, Any]:
-    TODO:
-    create a single utility to return the consolidated node inputs and operator parameters
-    node inputs
+def consolidate_inputs_and_parameters(node_rt: rt.NodeRef) -> Mapping[str|int, Any]:
+    # TODO:
+    # create a single utility to return the consolidated node inputs and operator parameters
+    # todo: this could become the get_inputs in the GraphDefinition, since integer locations are not allowed for kwor arguments.
+    # 
+
+    consolidated: dict[str|int, Any] = {}
+    
+    # consolidate operator parameters
+    args, kwargs = node_rt.get_inputs()
+    if node_rt.get_operator() is None:
+        for i, val in enumerate(args):
+            consolidated[i] = val
+        for key, val in kwargs.items():
+            consolidated[key] = val
+        
+    else:
+        op_rt = node_rt.get_operator()
+        for i, (name, param) in enumerate(op_rt.get_parameters().items()):
+            if i<len(args):
+                consolidated[i] = args[i]
+            else:
+                consolidated[name] = kwargs.get(name)
+
+        # what to do when args is longer than the number of parameters
+        if len(args) > len(op_rt.get_parameters()):
+            for i in range(len(op_rt.get_parameters()), len(args)):
+                consolidated[i] = args[i]
+
+        # consolidate remaining keyword arguments that were not matched with parameters
+        for key, val in kwargs.items():
+            if key not in consolidated:
+                consolidated[key] = val
+
+    return consolidated
 
 
 
@@ -88,11 +119,9 @@ class NodesTreeModel(QAbstractItemModel):
                             _InputShadow(location=name, parent_node=nodeshadow)
                         )
                 else:
-                    args, kwargs = node_ref.get_inputs()
-                    for i, val in enumerate(args):
-                        nodeshadow.inlet_order.append(_InputShadow(location=i, parent_node=nodeshadow))
-                    for key, val in kwargs.items():
-                        nodeshadow.inlet_order.append(_InputShadow(location=key, parent_node=nodeshadow))
+                    for location, val in consolidate_inputs_and_parameters(node_ref):
+                        nodeshadow.inlet_order.append(_InputShadow(location=location, parent_node=nodeshadow))
+
 
                 self._nodes_shadow.append(nodeshadow)
 
@@ -211,8 +240,9 @@ class NodesTreeModel(QAbstractItemModel):
                     case Qt.DisplayRole, 0:
                         return f"{inlet_shadow.location}"
                     case Qt.DisplayRole, 1:
-                        if op:=inlet_shadow.parent_node.rt.get_operator():
-                            # return the value of the inlet
+                        node_rt = inlet_shadow.parent_node.rt
+                        all_inputs = consolidate_inputs_and_parameters(node_rt)
+                        return all_inputs.get(inlet_shadow.location, None)
 
             case _:
                 ...
