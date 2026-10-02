@@ -225,12 +225,9 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             return False
 
         module = self.mapToSource(index)
-        if not isinstance(module, ImportModuleRT):
-            return False
-
         row = index.row()
         self.beginRemoveRows(QModelIndex(), row, row)
-        self._registry.remove_import(module)
+        self._registry.remove_module(module)
         self.endRemoveRows()
         return True
 

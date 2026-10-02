@@ -287,8 +287,7 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Duplicate Nodes", lambda: None)
         edit_menu.addSeparator()
 
-        edit_menu.addAction("Edit Local Definitions", self.editLocalDefinitions)
-        edit_menu.addAction("Remove Module", lambda: None)
+        edit_menu.addAction("Remove Selected Module", lambda: self.removeSelectedModule())
 
         view_menu = QMenu("View", self)
         view_menu.addAction("fit nodes",  lambda: None)
@@ -304,15 +303,11 @@ class PyFlow5Window(QMainWindow):
             lambda _: serialization_action.setChecked(False)
         )
 
-    def editLocalDefinitions(self) -> None:
-        model = self._document.modules_model
-        if model.rowCount() == 0:
-            self._document.addEmbeddedModule()
-        self._modules_listview.setCurrentIndex(model.index(0, 0))
-        self._module_details_view._code_editor.setFocus()
-
     def addLocalModule(self):
         self._document.addEmbeddedModule()
+
+    def removeSelectedModule(self):
+        self._document.removeSelectedModule()
 
     def importModule(self):
         # open file browser dialog

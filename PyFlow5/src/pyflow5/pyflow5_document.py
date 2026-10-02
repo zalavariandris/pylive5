@@ -108,12 +108,18 @@ class PyFlowDocument(QObject):
         # self.setOutputNode(None)
         self.graph_model.reset_graph_from_scratch()
         # self.setOutputLocked(False)
+
     def addEmbeddedModule(self, name="_local_") -> None:
         if module_idx := self.modules_model.addEmbeddedModule(name):
             self.modulesselection_model.setCurrentIndex(
                 module_idx, 
                 QItemSelectionModel.ClearAndSelect
             )
+
+    def removeSelectedModule(self) -> None:
+        current_index = self.modulesselection_model.currentIndex()
+        if current_index:
+            self.modules_model.removeModule(current_index)
 
     def importModule(self, file_path: str) -> None:
         if module_idx := self.modules_model.importModule(file_path):

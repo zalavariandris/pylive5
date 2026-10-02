@@ -36,23 +36,25 @@ def consolidate_inputs_and_parameters(node_rt: rt.NodeRef) -> Mapping[str|int, A
     
     # consolidate operator parameters
     args, kwargs = node_rt.get_inputs()
-    if node_rt.get_operator() is None:
+    op_rt = node_rt.get_operator()
+    
+    if op_rt is None:
         for i, val in enumerate(args):
             consolidated[i] = val
         for key, val in kwargs.items():
             consolidated[key] = val
         
     else:
-        op_rt = node_rt.get_operator()
-        for i, (name, param) in enumerate(op_rt.get_parameters().items()):
+        parameters:Mapping = op_rt.get_parameters()
+        for i, (name, param) in enumerate(parameters.items()):
             if i<len(args):
                 consolidated[i] = args[i]
             else:
                 consolidated[name] = kwargs.get(name)
 
         # what to do when args is longer than the number of parameters
-        if len(args) > len(op_rt.get_parameters()):
-            for i in range(len(op_rt.get_parameters()), len(args)):
+        if len(args) > len(parameters):
+            for i in range(len(parameters), len(args)):
                 consolidated[i] = args[i]
 
         # consolidate remaining keyword arguments that were not matched with parameters
@@ -73,6 +75,7 @@ class NodesTreeModel(QAbstractItemModel):
         self._graph_connections: list[Any] = []
         self._nodes_shadow: list[_NodeShadow] = []
         self._registry = registry
+        self._modules_connections: list[Any] = []
         self._setSourceEngine(graph, registry)
 
     def _setSourceEngine(self, graph: rt.GraphDefinitionRT, registry:rt.ModuleRegistry):
@@ -94,6 +97,22 @@ class NodesTreeModel(QAbstractItemModel):
             for signal, slot in self._graph_connections:
                 signal.connect(slot)
             self._graph = graph
+
+        if self._registry is not None:
+            for signal, slot in self._modules_connections:
+                signal.disconnect(slot)
+            self._modules_connections = []
+
+        if registry is not None:
+            self._modules_connections = [
+                (registry.modules_added,  self._rebuild_nodes_shadow),
+                (registry.modules_removed, self._rebuild_nodes_shadow),
+                (registry.operators_added,  self._rebuild_nodes_shadow),
+                (registry.operators_removed, self._rebuild_nodes_shadow),
+                (registry.operators_changed, self._rebuild_nodes_shadow),
+            ]
+            for signal, slot in self._modules_connections:
+                signal.connect(slot)
 
         self._rebuild_nodes_shadow()
 
@@ -119,7 +138,7 @@ class NodesTreeModel(QAbstractItemModel):
                             _InputShadow(location=name, parent_node=nodeshadow)
                         )
                 else:
-                    for location, val in consolidate_inputs_and_parameters(node_ref):
+                    for location, val in consolidate_inputs_and_parameters(node_ref).items():
                         nodeshadow.inlet_order.append(_InputShadow(location=location, parent_node=nodeshadow))
 
 

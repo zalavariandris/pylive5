@@ -133,7 +133,7 @@ class PyFlowRTModel(AbstractDAGModel):
                 if op:=node_ref.get_operator():
                     return None
                 else:
-                    return QColor.red()
+                    return QColor(200,20,20)
 
             case NodeDataRole.LeadingRole:
                 return f"{node_ref.get_name()}"
