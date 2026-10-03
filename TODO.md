@@ -1,4 +1,7 @@
 # TODO
+- [ ] Update data on each keystroke, when setting values for inputs.
+      this probably needs a nodeTreeModel refactor,
+      so it wont reset the model all the time, and recreate the whole view each time it receives an update.
 - [ ] NodeInputDelegate feels overenginered.
       Is is still? > Review
 - [x] Why its not able to use standard QLayouts?
