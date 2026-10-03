@@ -264,6 +264,7 @@ dependencies = [
     { name = "pygraphrt" },
     { name = "pyqt6" },
     { name = "qdageditor5" },
+    { name = "qdarkstyle" },
     { name = "qscriptedit2" },
     { name = "qtpy" },
     { name = "qtscripteditoradvanced" },
@@ -276,6 +277,7 @@ requires-dist = [
     { name = "pygraphrt", editable = "PyGraphRT" },
     { name = "pyqt6" },
     { name = "qdageditor5", editable = "QDAGEditor5" },
+    { name = "qdarkstyle" },
     { name = "qscriptedit2", editable = "QScriptEdit2" },
     { name = "qtpy" },
     { name = "qtscripteditoradvanced", editable = "QtScriptEditorAdvanced" },
@@ -532,6 +534,18 @@ requires-dist = [
     { name = "networkx" },
     { name = "pydot" },
     { name = "qtpy" },
+]
+
+[[package]]
+name = "qdarkstyle"
+version = "3.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "qtpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/1e/5bf72a61a7636058e25eaa7503c050dae9445de75fad6f71ba08f2174e49/QDarkStyle-3.2.3.tar.gz", hash = "sha256:0c0b7f74a6e92121008992b369bab60468157db1c02cd30d64a5e9a3b402f1ae", size = 700957, upload-time = "2023-11-28T19:54:51.623Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/93/7d/c3c10498430dadcea4def5faddf71cd199e577d20a125e7ef1e9d7bdbbfa/QDarkStyle-3.2.3-py2.py3-none-any.whl", hash = "sha256:ea980ee426d594909cf1058306832af71ff6cbad6f69237b036d1550635aefbc", size = 871762, upload-time = "2023-11-28T19:54:48.123Z" },
 ]
 
 [[package]]

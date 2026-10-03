@@ -16,9 +16,11 @@ from qtpy.QtCore import (
 )
 
 from qtpy.QtGui import QCloseEvent
+from qtpy.QtGui import QActionGroup
 
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QFileDialog,
     QLabel,
@@ -29,6 +31,7 @@ from qtpy.QtWidgets import (
     QMenuBar,
     QMessageBox,
     QPlainTextEdit, 
+    QStyleFactory,
     QSplitter,
     QTreeView,
     QVBoxLayout, 
@@ -163,6 +166,18 @@ class PyFlow5Window(QMainWindow):
             "BABLab", # organization
             "PyFlow5" # application
         )
+
+        app = QApplication.instance()
+        if app is None:
+            raise RuntimeError("PyFlow5Window requires a QApplication instance")
+        style_keys = {key.casefold(): key for key in QStyleFactory.keys()}
+        self._system_style_key = style_keys.get(
+            app.style().objectName().casefold(), "Fusion"
+        )
+        self._theme = self._settings.value("theme", "system", type=str)
+        if self._theme not in {"system", "fusion", "dark"}:
+            self._theme = "system"
+        self._applyTheme(self._theme, persist=False)
 
         self._recent_graphs: list[str] = self._settings.value(
             "recentGraphs", [], type=list
@@ -313,6 +328,21 @@ class PyFlow5Window(QMainWindow):
         view_menu.addAction("fit nodes",  lambda: None)
         view_menu.addAction("layout nodes",  lambda: None)
         view_menu.addSeparator()
+        theme_menu = view_menu.addMenu("Theme")
+        theme_group = QActionGroup(self)
+        theme_group.setExclusive(True)
+        for label, theme in (
+            ("System", "system"),
+            ("Fusion", "fusion"),
+            ("Dark", "dark"),
+        ):
+            action = theme_menu.addAction(label)
+            action.setCheckable(True)
+            theme_group.addAction(action)
+            action.triggered.connect(
+                lambda checked=False, selected=theme: self._applyTheme(selected)
+            )
+            action.setChecked(theme == self._theme)
         menubar.addMenu(view_menu)
 
         window_menu = menubar.addMenu("Window")
@@ -322,6 +352,29 @@ class PyFlow5Window(QMainWindow):
         self._serialization_window.finished.connect(
             lambda _: serialization_action.setChecked(False)
         )
+
+    def _applyTheme(self, theme: str, *, persist: bool = True) -> None:
+        app = QApplication.instance()
+        if app is None:
+            raise RuntimeError("Theme changes require a QApplication instance")
+
+        app.setStyleSheet("")
+        if theme == "system":
+            app.setStyle(self._system_style_key)
+        elif theme == "fusion":
+            app.setStyle("Fusion")
+        elif theme == "dark":
+            import qdarkstyle
+
+            app.setStyle("Fusion")
+            app.setStyleSheet(qdarkstyle.load_stylesheet(qt_api="pyqt6"))
+        else:
+            raise ValueError(f"Unknown theme: {theme}")
+
+        self._theme = theme
+        if persist:
+            self._settings.setValue("theme", theme)
+            self._settings.sync()
 
     def addLocalModule(self):
         self._document.addEmbeddedModule()

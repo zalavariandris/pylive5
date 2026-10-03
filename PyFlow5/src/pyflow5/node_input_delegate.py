@@ -8,11 +8,13 @@ from qtpy.QtWidgets import (
     QStyleOptionViewItem,
     QWidget,
     QPushButton,
+    QLineEdit,
 )
 
 from qtpy.QtGui import QPainter, QPalette
 
 from .inspector_roles import InspectorRole
+from pygraphrt.abstract_operator import ParameterData
 
 
 class NodeInputWidget(QWidget):
@@ -60,6 +62,8 @@ class NodeInputDelegate(QStyledItemDelegate):
         option: QStyleOptionViewItem, 
         index: QModelIndex
     ) -> QWidget|None:
+
+        # find appropriate editor based on the annotation
         annotation = index.data(InspectorRole.AnnotationRole)
         if annotation == "int" or annotation is int:
             editor = QSpinBox(parent)
@@ -67,23 +71,20 @@ class NodeInputDelegate(QStyledItemDelegate):
             editor = QDoubleSpinBox(parent)
             editor.setDecimals(3)
             editor.setSingleStep(0.1)
+        elif annotation == "str" or annotation is str:
+            editor = QLineEdit(parent)
         else:
             editor = super().createEditor(parent, option, index)
 
         if editor is None:
             return None
 
+        # create wrapper widget
         wrapper = NodeInputWidget(editor, parent)
 
-        model = index.model()
-        node_ref = index.data(InspectorRole.NodeRefRole)
-        location = index.data(InspectorRole.InputLocationRole)
-        if node_ref is not None and location is not None:
-            wrapper.clearRequested.connect(
-                lambda: self._clear_input(
-                    wrapper, model, node_ref, location
-                )
-            )
+        wrapper.clearRequested.connect(
+            lambda: self._clear_input(wrapper, index)
+        )
 
         return wrapper
 
@@ -99,21 +100,13 @@ class NodeInputDelegate(QStyledItemDelegate):
             return
         super().setModelData(editor, model, index)
 
-    def updateEditorGeometry(self, editor, option, index):
-        if isinstance(editor, NodeInputWidget):
-            editor.setGeometry(option.rect)
-            return
-        super().updateEditorGeometry(editor, option, index)
-
-    def _clear_input(self, editor, model, node_ref, location) -> None:
-        clear_input = getattr(model, "clearInput", None)
-        if not callable(clear_input):
-            return
-
+    def _clear_input(self, editor, index) -> None:
         self.closeEditor.emit(
             editor, QStyledItemDelegate.EndEditHint.NoHint
         )
-        clear_input(node_ref, location)
+        index.model().setData(
+            index, ParameterData.EMPTY, Qt.ItemDataRole.EditRole
+        )
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)

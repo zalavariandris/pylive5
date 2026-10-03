@@ -13,6 +13,7 @@ requires-python = ">=3.12"
 dependencies = [
     "qtpy",
     "pyqt6",
+    "qdarkstyle",
     "myutils",
     "myqtx",
     "pygraphrt",

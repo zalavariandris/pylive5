@@ -89,3 +89,18 @@ def test_delegate_commits_int_and_string_values(
         lambda: node_ref.get_inputs()[0][input_row] == value
     )
     assert node_ref.get_inputs()[0][input_row] == value
+
+
+def test_clear_button_removes_input_through_model_set_data(
+    qtbot, input_graph, tree_view,
+):
+    node_ref, model = input_graph
+    index = model.index(1, 1, model.index(0, 0))
+
+    tree_view.edit(index)
+    qtbot.waitUntil(lambda: tree_view.findChild(NodeInputWidget) is not None)
+    wrapper = tree_view.findChild(NodeInputWidget)
+
+    QTest.mouseClick(wrapper.clear_button, Qt.MouseButton.LeftButton)
+
+    qtbot.waitUntil(lambda: node_ref.get_inputs() == ((7,), {}))

@@ -420,6 +420,8 @@ class NodesTreeModel(QAbstractItemModel):
 
         inlet = index.internalPointer()
         location, _, value_type, default = self._input_details(inlet)
+        if value is ParameterData.EMPTY:
+            return self.clearInput(inlet.parent_node.rt, location)
         if value_type is None:
             return False
 

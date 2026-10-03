@@ -1,4 +1,15 @@
 # TODO
+- [ ] NodeInputDelegate feels overenginered.
+      Is is still? > Review
+- [x] Why its not able to use standard QLayouts?
+      Turns out using layout would overcomplicate things
+- [ ] factor out the session and probably settings from the current Window.
+       window should be a document window. this will allow testing empty GUI (without loading the last session)
+       as well as opening multiple documents. The problem is, that the Window acstions are controlled by the document window for now.
+       probably we should have a DocumentsList model as well.
+       I like it when projectfiles open in another instance of the whole application, but also the session, and recent files in the menu
+       has a wider responsibility than a single document. So... maybe we could have tabs as well as opening document in multiple window, 
+       but in a single app.
 
 - [x] fix saving and loading broken graphs
       `create_placeholder_operator`

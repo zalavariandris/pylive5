@@ -2,6 +2,7 @@ import pygraphrt as rt
 
 from pyflow5.inspector_roles import InspectorRole
 from pyflow5.nodes_tree_model import NodesTreeModel
+from pygraphrt.abstract_operator import ParameterData
 
 
 def test_clear_input_removes_and_shifts_positional_arguments(qtbot):
@@ -18,7 +19,7 @@ def test_clear_input_removes_and_shifts_positional_arguments(qtbot):
 
     assert input_index.data(InspectorRole.NodeRefRole) == node_ref
     assert input_index.data(InspectorRole.InputLocationRole) == "first"
-    assert model.clearInput(node_ref, "first")
+    assert model.setData(input_index, ParameterData.EMPTY)
     assert node_ref.get_inputs() == ((20,), {})
 
 
@@ -32,6 +33,9 @@ def test_clear_input_removes_keyword_binding_and_restores_default(qtbot):
     node_ref = graph.nodes()[0]
     model = NodesTreeModel(graph, rt.ModuleRegistry())
 
-    assert model.clearInput(node_ref, "second")
+    node_index = model.index(0, 0)
+    input_index = model.index(1, 1, node_index)
+
+    assert model.setData(input_index, ParameterData.EMPTY)
     assert node_ref.get_inputs() == ((), {})
 
