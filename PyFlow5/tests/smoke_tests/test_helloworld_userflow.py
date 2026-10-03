@@ -39,6 +39,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
 
     document: PyFlowDocument = window._document
     assert list(document.graph_model.nodes()) == []
+    assert not window._node_tree_view.isVisible()
 
     # - no module is selected now. check if the details view shows "<No Selection>", and disabled.
     assert window._module_details_view.currentIndex() == QModelIndex()
@@ -162,6 +163,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     qtbot.mouseClick(graph_view, Qt.MouseButton.LeftButton, pos=view_pos)
     qtbot.waitUntil(lambda: document.graphselection_model.selectedNodes() == ("helloworld",))
     qtbot.wait(WAIT_TIME_MS)
+    assert window._node_tree_view.isVisible()
     
     # Check the displayed result and the document output.
     viewer:Viewer = window._viewer
@@ -264,6 +266,8 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     # save to  a file
     output_file = tmp_path / "test_helloworld_userflow_output.json"
     document.save(str(output_file))
+    document.graphselection_model.clearSelection()
+    assert not window._node_tree_view.isVisible()
     
 if __name__ == "__main__":
     import pytest

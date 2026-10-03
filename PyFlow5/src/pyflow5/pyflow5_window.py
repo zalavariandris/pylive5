@@ -25,6 +25,7 @@ from qtpy.QtWidgets import (
     QFileDialog,
     QLabel,
     QDialog,
+    QGridLayout,
     QHeaderView,
     QListView,
     QMenu,
@@ -147,6 +148,7 @@ class PyFlow5Window(QMainWindow):
             1, 
             NodeInputDelegate(self._node_tree_view)
         )
+        self._node_tree_view.hide()
         
         # - Setup display widget -
         self._viewer = Viewer(self)
@@ -187,15 +189,26 @@ class PyFlow5Window(QMainWindow):
             Path(self._settings.fileName()).parent / "session.json"
         )
 
+        # - Overlay the selected node tree on the graph -
+        self._graph_container = QWidget(self)
+        graph_layout = QGridLayout(self._graph_container)
+        graph_layout.setContentsMargins(0, 0, 0, 0)
+        graph_layout.addWidget(self._graph_view, 0, 0)
+        graph_layout.addWidget(
+            self._node_tree_view,
+            0,
+            0,
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
+        )
+
         # - Add widgets to splitter -
         splitter = QSplitter(self)
         splitter.addWidget(self._modules_listview)
         splitter.addWidget(self._module_details_view)
-        splitter.addWidget(self._graph_view)
+        splitter.addWidget(self._graph_container)
         # splitter.addWidget(self._inspector_view)
-        splitter.addWidget(self._node_tree_view)
         splitter.addWidget(self._viewer)
-        splitter.setSizes([100, 350, 400, 260, 350])
+        splitter.setSizes([100, 350, 660, 350])
         self.resize(1460, 600)
 
         self.setCentralWidget(splitter)
@@ -240,6 +253,7 @@ class PyFlow5Window(QMainWindow):
             self._document.graphselection_model.nodesSelectionChanged.connect(
                 self._on_graph_selection_changed
             )
+            self._on_graph_selection_changed(set(), set())
 
         # todo: with the inspector, reconsider setting the CurrentIndex directly, 
         # and remove setSelectionModel methods
@@ -258,6 +272,7 @@ class PyFlow5Window(QMainWindow):
         else:
             root = QModelIndex()  # show all nodes
         self._node_tree_view.setRootIndex(root)
+        self._node_tree_view.setVisible(bool(selection))
 
     def newDocument(self) -> None:
         self._connectDocument(PyFlowDocument())
