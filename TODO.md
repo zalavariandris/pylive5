@@ -2,8 +2,7 @@
 - [ ] Update data on each keystroke, when setting values for inputs.
       this probably needs a nodeTreeModel refactor,
       so it wont reset the model all the time, and recreate the whole view each time it receives an update.
-- [ ] NodeInputDelegate feels overenginered.
-      Is is still? > Review
+- [ ] How to use input signal instead of finished editing in the NodeInputDelegate?
 - [x] Why its not able to use standard QLayouts?
       Turns out using layout would overcomplicate things
 - [ ] factor out the session and probably settings from the current Window.
@@ -21,7 +20,7 @@
       his is broken on open, and probably on save as well.
 
 ## Inspector dev
-- [ ] expose the inlets, based on the operator, and the actual inputs. 
+- [x] expose the inlets, based on the operator, and the actual inputs. 
 - [x] create a TreeView using the rt.GraphDefinition and rt.moduleRegistry directly.
       (note: we are dliberatelly bypassing the current GraphModel. 
       exposing these data might not makes sense for the graph.
