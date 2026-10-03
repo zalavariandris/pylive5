@@ -1,8 +1,9 @@
 import pytest
 import pygraphrt as rt
 from qtpy.QtCore import Qt
+from qtpy.QtGui import QPalette
 from qtpy.QtTest import QTest
-from qtpy.QtWidgets import QLineEdit, QSpinBox, QTreeView
+from qtpy.QtWidgets import QLineEdit, QSpinBox, QStyle, QStyleOptionViewItem, QTreeView
 
 from pyflow5.node_input_delegate import NodeInputDelegate, NodeInputWidget
 from pyflow5.nodes_tree_model import NodesTreeModel
@@ -140,6 +141,31 @@ def test_spin_box_updates_model_without_committing_initial_value(
     assert node_ref.get_inputs()[0][0] == 8
     assert updates == [8]
     assert wrapper.isVisible()
+
+
+def test_default_value_uses_dim_text_when_selected(qtbot):
+    graph = rt.GraphDefinitionRT()
+
+    @graph.node()
+    def with_default(count: int = 7) -> int:
+        return count
+
+    model = NodesTreeModel(graph, rt.ModuleRegistry())
+    index = model.index(0, 1, model.index(0, 0))
+    option = QStyleOptionViewItem()
+    option.state |= QStyle.StateFlag.State_Selected
+    dim_text = option.palette.color(
+        QPalette.ColorGroup.Disabled,
+        QPalette.ColorRole.Text,
+    )
+
+    NodeInputDelegate().initStyleOption(option, index)
+
+    assert option.palette.color(
+        QPalette.ColorGroup.Active,
+        QPalette.ColorRole.HighlightedText,
+    ) == dim_text
+    assert option.font.italic()
 
 
 def test_clear_button_removes_input_through_model_set_data(

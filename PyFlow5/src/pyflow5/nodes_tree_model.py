@@ -144,6 +144,27 @@ class NodesTreeModel(QAbstractItemModel):
         )
         self.endResetModel()
 
+    def mapFromSource(self, node_ref: rt.NodeRef) -> QModelIndex:
+        row = next(
+            (
+                index
+                for index, shadow in enumerate(self._nodes_shadow)
+                if shadow.rt == node_ref
+            ),
+            None,
+        )
+        if row is None:
+            return QModelIndex()
+        return self.index(row, 0)
+
+    def indexFromNodeName(self, name: NodeName) -> QModelIndex:
+        row = next(
+            (i for i, shadow in enumerate(self._nodes_shadow)
+             if shadow.rt.get_name() == name),
+            None,
+        )
+        return self.index(row, 0) if row is not None else QModelIndex()
+
     @staticmethod
     def _input_locations(node_ref: rt.NodeRef) -> list[int | str]:
         operator = node_ref.get_operator()

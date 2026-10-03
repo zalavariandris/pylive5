@@ -237,12 +237,27 @@ class PyFlow5Window(QMainWindow):
             # set the new document
             self._document = document
 
+            self._document.graphselection_model.nodesSelectionChanged.connect(
+                self._on_graph_selection_changed
+            )
+
         # todo: with the inspector, reconsider setting the CurrentIndex directly, 
         # and remove setSelectionModel methods
         # (as well as using that pattern with the other detail views as well)
         # when a new document is created the signals from the document will
         # go away with the old document anyway. Meanwhile signals from the view, will
         # target the new document
+
+    def _on_graph_selection_changed(
+        self, selected: set[NodeName], deselected: set[NodeName]
+    ) -> None:
+        assert self._document is not None
+        selection = self._document.graphselection_model.selectedNodes()
+        if len(selection) == 1:
+            root = self._document.nodes_tree_model.indexFromNodeName(selection[0])
+        else:
+            root = QModelIndex()  # show all nodes
+        self._node_tree_view.setRootIndex(root)
 
     def newDocument(self) -> None:
         self._connectDocument(PyFlowDocument())

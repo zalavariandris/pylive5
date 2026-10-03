@@ -27,7 +27,11 @@ class NodeInputWidget(QWidget):
         # create the editor
         self.editor = editor
         editor.setParent(self)
-        self.clear_button = QPushButton("Clear", self)
+
+        self.clear_button = QPushButton("✖", self)
+        self.clear_button.setStyleSheet(
+            "QPushButton { background: transparent; border: none; padding: 0; margin: 0; }"
+        )
         self.clear_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.clear_button.clicked.connect(self.clearRequested.emit)
         self.setFocusProxy(editor)
@@ -44,7 +48,7 @@ class NodeInputWidget(QWidget):
             rect.x() + editor_width,
             rect.y(),
             button_width,
-            rect.height(),
+            rect.height()
         )
 
     def paintEvent(self, event):
@@ -123,7 +127,11 @@ class NodeInputDelegate(QStyledItemDelegate):
             index, ParameterData.EMPTY, Qt.ItemDataRole.EditRole
         )
 
-    def initStyleOption(self, option, index):
+    def initStyleOption(
+        self, option: QStyleOptionViewItem | None, index: QModelIndex
+    ) -> None:
+        if option is None:
+            return
         super().initStyleOption(option, index)
 
         if index.data(InspectorRole.IsUsingDefaultRole):
@@ -131,13 +139,14 @@ class NodeInputDelegate(QStyledItemDelegate):
                 QPalette.ColorGroup.Disabled,
                 QPalette.ColorRole.Text,
             )
-            option.palette.setColor(
+            option.font.setItalic(True)
+            for group in (
                 QPalette.ColorGroup.Active,
-                QPalette.ColorRole.Text,
-                color,
-            )
-            option.palette.setColor(
                 QPalette.ColorGroup.Inactive,
-                QPalette.ColorRole.Text,
-                color,
-            )
+            ):
+                option.palette.setColor(
+                    group, QPalette.ColorRole.Text, color
+                )
+                option.palette.setColor(
+                    group, QPalette.ColorRole.HighlightedText, color
+                )
