@@ -78,6 +78,13 @@ def test_delegate_commits_int_and_string_values(
     view.edit(index)
     qtbot.waitUntil(lambda: view.findChild(NodeInputWidget) is not None)
     wrapper = view.findChild(NodeInputWidget)
+    qtbot.waitUntil(
+        lambda: (
+            wrapper.editor.value() == 7
+            if isinstance(wrapper.editor, QSpinBox)
+            else wrapper.editor.text() == "before"
+        )
+    )
 
     if isinstance(wrapper.editor, QSpinBox):
         wrapper.editor.setValue(value)
@@ -89,6 +96,50 @@ def test_delegate_commits_int_and_string_values(
         lambda: node_ref.get_inputs()[0][input_row] == value
     )
     assert node_ref.get_inputs()[0][input_row] == value
+
+
+def test_line_edit_updates_model_for_each_keystroke(qtbot, input_graph, tree_view):
+    node_ref, model = input_graph
+    index = model.index(1, 1, model.index(0, 0))
+    updates = []
+    model.dataChanged.connect(
+        lambda *_args: updates.append(node_ref.get_inputs()[0][1])
+    )
+
+    tree_view.edit(index)
+    qtbot.waitUntil(lambda: tree_view.findChild(NodeInputWidget) is not None)
+    wrapper = tree_view.findChild(NodeInputWidget)
+    qtbot.waitUntil(lambda: wrapper.editor.text() == "before")
+    wrapper.editor.selectAll()
+
+    QTest.keyClicks(wrapper.editor, "ok")
+
+    assert node_ref.get_inputs()[0][1] == "ok"
+    assert updates == ["o", "ok"]
+    assert wrapper.isVisible()
+
+
+def test_spin_box_updates_model_without_committing_initial_value(
+    qtbot, input_graph, tree_view,
+):
+    node_ref, model = input_graph
+    index = model.index(0, 1, model.index(0, 0))
+    updates = []
+    model.dataChanged.connect(
+        lambda *_args: updates.append(node_ref.get_inputs()[0][0])
+    )
+
+    tree_view.edit(index)
+    qtbot.waitUntil(lambda: tree_view.findChild(NodeInputWidget) is not None)
+    wrapper = tree_view.findChild(NodeInputWidget)
+    qtbot.waitUntil(lambda: wrapper.editor.value() == 7)
+    assert updates == []
+
+    QTest.keyClick(wrapper.editor, Qt.Key.Key_Up)
+
+    assert node_ref.get_inputs()[0][0] == 8
+    assert updates == [8]
+    assert wrapper.isVisible()
 
 
 def test_clear_button_removes_input_through_model_set_data(

@@ -82,17 +82,32 @@ class NodeInputDelegate(QStyledItemDelegate):
         # create wrapper widget
         wrapper = NodeInputWidget(editor, parent)
 
+        if isinstance(editor, QLineEdit):
+            editor.textEdited.connect(
+                lambda *_: self.commitData.emit(wrapper)
+            )
+        elif isinstance(editor, (QSpinBox, QDoubleSpinBox)):
+            editor.valueChanged.connect(
+                lambda *_: self.commitData.emit(wrapper)
+            )
+
         wrapper.clearRequested.connect(
             lambda: self._clear_input(wrapper, index)
         )
 
         return wrapper
 
-    def setEditorData(self, editor, index):
-        if isinstance(editor, NodeInputWidget):
-            super().setEditorData(editor.editor, index)
+    def setEditorData(
+        self, editor: QWidget | None, index: QModelIndex
+    ) -> None:
+        if editor is None:
             return
-        super().setEditorData(editor, index)
+        target = editor.editor if isinstance(editor, NodeInputWidget) else editor
+        signals_were_blocked = target.blockSignals(True)
+        try:
+            super().setEditorData(target, index)
+        finally:
+            target.blockSignals(signals_were_blocked)
 
     def setModelData(self, editor, model, index):
         if isinstance(editor, NodeInputWidget):
