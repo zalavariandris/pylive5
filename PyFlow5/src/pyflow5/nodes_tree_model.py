@@ -1,11 +1,14 @@
+from __future__ import annotations
+
+from pyparsing import Literal
 """A tree projection of one graphmodel."""
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
-from .inspector_roles import InspectorRole, UNSET
+from .inspector_roles import InspectorRole
 from pygraphrt.abstract_operator import ParameterData
 from qdageditor5.models.abstract_dag_model import InletName, NodeName
 from qtpy.QtCore import QAbstractItemModel, QAbstractListModel, QModelIndex, Qt
@@ -13,9 +16,10 @@ from qtpy.QtCore import QAbstractItemModel, QAbstractListModel, QModelIndex, Qt
 
 import pygraphrt as rt
 
+
 @dataclass
 class _OperatorShadow:
-    rt: rt.OperatorRef
+    rt: rt.AbstractOperator
 
 @dataclass
 class _InputShadow:
@@ -68,6 +72,11 @@ def consolidate_inputs_and_parameters(node_rt: rt.NodeRef) -> Mapping[str|int, A
     return consolidated
 
 
+class _InputDetails(NamedTuple):
+    location: int|str
+    value: object
+    annotation: Any
+    default: Any
 
 class NodesTreeModel(QAbstractItemModel):
     """A tree projection of one graphmodel."""
@@ -151,7 +160,6 @@ class NodesTreeModel(QAbstractItemModel):
 
         print("Rebuilt nodes shadow: ", self._nodes_shadow)
 
-   
     # mapping source to QModel indexes
     def index(self, row: int, column: int = 0, parent: QModelIndex = QModelIndex()) -> QModelIndex:
         if not self.hasIndex(row, column, parent):
@@ -239,14 +247,16 @@ class NodesTreeModel(QAbstractItemModel):
     #             return None
 
     def _input_details(
-        self, inlet: _InputShadow
-    ) -> tuple[int | str, Any, type | None]:
-        node = inlet.parent_node.rt
+        self, 
+        inlet: _InputShadow
+    ) -> _InputDetails:
+        node:rt.NodeRef = inlet.parent_node.rt
         args, kwargs = node.get_inputs()
-        location = inlet.location
-        parameter = None
+        location:int|str = inlet.location
+        parameter:rt.ParameterData|None = None
 
-        operator = node.get_operator()
+        # find parameter locator
+        operator:rt.AbstractOperator|None = node.get_operator()
         if operator is not None and isinstance(location, str):
             parameters = operator.get_parameters()
             parameter = parameters.get(location)
@@ -256,21 +266,23 @@ class NodesTreeModel(QAbstractItemModel):
                 if position < len(args):
                     location = position
 
+        # find value based on location
         if isinstance(location, int):
             value = args[location]
         else:
-            value = kwargs.get(location, UNSET)
+            value = kwargs.get(location, ParameterData.EMPTY)
 
+        # has default?
         default = (
             parameter.default
             if parameter is not None
-            else ParameterData._empty
+            else ParameterData.EMPTY
         )
 
         annotation = (
             parameter.annotation
             if parameter is not None
-            else ParameterData._empty
+            else ParameterData.EMPTY
         )
 
         # Support simple postponed annotations without evaluating arbitrary text.
@@ -283,15 +295,18 @@ class NodesTreeModel(QAbstractItemModel):
                 "pathlib.Path": Path,
             }.get(annotation)
 
-        if annotation is ParameterData._empty:
-            annotation = Path if isinstance(value, Path) else type(value)
+        if annotation is ParameterData.EMPTY:
+            if value is ParameterData.EMPTY:
+                annotation = None
+            else:
+                annotation = Path if isinstance(value, Path) else type(value)
 
-        value_type = (
-            annotation
-            if annotation in (int, float, str, Path)
-            else None
+        return _InputDetails(
+            location, 
+            value, 
+            annotation,
+            default
         )
-        return location, value, value_type, default
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if self._graph is None:
@@ -315,51 +330,63 @@ class NodesTreeModel(QAbstractItemModel):
             case _InputShadow() as inlet_shadow:
                 if index.column() == 0:
                     if role == Qt.ItemDataRole.DisplayRole:
-                        return str(inlet_shadow.location)
+                        return f"{inlet_shadow.location}"
                     return None
 
-                location, value, value_type, default = self._input_details(inlet_shadow)
+                if index.column() == 1:
+                    input_details = self._input_details(inlet_shadow)
 
-                if role == InspectorRole.DefaultRole:
-                    return None if default is ParameterData._empty else default
+                    if role == InspectorRole.NodeRefRole:
+                        return inlet_shadow.parent_node.rt
 
-                if role == InspectorRole.TypeRole:
-                    return value_type
+                    elif role == InspectorRole.InputLocationRole:
+                        return inlet_shadow.location
 
-                if role == Qt.ItemDataRole.DisplayRole:
-                    if value is UNSET:
-                        if default is ParameterData._empty:
-                            return "Not set"
-                        return f"Default: {default}"
-                    return str(value) if isinstance(value, Path) else value
+                    if role == Qt.ItemDataRole.DisplayRole:
+                        if input_details.value is ParameterData.EMPTY:
+                            if input_details.default is ParameterData.EMPTY:
+                                return "Not set"
+                            else:
+                                return f"{input_details.default}"
+                            
+                        elif input_details.value is rt.NodeRef:
+                            return f"->{input_details.value}"
+                        else:
+                            return input_details.value
 
-                if role == InspectorRole.TypeRole:
-                    return value_type
+                    elif role == Qt.ItemDataRole.EditRole:
+                        if isinstance(input_details.value, rt.NodeRef):
+                            return None
+                        
+                        elif input_details.value is ParameterData.EMPTY:
+                            # Qt chooses its default editor from this value's Python type.
+                            annotation = input_details.annotation
+                            if annotation is int:
+                                return 0
+                            if annotation is float:
+                                return 0.0
+                            if annotation is str:
+                                return ""
+                            if annotation is Path:
+                                return ""
+                            if annotation is bool:
+                                return False
+                    
+                            return None
 
-                if role == Qt.ItemDataRole.EditRole:
-                    if isinstance(value, rt.NodeRef) or value_type is None:
-                        return None
+                    elif role == InspectorRole.IsUsingDefaultRole:
+                        return (
+                            input_details.value is ParameterData.EMPTY
+                            and input_details.default is not ParameterData.EMPTY
+                        )
 
-                    # Qt chooses its default editor from this value's Python type.
-                    if value is None:
-                        return {
-                            int: 0,
-                            float: 0.0,
-                            str: "",
-                            Path: "",
-                        }[value_type]
+                    elif role == InspectorRole.DefaultRole:
+                        if input_details.default is ParameterData.EMPTY:
+                            return None
+                        return input_details.default
 
-                    try:
-                        if value_type is Path:
-                            return str(value)
-                        return value_type(value)
-                    except (TypeError, ValueError, OverflowError):
-                        return {
-                            int: 0,
-                            float: 0.0,
-                            str: "",
-                            Path: "",
-                        }[value_type]
+                    elif role == InspectorRole.AnnotationRole:
+                        return input_details.annotation
 
             case _:
                 ...
@@ -412,4 +439,36 @@ class NodesTreeModel(QAbstractItemModel):
         except (TypeError, ValueError, OverflowError):
             return False
 
+        return True
+
+    def clearInput(self, node_ref: rt.NodeRef, location: int | str) -> bool:
+        if self._graph is None or node_ref not in self._graph.nodes():
+            return False
+
+        operator = node_ref.get_operator()
+        args, kwargs = node_ref.get_inputs()
+        args, kwargs = list(args), dict(kwargs)
+        changed = False
+
+        if isinstance(location, int):
+            if not 0 <= location < len(args):
+                return False
+            args.pop(location)
+            changed = True
+        else:
+            parameters = list(operator.get_parameters()) if operator else []
+            if location in parameters:
+                position = parameters.index(location)
+                if position < len(args):
+                    args.pop(position)
+                    changed = True
+
+            if location in kwargs:
+                del kwargs[location]
+                changed = True
+
+        if not changed:
+            return False
+
+        self._graph._update_node(node_ref, operator, args, kwargs)
         return True

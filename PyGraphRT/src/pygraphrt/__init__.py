@@ -23,12 +23,13 @@ from .abstract_module_rt import (
 )
 
 from .function_operator import FunctionOperator
-from .script_module import ScriptModuleRT
+from .script_module import ScriptModuleRT, ScriptOperatorRef
 from .import_module import ImportModuleRT
 from .errors import GraphExecutionError
 from .module_registry import ModuleRegistry
 from .graph_invalidator import GraphInvalidator
 from .graph_serializer import GraphSerializer, GraphDeserializer
+from .abstract_module_rt import ParameterData
 
 __all__ = [
     "AbstractModule",
@@ -39,11 +40,13 @@ __all__ = [
     "HistoryMemoryCache",
     "DummyCache",
     "ScriptModuleRT",
+    "ScriptOperatorRef",
     "ImportModuleRT",
     "GraphExecutionError",
     "GraphExecutorRT",
     "ModuleRegistry",
     "GraphInvalidator",
     "GraphSerializer",
-    "GraphDeserializer"
+    "GraphDeserializer",
+    "ParameterData"
 ]

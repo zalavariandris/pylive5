@@ -2,6 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
+from PyFlow5.src.pyflow5.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
 from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QModelIndex
@@ -22,6 +23,7 @@ from qtpy.QtWidgets import (
     QFileDialog,
     QLabel,
     QDialog,
+    QHeaderView,
     QListView,
     QMenu,
     QMenuBar,
@@ -104,9 +106,10 @@ class DetailsView(QWidget):
 
 
 class PyFlow5Window(QMainWindow):
-    def __init__(self, parent=None)->None:
+    def __init__(self, use_session=False, parent=None)->None:
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
+        self._use_session = use_session # this should be factored out into a configuration or settings manager see todos
 
         # - Setup modules view -
         self._modules_listview = QListView(self)
@@ -129,6 +132,18 @@ class PyFlow5Window(QMainWindow):
         # - Setup node inspector -
         # self._inspector_view = InspectorView(self)
         self._node_tree_view = QTreeView(self)
+        node_tree_header = self._node_tree_view.header()
+        node_tree_header.setStretchLastSection(True)
+        node_tree_header.setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        node_tree_header.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._node_tree_view.setItemDelegateForColumn(
+            1, 
+            NodeInputDelegate(self._node_tree_view)
+        )
         
         # - Setup display widget -
         self._viewer = Viewer(self)
@@ -177,7 +192,7 @@ class PyFlow5Window(QMainWindow):
 
         # Create a new document and connect it to the window
         # Load the last session if it exists
-        if self._session_path.exists():
+        if self._use_session and self._session_path.exists():
             new_document = PyFlowDocument().fromfile(str(self._session_path))
         else:
             new_document = PyFlowDocument()
@@ -267,8 +282,7 @@ class PyFlow5Window(QMainWindow):
         file_menu.addAction("Save Graph",    lambda: self.saveDocument()).setShortcut("Ctrl+S")
         file_menu.addAction("Save Graph As", lambda: None).setShortcut("Ctrl+Shift+S")
         file_menu.addSeparator()
-        file_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
-        file_menu.addAction("Add Local Module", lambda: self.addLocalModule())
+        
 
         edit_menu = QMenu("Edit", self)
         menubar.addMenu(edit_menu)
@@ -291,6 +305,8 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Duplicate Nodes", lambda: None)
         edit_menu.addSeparator()
 
+        edit_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
+        edit_menu.addAction("Add Local Module", lambda: self.addLocalModule())
         edit_menu.addAction("Remove Selected Module", lambda: self.removeSelectedModule())
 
         view_menu = QMenu("View", self)
@@ -356,21 +372,23 @@ class PyFlow5Window(QMainWindow):
 
     def closeEvent(self, event):
         # Save session path before closing
-        try:
-            self._session_path.parent.mkdir(parents=True, exist_ok=True)
-            self._document.save(self._session_path)
-        except Exception as error:
-            answer = QMessageBox.warning(
-                self,
-                "Cannot save session",
-                f"The session could not be saved:\n{error}\n\n"
-                "Close the app anyway? Unsaved changes may be lost.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                event.ignore()
-                return
+        if self._use_session:
+            try:
+                
+                self._session_path.parent.mkdir(parents=True, exist_ok=True)
+                self._document.save(self._session_path)
+            except Exception as error:
+                answer = QMessageBox.warning(
+                    self,
+                    "Cannot save session",
+                    f"The session could not be saved:\n{error}\n\n"
+                    "Close the app anyway? Unsaved changes may be lost.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    event.ignore()
+                    return
 
         event.accept()
 

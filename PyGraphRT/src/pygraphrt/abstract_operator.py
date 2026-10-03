@@ -1,14 +1,16 @@
 from typing import ClassVar, Any, Mapping
 import abc
+import inspect
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class ParameterData:
-    _empty:ClassVar = object()
+    EMPTY: ClassVar[Any] = inspect.Parameter.empty
+    _empty: ClassVar[Any] = EMPTY  # Compatibility for existing callers.
     name:str
-    annotation:type = _empty
-    default: Any = _empty
+    annotation: Any = EMPTY
+    default: Any = EMPTY
 
     def __repr__(self):
         return f"ParameterData(name='{self.name}', annotation={self.annotation}, default={self.default})"

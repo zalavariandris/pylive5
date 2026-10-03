@@ -14,9 +14,12 @@ UNSET = object()
 
 class InspectorRole(IntEnum):
     KeyRole = int(Qt.ItemDataRole.UserRole) + 1
-    TypeRole = KeyRole + 1
     DefaultRole = KeyRole + 2
     BindingRole = KeyRole + 3
     ConnectionRole = KeyRole + 4
     EditorHintsRole = KeyRole + 5
     ErrorRole = KeyRole + 6
+    AnnotationRole = KeyRole + 7
+    IsUsingDefaultRole = KeyRole + 8
+    NodeRefRole = KeyRole + 9
+    InputLocationRole = KeyRole + 10
