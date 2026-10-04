@@ -23,6 +23,7 @@ from qtpy.QtWidgets import (
     QApplication,
     QCheckBox,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QDialog,
     QGridLayout,
@@ -34,6 +35,7 @@ from qtpy.QtWidgets import (
     QPlainTextEdit, 
     QStyleFactory,
     QSplitter,
+    QTabWidget,
     QTreeView,
     QVBoxLayout, 
     QWidget, 
@@ -117,6 +119,7 @@ class PyFlow5Window(QMainWindow):
 
         # - Setup modules view -
         self._modules_listview = QListView(self)
+        self._modules_listview.setFixedWidth(100)
         self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         
         # - Setup modules details view -
@@ -203,12 +206,19 @@ class PyFlow5Window(QMainWindow):
 
         # - Add widgets to splitter -
         splitter = QSplitter(self)
-        splitter.addWidget(self._modules_listview)
-        splitter.addWidget(self._module_details_view)
-        splitter.addWidget(self._graph_container)
-        # splitter.addWidget(self._inspector_view)
+        modules_panel = QWidget(self)
+        module_panel_layout = QHBoxLayout()
+        modules_panel.setLayout(module_panel_layout)
+        module_panel_layout.addWidget(self._modules_listview, 0)
+        module_panel_layout.addWidget(self._module_details_view, 1)
+        
+
+        tabwidget = QTabWidget(self)
+        tabwidget.addTab(modules_panel, "Modules")
+        tabwidget.addTab(self._graph_container, "Graph")
+        splitter.addWidget(tabwidget)
         splitter.addWidget(self._viewer)
-        splitter.setSizes([100, 350, 660, 350])
+        splitter.setSizes([730, 730])
         self.resize(1460, 600)
 
         self.setCentralWidget(splitter)
@@ -235,6 +245,7 @@ class PyFlow5Window(QMainWindow):
             self._modules_listview.setSelectionModel(document.modulesselection_model)
             self._module_details_view.setModel(document.modules_model)
             self._module_details_view.setSelectionModel(document.modulesselection_model)
+
             self._graph_view.setModel(document.graph_model)
             self._graph_view.setSelectionModel(document.graphselection_model)
             self._graph_view.layout_nodes()
@@ -309,8 +320,6 @@ class PyFlow5Window(QMainWindow):
 
         self._settings.setValue("recentGraphs", self._recent_graphs)
         self._settings.sync()
-
-    
 
     def setupMenubar(self):
         menubar: QMenuBar = self.menuBar()
