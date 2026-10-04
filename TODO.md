@@ -1,5 +1,9 @@
 # TODO
-- [ ] Update data on each keystroke, when setting values for inputs.
+- [ ] distinguishe the current and selected nodes in the graphivew. And make slection propagation to the modules view, viewer etc consistent, with the current and seleciton indexes.
+- [ ] indicate cursor linenumber on the code editor even when its not active.
+      for example highlight the numbers on the left. the cursor is not visible, when the code editor is not active.
+- [x] go to the operator line in the module script when a node is selected.
+- [x] Update data on each keystroke, when setting values for inputs.
       this probably needs a nodeTreeModel refactor,
       so it wont reset the model all the time, and recreate the whole view each time it receives an update.
 - [ ] How to use input signal instead of finished editing in the NodeInputDelegate?
