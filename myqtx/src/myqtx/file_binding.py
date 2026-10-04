@@ -4,7 +4,21 @@ from qtpy.QtCore import QCoreApplication, QFileSystemWatcher, QObject, QTimer, S
 
 
 class FileBinding(QObject):
-    """An in-memory UTF-8 text file with optional automatic reloading.
+    """
+    Usage Example:
+    from myqtx import FileBinding
+
+    buffer: FileBinding = FileBinding("notes.txt", watch=True)
+    buffer.changed.connect(lambda: print("Buffer changed"))
+    buffer.set_text("Hello from FileBinding!")
+    if not buffer.save():
+        print("Save conflict: the file changed on disk.")
+
+    print(buffer.get_text())
+    buffer.close()
+    
+    
+    An in-memory UTF-8 text file with optional automatic reloading.
 
     This buffer accepts arbitrary text; it does not execute or validate Python.
     A path is optional at construction: the buffer can exist in memory only until

@@ -2,7 +2,7 @@ from turtle import color
 
 from qtpy.QtCore import QObject, QPointF, QRect, QRectF, Qt
 from qtpy.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPalette, QPen, QPen
-from qtpy.QtWidgets import QStyle, QStyleOptionGraphicsItem, QStyleOptionViewItem
+from qtpy.QtWidgets import QApplication, QStyle, QStyleOptionGraphicsItem, QStyleOptionViewItem
 from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
@@ -169,30 +169,45 @@ class StyledNodeDelegate(QObject):
         return path
     
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName):
+        # # paint shape
+        # palette:QPalette = option.palette
+
+
+        # if option.state & QStyle.StateFlag.State_Selected:
+        #     brush = QBrush(QColor(0, 120, 215))
+        # elif option.state & QStyle.StateFlag.State_MouseOver:
+        #     brush = QBrush(palette.highlight())
+        # else:
+        #     brush = QBrush(palette.base())
+
+        # if model and model.nodeData(node, Qt.ItemDataRole.BackgroundRole) is not None:
+        #     brush = model.nodeData(node, Qt.ItemDataRole.BackgroundRole)
+        # path = self.shape(option, model, node)
+        # painter.setPen(QPen(palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
+        # painter.setBrush(brush)
+        # painter.drawPath(path)
+        # painter.restore()
+
+        # # paint labels
+        style:QStyle = option.widget.style() if option.widget else QApplication.style()
+
+        # # option.rect = self.rect(option, model, node).toRect()
+        # print(option.widget, option.rect)
+        
         painter.save()
-        # paint shape
-        palette:QPalette = option.palette
-
-
-        if option.state & QStyle.StateFlag.State_Selected:
-            brush = QBrush(QColor(0, 120, 215))
-        elif option.state & QStyle.StateFlag.State_MouseOver:
-            brush = QBrush(palette.highlight())
-        else:
-            brush = QBrush(palette.base())
-
-        if model and model.nodeData(node, Qt.ItemDataRole.BackgroundRole) is not None:
-            brush = model.nodeData(node, Qt.ItemDataRole.BackgroundRole)
-        path = self.shape(option, model, node)
-        painter.setPen(QPen(palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
-        painter.setBrush(brush)
-        painter.drawPath(path)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setClipPath(self.shape(option, model, node), Qt.ClipOperation.IntersectClip)
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, option.widget)
+        for graphic in list(self.__labels(option, model, node))[1:]:
+            # skip the first element, because it is painted using the drawControl method above
+            graphic.paint(painter, option)
         painter.restore()
 
-        # paint labels
+        # paint ouside
         painter.save()
-        for graphic in self.__labels(option, model, node):
-            graphic.paint(painter, option)
+        title_label = list(self.__labels(option, model, node))[0]
+        painter.setPen(QPen(option.palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
+        painter.drawRoundedRect(title_label.boundingRect(option), 5, 5)
         painter.restore()
 
         # # debug

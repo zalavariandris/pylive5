@@ -27,7 +27,21 @@ class ModuleDetailsView(QWidget):
 
         self._title_label = QLabel(self)
         self._code_editor = ScriptEditAdvanced(completer=None, parent=self)
-        self._code_editor.textChanged.connect(self._on_editor_text_changed)
+
+
+        def _on_editor_text_changed() -> None:
+            if self._model is None or not self._current_index.isValid():
+                return
+            
+            if not self._code_editor.isEnabled():
+                return
+            
+            self._model.setData(
+                self.currentIndex(),
+                self._code_editor.toPlainText(),
+                ModulesOperatorsTreeModel.SourceRole,
+            )
+        self._code_editor.textChanged.connect(_on_editor_text_changed)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._title_label)
@@ -100,17 +114,6 @@ class ModuleDetailsView(QWidget):
                 index = selected[0]
         self.setCurrentIndex(index)
 
-    def _on_editor_text_changed(self) -> None:
-        if self._model is None or not self._current_index.isValid():
-            return
-        if not self._code_editor.isEnabled():
-            return
-        self._model.setData(
-            self.currentIndex(),
-            self._code_editor.toPlainText(),
-            ModulesOperatorsTreeModel.SourceRole,
-        )
-
     def _on_model_reset(self) -> None:
         self.setCurrentIndex(QModelIndex())
 
@@ -144,9 +147,9 @@ class ModuleDetailsView(QWidget):
         title = current.data(Qt.ItemDataRole.DisplayRole) if current.isValid() else "<No Selection>"
         source = current.data(ModulesOperatorsTreeModel.SourceRole)
         self._title_label.setText(title or "")
-        with myqtx.blockingSignals(self._code_editor):
-            text = source if isinstance(source, str) else ""
-            # Model notifications echo edits; replacing identical text loses undo and the cursor.
-            if reset_editor or self._code_editor.toPlainText() != text:
-                self._code_editor.setPlainText(text)
-            self._code_editor.setEnabled(isinstance(source, str))
+        # with myqtx.blockingSignals(self._code_editor):
+        text = source if isinstance(source, str) else ""
+        # Model notifications echo edits; replacing identical text loses undo and the cursor.
+        if reset_editor or self._code_editor.toPlainText() != text:
+            self._code_editor.setPlainText(text)
+        self._code_editor.setEnabled(isinstance(source, str))

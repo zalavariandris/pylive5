@@ -228,14 +228,25 @@ class DirectionalGraphView5(QFrame):
     def _createStyleOption(self, node: NodeName) -> QStyleOptionViewItem:
         option = QStyleOptionViewItem()
         option.initFrom(self)
-        option.state = QStyle.StateFlag.State_Enabled
+        option.state = QStyle.StateFlag.State_Active
+        option.state |= QStyle.StateFlag.State_Enabled
         option.font = self.font()
         option.fontMetrics = QFontMetrics(option.font)
+        option.widget = self
         if ('node', node) == self._hovered_item:
             option.state |= QStyle.StateFlag.State_MouseOver
+            # option.state |= QStyle.StateFlag.State_Active # this is not default, but now we can see if its hovered
+            # option.state |= QStyle.StateFlag.State_HasFocus
         if self._selection_model is not None:
             if node in self._selection_model.selectedNodes():
                 option.state |= QStyle.StateFlag.State_Selected
+
+        text = self._model.nodeData(node, Qt.ItemDataRole.DisplayRole)
+        option.text = str(text) if text is not None else ""
+        option.features |= QStyleOptionViewItem.ViewItemFeature.HasDisplay
+        option.displayAlignment = Qt.AlignmentFlag.AlignCenter
+        option.rect = self._nodeShape(option, node).boundingRect().toAlignedRect()
+        option.backgroundBrush = option.palette.base()
         return option
 
     # nodes delegate

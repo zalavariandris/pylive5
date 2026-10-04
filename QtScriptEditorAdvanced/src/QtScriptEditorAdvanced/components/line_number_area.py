@@ -1,8 +1,8 @@
 from typing import *
 try:
-    from typing import override
+	from typing import override
 except ImportError:
-    from typing_extensions import override
+	from typing_extensions import override
 
 from qtpy.QtWidgets import QPlainTextEdit, QWidget
 from qtpy.QtGui import QPainter, QFontMetrics, QColor, QPaintEvent, QFont, QFontMetricsF, QPalette, QTextOption
@@ -33,6 +33,9 @@ class LineNumberArea(QWidget):
 
 		self._bars = []
 
+		# update the linenumbers on cursor change
+		editor.cursorPositionChanged.connect(self.update)
+
 	def clearBars(self):
 		self._bars = []
 		self.update()
@@ -52,13 +55,13 @@ class LineNumberArea(QWidget):
 		return QSize(self.lineNumberAreaWidth(), 0)
 
 	def lineNumberAreaWidth(self):
-		digits = 1;
+		digits = 1
 		line_count = max(1, self.editor.blockCount())
 		while line_count >= 10:
 			line_count /= 10
 			digits+=1
 
-		space = 3 + self.fontMetrics().horizontalAdvance('9') * digits;
+		space = 3 + self.fontMetrics().horizontalAdvance('9') * min(2, digits)
 
 		return space
 
@@ -81,25 +84,43 @@ class LineNumberArea(QWidget):
 		palette = self.palette()
 		text_color = palette.color(QPalette.ColorRole.PlaceholderText)
 
+		
+		current_text_color: QColor = palette.color(QPalette.ColorRole.HighlightedText)
+
 
 		block = self.editor.firstVisibleBlock()
 		block_number = block.blockNumber()
 		top = round(self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top())
 		bottom = top + round(self.editor.blockBoundingRect(block).height())
 
+		current_block: int = self.editor.textCursor().blockNumber()
 		while block.isValid() and top <= event.rect().bottom():
 			if block.isVisible() and bottom >= event.rect().top():
 				number = str(block_number + 1)
+				if block_number == current_block:
+					painter.setPen(Qt.NoPen)
+					painter.setBrush(palette.color(QPalette.ColorRole.Highlight))
+					painter.drawRoundedRect(QRectF(
+						0,
+						top,
+						self.width(),
+						self.fontMetrics().height()
+					), 4, 4)
+					
+					# painter.setPen(current_text_color)
+				
 				painter.setPen(text_color)
+
+
 				painter.drawText(0, top, self.width(), self.fontMetrics().height(),
 								 Qt.AlignRight, number)
+
+				
 			
 			block = block.next()
 			top = bottom
 			bottom = top + round(self.editor.blockBoundingRect(block).height())
 			block_number += 1
-
-		
 
 	def paintBars(self):
 		painter = QPainter(self);

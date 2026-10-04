@@ -119,6 +119,7 @@ class PyFlow5Window(QMainWindow):
 
         # - Setup modules view -
         self._modules_listview = QListView(self)
+        self._modules_listview.setMouseTracking(True)
         self._modules_listview.setFixedWidth(100)
         self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         
@@ -139,6 +140,7 @@ class PyFlow5Window(QMainWindow):
         # - Setup node inspector -
         # self._inspector_view = InspectorView(self)
         self._node_tree_view = QTreeView(self)
+        self._node_tree_view.setMouseTracking(True)
         node_tree_header = self._node_tree_view.header()
         node_tree_header.setStretchLastSection(True)
         node_tree_header.setSectionResizeMode(
@@ -151,7 +153,8 @@ class PyFlow5Window(QMainWindow):
             1, 
             NodeInputDelegate(self._node_tree_view)
         )
-        self._node_tree_view.hide()
+        self._node_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        # self._node_tree_view.hide()
         
         # - Setup display widget -
         self._viewer = Viewer(self)
@@ -175,14 +178,14 @@ class PyFlow5Window(QMainWindow):
         app = QApplication.instance()
         if app is None:
             raise RuntimeError("PyFlow5Window requires a QApplication instance")
-        style_keys = {key.casefold(): key for key in QStyleFactory.keys()}
-        self._system_style_key = style_keys.get(
-            app.style().objectName().casefold(), "Fusion"
-        )
-        self._theme = self._settings.value("theme", "system", type=str)
-        if self._theme not in {"system", "fusion", "dark"}:
-            self._theme = "system"
-        self._applyTheme(self._theme, persist=False)
+        # style_keys = {key.casefold(): key for key in QStyleFactory.keys()}
+        # self._system_style_key = style_keys.get(
+        #     app.style().objectName().casefold(), "Fusion"
+        # )
+        # self._theme = self._settings.value("theme", "system", type=str)
+        # if self._theme not in {"system", "fusion", "dark"}:
+        #     self._theme = "system"
+        # self._applyTheme(self._theme, persist=False)
 
         self._recent_graphs: list[str] = self._settings.value(
             "recentGraphs", [], type=list
@@ -261,10 +264,22 @@ class PyFlow5Window(QMainWindow):
             # set the new document
             self._document = document
 
+
+            def _refresh_node_tree_view_on_selectionchange() -> None:
+                assert self._document is not None
+                # selection = self._document.graphselection_model.selectedNodes()
+                # if len(selection) == 1:
+                #     node_ref = self._document.graph_model.mapToSource(selection[0])
+                #     root = self._document.nodes_tree_model.mapFromSource(node_ref)
+                # else:
+                #     root = QModelIndex()  # show all nodes
+                # self._node_tree_view.setRootIndex(root)
+                # self._node_tree_view.setVisible(bool(selection))
+
             self._document.graphselection_model.nodesSelectionChanged.connect(
-                self._on_graph_selection_changed
+                lambda selected, deselected: _refresh_node_tree_view_on_selectionchange()
             )
-            self._on_graph_selection_changed(set(), set())
+            _refresh_node_tree_view_on_selectionchange()
 
             self._document.graphselection_model.currentNodeChanged.connect(
                 lambda current, previous: self._navigate_to_selected_nodes_operator()
@@ -277,17 +292,7 @@ class PyFlow5Window(QMainWindow):
         # go away with the old document anyway. Meanwhile signals from the view, will
         # target the new document
 
-    def _on_graph_selection_changed(
-        self, selected: set[NodeName], deselected: set[NodeName]
-    ) -> None:
-        assert self._document is not None
-        selection = self._document.graphselection_model.selectedNodes()
-        if len(selection) == 1:
-            root = self._document.nodes_tree_model.indexFromNodeName(selection[0])
-        else:
-            root = QModelIndex()  # show all nodes
-        self._node_tree_view.setRootIndex(root)
-        self._node_tree_view.setVisible(bool(selection))
+    
 
     def newDocument(self) -> None:
         self._connectDocument(PyFlowDocument())
@@ -390,21 +395,21 @@ class PyFlow5Window(QMainWindow):
         
         view_menu.addAction("Go to Selected Node's Operator", lambda: self._navigate_to_selected_nodes_operator())
         view_menu.addSeparator()
-        theme_menu = view_menu.addMenu("Theme")
-        theme_group = QActionGroup(self)
-        theme_group.setExclusive(True)
-        for label, theme in (
-            ("System", "system"),
-            ("Fusion", "fusion"),
-            ("Dark", "dark"),
-        ):
-            action = theme_menu.addAction(label)
-            action.setCheckable(True)
-            theme_group.addAction(action)
-            action.triggered.connect(
-                lambda checked=False, selected=theme: self._applyTheme(selected)
-            )
-            action.setChecked(theme == self._theme)
+        # theme_menu = view_menu.addMenu("Theme")
+        # theme_group = QActionGroup(self)
+        # theme_group.setExclusive(True)
+        # for label, theme in (
+        #     ("System", "system"),
+        #     ("Fusion", "fusion"),
+        #     ("Dark", "dark"),
+        # ):
+        #     action = theme_menu.addAction(label)
+        #     action.setCheckable(True)
+        #     theme_group.addAction(action)
+        #     action.triggered.connect(
+        #         lambda checked=False, selected=theme: self._applyTheme(selected)
+        #     )
+        #     action.setChecked(theme == self._theme)
         menubar.addMenu(view_menu)
 
         window_menu = menubar.addMenu("Window")

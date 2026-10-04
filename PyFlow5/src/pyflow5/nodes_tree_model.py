@@ -10,7 +10,6 @@ from typing import Any, NamedTuple
 
 from .inspector_roles import InspectorRole
 from pygraphrt.abstract_operator import ParameterData
-from qdageditor5.models.abstract_dag_model import InletName, NodeName
 from qtpy.QtCore import QAbstractItemModel, QAbstractListModel, QModelIndex, QObject, Qt
 # from .pygraphrt_model import PyFlowRTModel
 
@@ -156,14 +155,6 @@ class NodesTreeModel(QAbstractItemModel):
         if row is None:
             return QModelIndex()
         return self.index(row, 0)
-
-    def indexFromNodeName(self, name: NodeName) -> QModelIndex:
-        row = next(
-            (i for i, shadow in enumerate(self._nodes_shadow)
-             if shadow.rt.get_name() == name),
-            None,
-        )
-        return self.index(row, 0) if row is not None else QModelIndex()
 
     @staticmethod
     def _input_locations(node_ref: rt.NodeRef) -> list[int | str]:
@@ -349,20 +340,6 @@ class NodesTreeModel(QAbstractItemModel):
 
     def columnCount(self, parent: QModelIndex=QModelIndex())->int:
         return 2
-
-    # def _mapToSource(self, index: QModelIndex) -> NodeName | tuple[NodeName, InletName] | None:
-    #     if self._graph is None:
-    #         return None
-    #     if not index.isValid():
-    #         return None
-    #     internal_pointer = index.internalPointer()
-    #     match internal_pointer:
-    #         case _NodeShadow():
-    #             return internal_pointer.name
-    #         case _InputShadow():
-    #             return (internal_pointer.parent_node.name, internal_pointer.name)
-    #         case _:
-    #             return None
 
     def _input_details(
         self, 
