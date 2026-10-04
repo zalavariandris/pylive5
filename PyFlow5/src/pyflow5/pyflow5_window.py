@@ -2,7 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
-from PyFlow5.src.pyflow5.node_input_delegate import NodeInputDelegate
+from pyflow5.inspector.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
 from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex
@@ -58,57 +58,12 @@ from .modules_operator_tree_model import ModulesOperatorsTreeModel
 
 # views
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
-from .inspector_view import InspectorEditor, InspectorView
+from .inspector.inspector_view import InspectorEditor, InspectorView
 from .module_details_view import ModuleDetailsView
 
 from qtpy.QtCore import QSettings
 
 from pathlib import Path
-
-class DetailsView(QWidget):
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-        self._model:QAbstractItemModel|None=None
-        self._model_connections: list[tuple[Signal, Slot]] = []
-        self._selection_model: QAbstractItemModel|None = None
-        self._selection_model_connections: list[tuple[Signal, Slot]] = []
-        
-    def setModel(self, model):
-        if self._model:
-            for signal, slot in self._model_connections:
-                signal.disconnect(slot)
-            self._model_connections = []
-            self._model = None
-
-        if model:
-            self._model_connections = [
-                (self._model, self._model.dataChanged),
-                (self._model, self._model.rowsRemoved),
-                (self._model, self._model.modelReset),
-            ]
-            for signal, slot in self._model_connections:
-                signal.connect(slot)
-
-            self._model = model
-
-    def setSelecitonModel(self, selection_model):
-        if selection_model.model() != self._model:
-            raise ValueError("Selection model's model does not match the current model.")
-        
-        if self._selection_model:
-            for signal, slot in self._selection_model_connections:
-                signal.disconnect(slot)
-            self._selection_model_connections = []
-            self._selection_model = None
-
-        if selection_model:
-            self._selection_model_connections = [
-                (selection_model, selection_model.currentChanged),
-            ]
-            for signal, slot in self._selection_model_connections:
-                signal.connect(slot)
-
-            self._selection_model = selection_model
 
 
 class PyFlow5Window(QMainWindow):
@@ -158,14 +113,6 @@ class PyFlow5Window(QMainWindow):
         
         # - Setup display widget -
         self._viewer = Viewer(self)
-        
-        # - Serialization widget -
-        self._serialization_window = QDialog(self)
-        self._serialization_window.setWindowTitle("Serialization")
-        self._serialization_window.resize(400, 600)
-        serialization_layout = QVBoxLayout(self._serialization_window)
-        self._serialization_widget = QPlainTextEdit(self._serialization_window)
-        serialization_layout.addWidget(self._serialization_widget)
 
         # - Settings
         self._settings = QSettings(
@@ -216,10 +163,11 @@ class PyFlow5Window(QMainWindow):
         module_panel_layout.addWidget(self._module_details_view, 1)
         
 
-        tabwidget = QSplitter(self)
-        tabwidget.addWidget(modules_panel)
-        tabwidget.addWidget(self._graph_container)
-        splitter.addWidget(tabwidget)
+        self._tabwidget = QTabWidget(self)
+        self._tabwidget.addTab(self._graph_container, "Graph")
+        self._tabwidget.addTab(modules_panel, "Modules")
+        
+        splitter.addWidget(self._tabwidget)
         splitter.addWidget(self._viewer)
         splitter.setSizes([730, 730])
         self.resize(1460, 600)
@@ -267,23 +215,23 @@ class PyFlow5Window(QMainWindow):
 
             def _refresh_node_tree_view_on_selectionchange() -> None:
                 assert self._document is not None
-                # selection = self._document.graphselection_model.selectedNodes()
-                # if len(selection) == 1:
-                #     node_ref = self._document.graph_model.mapToSource(selection[0])
-                #     root = self._document.nodes_tree_model.mapFromSource(node_ref)
-                # else:
-                #     root = QModelIndex()  # show all nodes
-                # self._node_tree_view.setRootIndex(root)
-                # self._node_tree_view.setVisible(bool(selection))
+                current = self._document.graphselection_model.currentNode()
+                if current is not None:
+                    node_ref = self._document.graph_model.mapToSource(current)
+                    root = self._document.nodes_tree_model.mapFromSource(node_ref)
+                else:
+                    root = QModelIndex()  # show all nodes
+                self._node_tree_view.setRootIndex(root)
+                self._node_tree_view.setVisible(bool(current))
 
-            self._document.graphselection_model.nodesSelectionChanged.connect(
+            self._document.graphselection_model.currentNodeChanged.connect(
                 lambda selected, deselected: _refresh_node_tree_view_on_selectionchange()
             )
             _refresh_node_tree_view_on_selectionchange()
 
-            self._document.graphselection_model.currentNodeChanged.connect(
-                lambda current, previous: self._navigate_to_selected_nodes_operator()
-            )
+            # self._document.graphselection_model.currentNodeChanged.connect(
+            #     lambda current, previous: self._navigate_to_current_node_operator()
+            # )
 
         # todo: with the inspector, reconsider setting the CurrentIndex directly, 
         # and remove setSelectionModel methods
@@ -291,8 +239,6 @@ class PyFlow5Window(QMainWindow):
         # when a new document is created the signals from the document will
         # go away with the old document anyway. Meanwhile signals from the view, will
         # target the new document
-
-    
 
     def newDocument(self) -> None:
         self._connectDocument(PyFlowDocument())
@@ -331,22 +277,23 @@ class PyFlow5Window(QMainWindow):
         self._settings.sync()
 
     @Slot()
-    def _navigate_to_selected_nodes_operator(self):
+    def _navigate_to_current_node_operator(self):
         if self._document is None:
             return
-        selected_nodes = self._document.graphselection_model.selectedNodes()
-        if not selected_nodes:
+        
+        current_node = self._document.graphselection_model.currentNode()
+        if not current_node:
             return
-        current_node = next(iter(selected_nodes))
+
         # get the node module, and select it in the module view
         operator_index = self._document.getNodeOperator(current_node)
         if operator_index:
+            self._tabwidget.setCurrentIndex(1)
             module_index = operator_index.parent()
             self._document.modulesselection_model.setCurrentIndex(module_index, QItemSelectionModel.ClearAndSelect)
 
             self._module_details_view.goToOperator(operator_index)
             
-
     def setupMenubar(self):
         menubar: QMenuBar = self.menuBar()
         menubar.addAction("Restart Graph", lambda: self._document.reset_graph())
@@ -363,7 +310,6 @@ class PyFlow5Window(QMainWindow):
         file_menu.addAction("Save Graph As", lambda: None).setShortcut("Ctrl+Shift+S")
         file_menu.addSeparator()
         
-
         edit_menu = QMenu("Edit", self)
         menubar.addMenu(edit_menu)
         edit_menu.addAction("Undo",  lambda: None)
@@ -372,6 +318,8 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Copy",  lambda: None)
         edit_menu.addAction("Paste", lambda: None)
         edit_menu.addSeparator()
+
+        edit_menu.addAction("Navigate to Current Node's Operator", lambda: self._navigate_to_current_node_operator()).setShortcut("Return")
 
         edit_menu.addAction("Select All", lambda: None)
         edit_menu.addAction("Select None", lambda: None)
@@ -393,32 +341,9 @@ class PyFlow5Window(QMainWindow):
         view_menu.addAction("fit nodes",  lambda: None)
         view_menu.addAction("layout nodes",  lambda: None)
         
-        view_menu.addAction("Go to Selected Node's Operator", lambda: self._navigate_to_selected_nodes_operator())
+        view_menu.addAction("Go to Selected Node's Operator", lambda: self._navigate_to_current_node_operator())
         view_menu.addSeparator()
-        # theme_menu = view_menu.addMenu("Theme")
-        # theme_group = QActionGroup(self)
-        # theme_group.setExclusive(True)
-        # for label, theme in (
-        #     ("System", "system"),
-        #     ("Fusion", "fusion"),
-        #     ("Dark", "dark"),
-        # ):
-        #     action = theme_menu.addAction(label)
-        #     action.setCheckable(True)
-        #     theme_group.addAction(action)
-        #     action.triggered.connect(
-        #         lambda checked=False, selected=theme: self._applyTheme(selected)
-        #     )
-        #     action.setChecked(theme == self._theme)
         menubar.addMenu(view_menu)
-
-        window_menu = menubar.addMenu("Window")
-        serialization_action = window_menu.addAction("Serialization")
-        serialization_action.setCheckable(True)
-        serialization_action.toggled.connect(self._serialization_window.setVisible)
-        self._serialization_window.finished.connect(
-            lambda _: serialization_action.setChecked(False)
-        )
 
     def _applyTheme(self, theme: str, *, persist: bool = True) -> None:
         app = QApplication.instance()

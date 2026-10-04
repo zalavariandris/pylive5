@@ -77,7 +77,8 @@ class _InputDetails(NamedTuple):
     annotation: Any
     default: Any
 
-class NodesTreeModel(QAbstractItemModel):
+
+class NodesTreeAdapterModel(QAbstractItemModel):
     """A tree projection of one graphmodel."""
 
     def __init__(
@@ -493,8 +494,11 @@ class NodesTreeModel(QAbstractItemModel):
         if not index.isValid() or index.model() is not self:
             return Qt.ItemFlag.NoItemFlags
 
-        flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        flags = Qt.ItemFlag.ItemIsEnabled
         shadow = index.internalPointer()
+
+        if index.column() == 0 and isinstance(shadow, _NodeShadow):
+            flags |= Qt.ItemFlag.ItemIsSelectable
 
         if index.column() == 1 and isinstance(shadow, _InputShadow):
             _, value, value_type, default = self._input_details(shadow)

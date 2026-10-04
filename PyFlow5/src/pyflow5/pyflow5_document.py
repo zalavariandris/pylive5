@@ -12,9 +12,8 @@ import pygraphrt as rt
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
-from .pygraphrt_details_model import GraphDetailsModel
-from .pygraphrt_model import PyFlowRTModel
-from .nodes_tree_model import NodesTreeModel
+from .pygraphrt_dag_model import PyFlowRTModel
+from .inspector.pygraphrt_nodes_inputs_tree_model import NodesTreeAdapterModel
 
 
 class PyFlowDocument(QObject):
@@ -44,14 +43,7 @@ class PyFlowDocument(QObject):
         self.modulesselection_model = QItemSelectionModel(self.modules_model)
 
         self.graphselection_model = GraphSelectionModel(self.graph_model)
-        self.graphdetails_model = GraphDetailsModel(self.graph_model, self)
-        self.graphselection_model.currentNodeChanged.connect(
-            self._sync_inspector_to_selection
-        )
-        self.graphselection_model.nodesSelectionChanged.connect(
-            self._sync_inspector_to_selection
-        )
-        self.nodes_tree_model = NodesTreeModel(self._graph, self._module_registry)
+        self.nodes_tree_model = NodesTreeAdapterModel(self._graph, self._module_registry)
 
         # initial execution
         for node_ref in self._graph.nodes():
@@ -68,20 +60,6 @@ class PyFlowDocument(QObject):
 
         operator_index = self.modules_model.mapFromSource(operator)
         return operator_index
-
-    def _sync_inspector_to_selection(self, *_args: object) -> None:
-        selection = self.graphselection_model
-        selected = selection.selectedNodes()
-        current = selection.currentNode()
-
-        if current in selected:
-            node = current
-        elif len(selected) == 1:
-            node = selected[0]
-        else:
-            node = None
-
-        self.graphdetails_model.setNode(node)
 
     @classmethod
     def fromfile(cls, file_path: str | Path) -> "PyFlowDocument":

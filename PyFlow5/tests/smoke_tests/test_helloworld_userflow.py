@@ -3,7 +3,7 @@
 from textwrap import dedent
 from typing import Literal
 
-from pyflow5.pygraphrt_model import PyFlowRTModel
+from pyflow5.pygraphrt_dag_model import PyFlowRTModel
 from pyflow5.viewer_view import Viewer
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QMimeData, QModelIndex, Qt, QTimer
@@ -266,8 +266,6 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     # save to  a file
     output_file = tmp_path / "test_helloworld_userflow_output.json"
     document.save(str(output_file))
-    document.graphselection_model.clearSelection()
-    assert not window._node_tree_view.isVisible()
     
 if __name__ == "__main__":
     import pytest

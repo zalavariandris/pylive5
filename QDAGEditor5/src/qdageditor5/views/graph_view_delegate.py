@@ -208,6 +208,17 @@ class StyledNodeDelegate(QObject):
         title_label = list(self.__labels(option, model, node))[0]
         painter.setPen(QPen(option.palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
         painter.drawRoundedRect(title_label.boundingRect(option), 5, 5)
+        if option.state & QStyle.StateFlag.State_HasFocus:
+            # draw a horizontal line at the top of the title label
+            painter.setPen(QPen(option.palette.text().color(), 0))
+            padding = 2
+            inner_rect = title_label.boundingRect(option).adjusted(padding, padding, -padding, -padding)
+            pen = QPen()
+            pen.setColor(option.palette.placeholderText().color())
+            # dashed line
+            pen.setStyle(Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.drawRoundedRect(inner_rect, 3,3)
         painter.restore()
 
         # # debug

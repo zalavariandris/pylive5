@@ -1,3 +1,4 @@
+from enum import StrEnum
 import json
 import os
 from textwrap import dedent
@@ -5,12 +6,13 @@ import traceback
 from typing import TYPE_CHECKING
 
 
-from pyflow5.pygraphrt_model import PyFlowRTModel
+from pyflow5.pygraphrt_dag_model import PyFlowRTModel
 
 from pygraphrt.graph_executor import ExecutionFailure, ExecutionSuccess
 from qdageditor5.models.abstract_dag_model import NodeName
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qtpy.QtCore import (
+    QAbstractItemModel,
     Qt,
     Signal,
     Slot
@@ -27,6 +29,50 @@ from qtpy.QtWidgets import (
 
 import myqtx
 import pygraphrt as rt
+
+
+
+
+class DetailsView(QWidget):
+    class SelectionBehaviour(StrEnum):
+        FirstSelected = "first"
+        LastSelected = "last"
+        Current = "current"
+        
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._selection_behaviour: DetailsView.SelectionBehaviour = DetailsView.SelectionBehaviour.FirstSelected
+        layout = QVBoxLayout(self)
+        self.setLayout(layout)
+        header = QHBoxLayout()
+        self._viewer_lock_switch = QCheckBox("-node-", self)
+        header.addWidget(self._viewer_lock_switch)
+        layout.addLayout(header)
+        self._body: QWidget|None = QLabel("Details will be shown here.")
+        layout.addWidget(self._body)
+
+        self._model: QAbstractItemModel|None = None
+
+    def setBodyWidget(self, widget: QWidget):
+        self._body = widget
+
+    def setModel(self, model: QAbstractItemModel|None):
+        self._model = model
+
+    def setSelecitonModel(self, selection_model: GraphSelectionModel|None):
+        self._selection_model = selection_model
+
+    def selectionModel(self):
+        return self._selection_model
+
+    def selectionBehaviour(self):
+        return self._selection_behaviour
+
+    def setSelectionBehaviour(self, behaviour: SelectionBehaviour):
+        self._selection_behaviour = behaviour
+
+    def showCurrentEvent(self):
+        pass
 
 
 class Viewer(QWidget):

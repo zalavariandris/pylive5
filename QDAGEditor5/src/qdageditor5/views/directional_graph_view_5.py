@@ -219,6 +219,8 @@ class DirectionalGraphView5(QFrame):
             self._selection_model_connections = [
                 (selection_model.linksSelectionChanged, self.update),
                 (selection_model.nodesSelectionChanged, self.update),
+                (selection_model.currentNodeChanged, self.update),
+                (selection_model.currentLinkChanged, self.update),
             ]
             for signal, slot in self._selection_model_connections:
                 signal.connect(slot)
@@ -240,6 +242,8 @@ class DirectionalGraphView5(QFrame):
         if self._selection_model is not None:
             if node in self._selection_model.selectedNodes():
                 option.state |= QStyle.StateFlag.State_Selected
+            if node == self._selection_model.currentNode():
+                option.state |= QStyle.StateFlag.State_HasFocus
 
         text = self._model.nodeData(node, Qt.ItemDataRole.DisplayRole)
         option.text = str(text) if text is not None else ""
@@ -659,7 +663,7 @@ class DirectionalGraphView5(QFrame):
 
         painter.restore()
 
-    def mousePressEvent(self, event: QMouseEvent):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         # handle mouseClick events
         if event.button() == Qt.LeftButton:
             self._press_pos = event.pos()
@@ -674,6 +678,14 @@ class DirectionalGraphView5(QFrame):
         match item:
             case ('node', _):
                 _, node = item
+                if event.button() == Qt.MouseButton.LeftButton and self._selection_model is not None:
+                    # Keep a selected group intact while dragging, but make the
+                    # pressed node current even when the selection is unchanged.
+                    if node not in self._selection_model.selectedNodes():
+                        flags = GraphSelectionModel.SelectionFlag
+                        self._selection_model.selectNode(node, flags.ClearAndSelect | flags.Current)
+                    else:
+                        self._selection_model.setCurrentNode(node)
                 dragged_nodes = list(self._selection_model.selectedNodes()) if self._selection_model is not None else []
                 if node not in dragged_nodes:
                     dragged_nodes = [node]
@@ -718,7 +730,23 @@ class DirectionalGraphView5(QFrame):
                     case Qt.MouseButton.RightButton:
                         pass
                 
-    def mouseMoveEvent(self, event: QMouseEvent):
+    def _update_rect_selection(self, scene_rect: QRectF, mouse_pos: QPointF) -> None:
+        if self._model is None or self._selection_model is None:
+            return
+
+        nodes_intersecting = [
+            node for node in self._model.nodes()
+            if self._nodeRect(self._createStyleOption(node), node).intersects(scene_rect)
+        ]
+        self._selection_model.selectNodes(nodes_intersecting)
+
+        # QListView makes the item under the pointer current while selecting.
+        # Moving across empty space preserves the last current item.
+        item = self.itemAt(mouse_pos)
+        if item is not None and item.kind == 'node':
+            self._selection_model.setCurrentNode(item.item)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._model is None:
             return
         mouse_view_pos = QPointF(event.pos())
@@ -779,17 +807,8 @@ class DirectionalGraphView5(QFrame):
                 old_rect = QRectF(self._tool._start_pos, self._tool._end_pos).normalized()
                 self._tool._end_pos = self.mapToScene(mouse_view_pos)
                 new_rect = QRectF(self._tool._start_pos, self._tool._end_pos).normalized()
-                new_rect = QRectF(self._tool._start_pos, self._tool._end_pos).normalized()
-                self.updateScene(new_rect.united(old_rect).adjusted(-2, -2, 2, 2))  
-                # find and select nodes inside the selection rectangle
-                
-                nodes_intersecting = []
-                for node in self._model.nodes():
-                    if self._nodeRect(self._createStyleOption(node), node).intersects(new_rect):
-                        nodes_intersecting.append(node)
-
-                if self._selection_model is not None:   
-                    self._selection_model.selectNodes(nodes_intersecting)
+                self.updateScene(new_rect.united(old_rect).adjusted(-2, -2, 2, 2))
+                self._update_rect_selection(new_rect, mouse_view_pos)
 
             case PanAndZoomToolData():
                 # pan is expressed in view coordinates, so the mouse delta can be applied directly
@@ -854,10 +873,9 @@ class DirectionalGraphView5(QFrame):
                 if new_rect is not None:
                     self.updateScene(new_rect)
 
-    def _mouse_click_event(self, event: QMouseEvent):
+    def _mouse_click_event(self, event: QMouseEvent) -> None:
         # Handle mouse click event here
         item_under_mouse:_GraphItemId | None = self.itemAt(event.pos())
-        print(item_under_mouse)
         if self._selection_model:
             
             match item_under_mouse:
@@ -868,7 +886,7 @@ class DirectionalGraphView5(QFrame):
                 case None:
                     self._selection_model.clearSelection()
 
-    def mouseReleaseEvent(self, event: QMouseEvent):
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton and self._pressed:
             # Check that release is still inside the widget
             # and that the mouse didn't move too far
@@ -881,17 +899,12 @@ class DirectionalGraphView5(QFrame):
 
         match self._tool:
             case RectSelectionToolData():
+                old_rect = QRectF(self._tool._start_pos, self._tool._end_pos).normalized()
+                self._tool._end_pos = self.mapToScene(QPointF(event.pos()))
                 selection_rect = QRectF(self._tool._start_pos, self._tool._end_pos).normalized()
                 self._tool = None
-                self.updateScene(selection_rect.adjusted(-2, -2, 2, 2))
-
-                nodes_intersecting = []
-                for node in self._model.nodes():
-                    if self._nodeRect(self._createStyleOption(node), node).intersects(selection_rect):
-                        nodes_intersecting.append(node)
-
-                if self._selection_model is not None:   
-                    self._selection_model.selectNodes(nodes_intersecting)
+                self.updateScene(selection_rect.united(old_rect).adjusted(-2, -2, 2, 2))
+                self._update_rect_selection(selection_rect, QPointF(event.pos()))
 
             case PanAndZoomToolData():
                 self._tool = None

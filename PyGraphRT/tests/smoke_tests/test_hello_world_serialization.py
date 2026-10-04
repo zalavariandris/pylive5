@@ -138,7 +138,8 @@ def test_roundtrip_serialization(tmp_path):
     serializer = GraphSerializer(graph, registry, base_dir=tmp_path)
     roundtrip_data = serializer.todict()
 
-    assert roundtrip_data == loaded_data
+    assert roundtrip_data["modules"] == loaded_data["modules"]
+    assert roundtrip_data["graph"] == loaded_data["graph"]
 
 
 

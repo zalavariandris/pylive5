@@ -5,8 +5,8 @@ from qtpy.QtGui import QPalette
 from qtpy.QtTest import QTest
 from qtpy.QtWidgets import QLineEdit, QSpinBox, QStyle, QStyleOptionViewItem, QTreeView
 
-from pyflow5.node_input_delegate import NodeInputDelegate, NodeInputWidget
-from pyflow5.nodes_tree_model import NodesTreeModel
+from pyflow5.inspector.node_input_delegate import NodeInputDelegate, NodeInputWidget
+from pyflow5.inspector.pygraphrt_nodes_inputs_tree_model import NodesTreeAdapterModel
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def input_graph():
         return label * count
 
     node_ref = graph.nodes()[0]
-    model = NodesTreeModel(graph, rt.ModuleRegistry())
+    model = NodesTreeAdapterModel(graph, rt.ModuleRegistry())
     return node_ref, model
 
 
@@ -150,7 +150,7 @@ def test_default_value_uses_dim_text_when_selected(qtbot):
     def with_default(count: int = 7) -> int:
         return count
 
-    model = NodesTreeModel(graph, rt.ModuleRegistry())
+    model = NodesTreeAdapterModel(graph, rt.ModuleRegistry())
     index = model.index(0, 1, model.index(0, 0))
     option = QStyleOptionViewItem()
     option.state |= QStyle.StateFlag.State_Selected
