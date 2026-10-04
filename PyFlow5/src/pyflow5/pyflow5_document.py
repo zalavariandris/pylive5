@@ -5,6 +5,7 @@ from textwrap import dedent
 import traceback
 
 
+from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
 
 import pygraphrt as rt
@@ -55,6 +56,18 @@ class PyFlowDocument(QObject):
         # initial execution
         for node_ref in self._graph.nodes():
             self._executor.execute(node_ref)
+
+    def getNodeOperator(self, node_name: NodeName) -> QModelIndex|None:
+        node_ref = self.graph_model.mapToSource(node_name)
+        if node_ref is None:
+            return None
+        
+        operator = node_ref.get_operator()
+        if operator is None:
+            return None
+
+        operator_index = self.modules_model.mapFromSource(operator)
+        return operator_index
 
     def _sync_inspector_to_selection(self, *_args: object) -> None:
         selection = self.graphselection_model

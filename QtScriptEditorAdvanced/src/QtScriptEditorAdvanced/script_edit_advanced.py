@@ -1,7 +1,7 @@
 from typing import *
 
 from qtpy.QtCore import Qt, QEvent
-from qtpy.QtGui import QColor, QContextMenuEvent, QKeyEvent, QPalette, QFont, QTextOption
+from qtpy.QtGui import QColor, QContextMenuEvent, QKeyEvent, QPalette, QFont, QTextCursor, QTextOption
 from qtpy.QtWidgets import QMenu, QPlainTextEdit, QAction
 from qtpy.QtWidgets import QGraphicsOpacityEffect
 
@@ -169,6 +169,18 @@ class ScriptEditAdvanced(QPlainTextEdit):
         cursor = ScriptCursor(self.textCursor())
         cursor.unindentSelection()
         self.setTextCursor(cursor)
+
+    def moveCursorToLine(self, lineno: int) -> None:
+        # scroll to the specified line number but dont move the cursor
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        for _ in range(lineno - 1):
+            cursor.movePosition(QTextCursor.MoveOperation.Down)
+        self.setTextCursor(cursor)
+
+    def scrollToLine(self, lineno: int) -> None:
+        scrollbar = self.verticalScrollBar()
+        scrollbar.setValue(lineno - 1)
         
     ### Script Cursor ###
     def eventFilter(self, o: QObject, e: QEvent) -> bool: #type: ignore
@@ -215,7 +227,6 @@ class ScriptEditAdvanced(QPlainTextEdit):
                     return True
 
         return super().eventFilter(o, e)
-
 
     def removePreviousIndentation(self) -> None:
         cursor = ScriptCursor(self.textCursor())

@@ -1,3 +1,4 @@
+from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import (
     QAbstractItemModel,
     QItemSelectionModel,
@@ -18,7 +19,7 @@ from .modules_operator_tree_model import ModulesOperatorsTreeModel
 class ModuleDetailsView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._model: QAbstractItemModel | None = None
+        self._model: ModulesOperatorsTreeModel | None = None
         self._model_connections: list[tuple[Signal, Slot]] = []
         self._selection_model: QItemSelectionModel | None = None
         self._selection_model_connections: list[tuple[Signal, Slot]] = []
@@ -33,10 +34,10 @@ class ModuleDetailsView(QWidget):
         layout.addWidget(self._code_editor)
         self._update_display()
 
-    def model(self) -> QAbstractItemModel | None:
+    def model(self) -> ModulesOperatorsTreeModel | None:
         return self._model
 
-    def setModel(self, model: QAbstractItemModel | None) -> None:
+    def setModel(self, model: ModulesOperatorsTreeModel | None) -> None:
         if model is self._model:
             return
         self.setSelectionModel(None)
@@ -74,6 +75,18 @@ class ModuleDetailsView(QWidget):
             for signal, slot in self._selection_model_connections:
                 signal.connect(slot)
         self._sync_selection()
+
+    def goToOperator(self, index:QModelIndex) -> bool:
+        if self._model is None:
+            return False
+        operator_ref = self._model.mapToSource(index)
+        if isinstance(operator_ref, ScriptOperatorRef):
+            lineno = operator_ref.get_line_number()
+            self._code_editor.moveCursorToLine(lineno)
+        else:
+            return False
+        
+        return True
 
     def _sync_selection(self, *_args: object) -> None:
         selection = self._selection_model
@@ -137,4 +150,3 @@ class ModuleDetailsView(QWidget):
             if reset_editor or self._code_editor.toPlainText() != text:
                 self._code_editor.setPlainText(text)
             self._code_editor.setEnabled(isinstance(source, str))
-

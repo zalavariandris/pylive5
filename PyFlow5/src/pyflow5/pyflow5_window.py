@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from PyFlow5.src.pyflow5.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
 from pygraphrt.script_module import ScriptOperatorRef
-from qtpy.QtCore import QAbstractItemModel, QModelIndex
+from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex
 
 from qtpy.QtCore import (
     QPointF,
@@ -213,9 +213,9 @@ class PyFlow5Window(QMainWindow):
         module_panel_layout.addWidget(self._module_details_view, 1)
         
 
-        tabwidget = QTabWidget(self)
-        tabwidget.addTab(modules_panel, "Modules")
-        tabwidget.addTab(self._graph_container, "Graph")
+        tabwidget = QSplitter(self)
+        tabwidget.addWidget(modules_panel)
+        tabwidget.addWidget(self._graph_container)
         splitter.addWidget(tabwidget)
         splitter.addWidget(self._viewer)
         splitter.setSizes([730, 730])
@@ -265,6 +265,10 @@ class PyFlow5Window(QMainWindow):
                 self._on_graph_selection_changed
             )
             self._on_graph_selection_changed(set(), set())
+
+            self._document.graphselection_model.currentNodeChanged.connect(
+                lambda current, previous: self._navigate_to_selected_nodes_operator()
+            )
 
         # todo: with the inspector, reconsider setting the CurrentIndex directly, 
         # and remove setSelectionModel methods
@@ -321,6 +325,23 @@ class PyFlow5Window(QMainWindow):
         self._settings.setValue("recentGraphs", self._recent_graphs)
         self._settings.sync()
 
+    @Slot()
+    def _navigate_to_selected_nodes_operator(self):
+        if self._document is None:
+            return
+        selected_nodes = self._document.graphselection_model.selectedNodes()
+        if not selected_nodes:
+            return
+        current_node = next(iter(selected_nodes))
+        # get the node module, and select it in the module view
+        operator_index = self._document.getNodeOperator(current_node)
+        if operator_index:
+            module_index = operator_index.parent()
+            self._document.modulesselection_model.setCurrentIndex(module_index, QItemSelectionModel.ClearAndSelect)
+
+            self._module_details_view.goToOperator(operator_index)
+            
+
     def setupMenubar(self):
         menubar: QMenuBar = self.menuBar()
         menubar.addAction("Restart Graph", lambda: self._document.reset_graph())
@@ -366,6 +387,8 @@ class PyFlow5Window(QMainWindow):
         view_menu = QMenu("View", self)
         view_menu.addAction("fit nodes",  lambda: None)
         view_menu.addAction("layout nodes",  lambda: None)
+        
+        view_menu.addAction("Go to Selected Node's Operator", lambda: self._navigate_to_selected_nodes_operator())
         view_menu.addSeparator()
         theme_menu = view_menu.addMenu("Theme")
         theme_group = QActionGroup(self)

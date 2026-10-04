@@ -144,9 +144,18 @@ class ScriptOperatorRef(AbstractOperator):
             params[name] = param_data
         return MappingProxyType(params)
 
-    def get_return_type(self) -> type:
+    def get_line_number(self) -> int | None:
+        return self._module._line_numbers.get(self._name, None)
+
+    def get_return_type(self) -> type|Any:
         sig = self.__func_sig()
-        return sig.return_annotation if sig.return_annotation is not inspect.Signature.empty else Any
+        if sig:
+            if sig.return_annotation is not inspect.Signature.empty:
+                return sig.return_annotation
+            else:
+                return Any #todo: this should be 'EMPTY', not 'Any' i think
+        else:
+            return Any
 
     def __call__(self, *args, **kwargs):
         func = self._module._functions_cache[self._name]
@@ -173,6 +182,7 @@ class ScriptModuleRT(AbstractModule):
             raise TypeError("name must be a string or None")
         
         self._functions_cache: dict[str, FunctionType] = {}
+        self._line_numbers: dict[str, int] = {}
         self._evaluated_script: str = "" # used to track the last successfully evaluated script. necessary to determine dependency changes in the code itself.
         self._script = ""
         self._state: Literal["VALID"] | Exception = "VALID"
@@ -197,6 +207,8 @@ class ScriptModuleRT(AbstractModule):
         self._evaluate()
         
     def _evaluate(self) -> None:
+        #todo: add a force replace all functions, to replace all functions.
+        #.   note: the current implementation might miss behavior changes in some situations.
         """update operators based on the current script and emit relevant signals"""
         name: str | None = self.get_display_name()
         execution_name: str = name if name is not None else "<script>"
@@ -222,6 +234,12 @@ class ScriptModuleRT(AbstractModule):
             # AST names can include nested functions; exports are actual bindings.
             changed_names = sorted(prev_names & next_names & functions_diff.changed)
 
+        # update line numbers
+        self._line_numbers = {
+            name: func.__code__.co_firstlineno
+            for name, func in all_functions_from_script.items()
+        }
+
         # Prepare the entire update before committing; runtime bugs propagate.
         current_functions = self._functions_cache.copy()
         for name in removed_names:
@@ -231,6 +249,7 @@ class ScriptModuleRT(AbstractModule):
 
         state_changed = self._state != new_state
         self._functions_cache = current_functions
+        
         self._state = new_state
 
         if state_changed:
