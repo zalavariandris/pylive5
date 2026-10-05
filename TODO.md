@@ -1,4 +1,5 @@
 # TODO
+- [ ] Implement flags for Graphmodel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
 - [ ] distinguishe the current and selected nodes in the graphivew. And make slection propagation to the modules view, viewer etc consistent, with the current and seleciton indexes.
 - [ ] indicate cursor linenumber on the code editor even when its not active.
       for example highlight the numbers on the left. the cursor is not visible, when the code editor is not active.
