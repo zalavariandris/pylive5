@@ -2,7 +2,7 @@ from enum import StrEnum
 
 
 
-from pyflow5.pygraphrt_dag_model import PyFlowRTModel
+from pyflow5.pygraphrt_graphmodel import PyGraphRTGraphModel
 from pygraphrt.graph_executor import ExecutionFailure, ExecutionSuccess
 from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
 from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
@@ -199,7 +199,7 @@ class Viewer(QWidget):
             self._display_widget.clear()
             return
 
-        result = self._model.data(self._current_node_index, PyFlowRTModel.ExecutionRole)
+        result = self._model.data(self._current_node_index, PyGraphRTGraphModel.ExecutionRole)
         self._viewer_lock_switch.setText(f"{self._current_node_index}")
         self._display_widget.display(result)
         # match result:

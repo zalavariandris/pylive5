@@ -208,20 +208,20 @@ class PyFlow5Window(QMainWindow):
             self._module_details_view.setModel(document.modules_model)
             self._module_details_view.setSelectionModel(document.modulesselection_model)
 
-            self._nodes_list_view.setModel(document.nodes_list_model)
+            self._nodes_list_view.setModel(document.nodes_list_adapter)
             
-            self._nodes_list_view.setSelectionModel(document.nodes_list_selection_model)
+            self._nodes_list_view.setSelectionModel(document.nodes_list_selection_adapter)
             self._graph_view.setModel(document.graph_model)
             self._graph_view.setSelectionModel(document.graphselection_model)
             self._graph_view.layout_nodes()
             # Fit after the window's startup layout has been established.
             QTimer.singleShot(0, self._graph_view.fitNodes)
-            self._node_tree_view.setModel(document.nodes_tree_model)
-            document.nodes_tree_model.modelReset.connect(
+            self._node_tree_view.setModel(document.node_details_model)
+            document.node_details_model.modelReset.connect(
                 lambda: self._node_tree_view.expandAll())
             # self._inspector_view.setModel(document.graphdetails_model)
-            self._viewer.setModel(document.nodes_list_model)
-            self._viewer.setSelectionModel(document.nodes_list_selection_model)
+            self._viewer.setModel(document.nodes_list_adapter)
+            self._viewer.setSelectionModel(document.nodes_list_selection_adapter)
 
             # set the new document
             self._document = document
@@ -231,7 +231,7 @@ class PyFlow5Window(QMainWindow):
                 current = self._document.graphselection_model.currentNode()
                 if current is not None:
                     node_ref = self._document.graph_model.mapToSource(current)
-                    root = self._document.nodes_tree_model.mapFromSource(node_ref)
+                    root = self._document.node_details_model.mapFromSource(node_ref)
                 else:
                     root = QModelIndex()  # show all nodes
                 self._node_tree_view.setRootIndex(root)
