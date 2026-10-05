@@ -35,7 +35,7 @@ class DetailsView(QWidget):
         self._nodes_selection_model: QItemSelectionModel|None = None
         self._selection_model_connections: list[tuple[Signal, Slot]] = []
         self._current_index:QModelIndex = QModelIndex()
-        self._selection_behaviour: self.SelectionBehaviour = self.SelectionBehaviour.Current
+        self._selection_behaviour: DetailsView.SelectionBehaviour = DetailsView.SelectionBehaviour.Current
 
         # lock switch
         self._viewer_lock_switch = QCheckBox("-node-", self)
@@ -105,16 +105,16 @@ class DetailsView(QWidget):
             print("- Lock is checked, cant set current node")
             return
 
-        if self._selection_behaviour not in  {self.SelectionBehaviour.FirstSelected, self.SelectionBehaviour.LastSelected}:
+        if self._selection_behaviour not in  {DetailsView.SelectionBehaviour.FirstSelected, DetailsView.SelectionBehaviour.LastSelected}:
             return
 
         match self._selection_behaviour:
-            case self.SelectionBehaviour.FirstSelected:
+            case DetailsView.SelectionBehaviour.FirstSelected:
                 first_index = selected.indexes()[0] if selected.indexes() else QModelIndex()
                 self._current_index = first_index
                 self._viewer_lock_switch.setText(f"{self._current_index.data()}") 
                 self.showCurrentEvent()
-            case self.SelectionBehaviour.LastSelected:
+            case DetailsView.SelectionBehaviour.LastSelected:
                 last_index = selected.indexes()[-1] if selected.indexes() else QModelIndex()
                 self._current_index = last_index
                 self._viewer_lock_switch.setText(f"{self._current_index.data()}")
@@ -179,3 +179,4 @@ class DetailsView(QWidget):
         #todo:
         """this will be called automatically when the current selection changes."""
         pass
+    

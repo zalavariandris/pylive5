@@ -1,5 +1,5 @@
 # TODO
-- [ ] The `Viewer` should connect to the standard NodesList(+Selection)Model instead of the GraphModel.
+- [x] The `Viewer` should connect to the standard NodesList(+Selection)Model instead of the GraphModel.
 - [ ] Now use the NodeList(+selection)Model adapters to drive the UI instead of directly connecting to the GraphModel.
       if necessary introduce NodeRoles, for roles apply generally, and PyGraphRT Roles to acces data from the specialized PyGraphRT graph model.
 - [ ] Names become pretty problematic. 
