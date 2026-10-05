@@ -84,7 +84,7 @@ class PyFlow5Window(QMainWindow):
         self._module_details_view = ModuleDetailsView(self)
         
         # - Setup graphview -
-        self._nodes_list_model = NodesListModelAdapter()
+        # self._nodes_list_model = NodesListModelAdapter()
         self._graph_view = DirectionalGraphView5(self)
         @self._graph_view.requestNode.connect
         def _on_request_node(scene_pos:QPointF, source:NodeName):
