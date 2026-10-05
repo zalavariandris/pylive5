@@ -65,6 +65,8 @@ from qtpy.QtCore import QSettings
 
 from pathlib import Path
 
+from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
+from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
 
 class PyFlow5Window(QMainWindow):
     def __init__(self, use_session=False, parent=None)->None:
@@ -82,6 +84,7 @@ class PyFlow5Window(QMainWindow):
         self._module_details_view = ModuleDetailsView(self)
         
         # - Setup graphview -
+        self._nodes_list_model = NodesListModelAdapter()
         self._graph_view = DirectionalGraphView5(self)
         @self._graph_view.requestNode.connect
         def _on_request_node(scene_pos:QPointF, source:NodeName):

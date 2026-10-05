@@ -13,7 +13,7 @@ from qtpy.QtCore import (
 from myutils.bilist import BiList
     
 
-class NodesListModel(QAbstractListModel):
+class NodesListModelAdapter(QAbstractListModel):
     def __init__(self, source_graph: AbstractDAGModel, parent=None):
         super().__init__(parent)
         self._source_graph:AbstractDAGModel|None = None
