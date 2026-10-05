@@ -14,6 +14,7 @@ from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
 from .pygraphrt_dag_model import PyFlowRTModel
 from .inspector.pygraphrt_nodes_inputs_tree_model import NodesTreeAdapterModel
+
 from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
 from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
 

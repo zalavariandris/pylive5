@@ -37,7 +37,7 @@ class NodesListModelAdapter(QAbstractListModel):
                 (source_graph.nodesAdded, self._on_nodes_added),
                 # (source_graph.nodesAboutToBeRemoved, self._onNodesAboutToBeRemoved),
                 (source_graph.nodesRemoved, self._on_nodes_removed),
-                # (source_graph.nodesDataChanged, self._onNodesDataChanged)
+                (source_graph.nodesDataChanged, self.on_nodes_data_changed)
             ]
             for signal, slot in self._source_connections:
                 signal.connect(slot)
@@ -75,6 +75,13 @@ class NodesListModelAdapter(QAbstractListModel):
                 self.beginRemoveRows(QModelIndex(), idx, idx)
                 self._nodelist.pop(idx)
                 self.endRemoveRows()
+
+    def on_nodes_data_changed(self, node_names: list[NodeName], roles):
+        for node_name in node_names:
+            if node_name in self._nodelist:
+                index = self.mapFromSource(node_name)
+                if index.isValid():
+                    self.dataChanged.emit(index, index, roles) # todo: review: roles could be included, as well as indexes could be grouped
 
     def mapFromSource(self, node_name: NodeName) -> QModelIndex:
         if self._source_graph is None:

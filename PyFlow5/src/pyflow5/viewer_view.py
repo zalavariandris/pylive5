@@ -1,18 +1,15 @@
 from enum import StrEnum
-import json
-import os
-from textwrap import dedent
-import traceback
-from typing import TYPE_CHECKING
+
 
 
 from pyflow5.pygraphrt_dag_model import PyFlowRTModel
-
 from pygraphrt.graph_executor import ExecutionFailure, ExecutionSuccess
-from qdageditor5.models.abstract_dag_model import NodeName
+from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
+from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qtpy.QtCore import (
     QAbstractItemModel,
+    QModelIndex,
     Qt,
     Signal,
     Slot
@@ -29,8 +26,6 @@ from qtpy.QtWidgets import (
 
 import myqtx
 import pygraphrt as rt
-
-
 
 
 class DetailsView(QWidget):
@@ -93,25 +88,22 @@ class Viewer(QWidget):
         self._display_widget = myqtx.DisplayWidget(self)
         viewer_layout.addWidget(self._display_widget)
 
-        self._model:PyFlowRTModel|None = None
+        self._model: NodesListModelAdapter|None = None
         self._model_connections: list[tuple[Signal, Slot]] = []
-        self._selection_model: GraphSelectionModel|None = None
+        self._nodes_selection_model: GraphSelectionModel|None = None
         self._selection_model_connections: list[tuple[Signal, Slot]] = []
-        self._current_nodename:NodeName|None = None
+        self._current_node_index:QModelIndex = QModelIndex()
 
         self._watcher:rt.Watcher|None = None
 
-    def _update_display(self):
-        if self._current_nodename is None:
-            self._display_widget.clear()
-        else:
-            data = self._model.nodeData(self._current_nodename, self._model.ExecutionRole) if self._model else None
-            self._display_widget.display(data)
+
 
     def model(self):
         return self._model
 
-    def setModel(self, model: PyFlowRTModel|None):
+    def setModel(self, model: NodesListModelAdapter|None):
+        assert isinstance(model, NodesListModelAdapter) or model is None
+
         if self._model:
             # Disconnect previous connections
             for signal, slot in self._model_connections:
@@ -125,20 +117,20 @@ class Viewer(QWidget):
             # Connect new model signals
             self._model_connections = [
                 (model.modelReset, self._on_model_reset),
-                (model.nodesDataChanged, self._on_node_data_changed),
-                (model.nodesRemoved, self._on_nodes_removed)
+                (model.dataChanged, self._on_data_changed),
+                (model.rowsRemoved, self._on_rows_removed)
             ]
             for signal, slot in self._model_connections:
                 signal.connect(slot)
         
         self._model = model
-        self.setCurrentNodeName(None)
+        self._setCurrentIndex(QModelIndex())
 
     def currentNodeName(self):
-        return self._current_nodename
+        return self._current_node_index
 
-    def setCurrentNodeName(self, node_name:NodeName|None)->bool:
-        assert node_name is None or isinstance(node_name, str)
+    def _setCurrentIndex(self, node_index:QModelIndex)->bool:
+        assert isinstance(node_index, QModelIndex), f"Expected QModelIndex, got {node_index}"
         if self._viewer_lock_switch.isChecked():
             print("- Lock is checked, cant set current node")
             # todo: i dont ike this api design.
@@ -148,47 +140,56 @@ class Viewer(QWidget):
             # in other widgets detail-views as well.
             return False
 
-        self._current_nodename = node_name
+        self._current_node_index = node_index
         self._update_display()
         return True
 
-    def setSelectionModel(self, graphselection: GraphSelectionModel):
-        if graphselection is self._selection_model:
+    def setSelectionModel(self, nodes_selection_model: NodesListSelectionModelAdapter):
+        assert isinstance(nodes_selection_model, NodesListSelectionModelAdapter) or nodes_selection_model is None
+
+        if nodes_selection_model is self._nodes_selection_model:
             return
         
-        if self._selection_model:
+        if self._nodes_selection_model:
             for signal, slot in self._selection_model_connections:
                 signal.disconnect(slot)
             self._selection_model_connections = []
-            self._selection_model = None
+            self._nodes_selection_model = None
 
-        if graphselection:
+        if nodes_selection_model:
             self._selection_model_connections = [
                 (
-                    graphselection.nodesSelectionChanged, 
-                    lambda selected, deselected: 
-                    self.setCurrentNodeName(next(iter(selected)) if selected else None)
+                    nodes_selection_model.selectionChanged, 
+                    lambda selected, deselected: self._setCurrentIndex(
+                        selected.indexes()[0] if selected.indexes() else QModelIndex()
+                    )
                 )
             ]
             for signal, slot in self._selection_model_connections:
                 signal.connect(slot)
-            self._selection_model = graphselection
+            self._nodes_selection_model = nodes_selection_model
 
     def _on_model_reset(self):
-        self.setCurrentNodeName(None)
+        self._setCurrentIndex(QModelIndex())
 
-    def _on_node_data_changed(self, nodes, roles):
-        print(f"Viewer->_on_node_data_changed {{nodes={nodes}, roles={roles}}}")
-        if self._current_nodename in nodes:
+    def _on_data_changed(self, topLeft, bottomRight, roles):
+        columns = range(topLeft.column(), bottomRight.column() + 1)
+
+        if 0 not in columns:
+            return
+
+        rows = range(topLeft.row(), bottomRight.row() + 1)
+
+        if self._current_node_index.row() in rows:
             self._update_display()
 
-    def _on_nodes_removed(self, nodes):
-        if self._current_nodename in nodes:
-            self.setCurrentNodeName(None)
+    def _on_rows_removed(self, parent:QModelIndex, first: int, last: int):
+        if self._current_node_index.row() >= first and self._current_node_index.row() <= last:
+            self._setCurrentIndex(QModelIndex())
 
     def _update_display(self):
-        print(f"Viewer->_update_display {{current_nodename={self._current_nodename}}}")
-        if self._current_nodename is None:
+        print(f"Viewer->_update_display {{current_nodename={self._current_node_index}}}")
+        if self._current_node_index.isValid() is False:
             self._viewer_lock_switch.setText("-no node selected-")
             self._display_widget.clear()
             return
@@ -198,8 +199,8 @@ class Viewer(QWidget):
             self._display_widget.clear()
             return
 
-        result = self._model.nodeData(self._current_nodename, self._model.ExecutionRole)
-        self._viewer_lock_switch.setText(f"{self._current_nodename}")
+        result = self._model.data(self._current_node_index, PyFlowRTModel.ExecutionRole)
+        self._viewer_lock_switch.setText(f"{self._current_node_index}")
         self._display_widget.display(result)
         # match result:
         #     case ExecutionFailure() as failure:

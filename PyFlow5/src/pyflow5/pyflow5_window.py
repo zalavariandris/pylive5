@@ -220,8 +220,8 @@ class PyFlow5Window(QMainWindow):
             document.nodes_tree_model.modelReset.connect(
                 lambda: self._node_tree_view.expandAll())
             # self._inspector_view.setModel(document.graphdetails_model)
-            self._viewer.setModel(document.graph_model)
-            self._viewer.setSelectionModel(document.graphselection_model)
+            self._viewer.setModel(document.nodes_list_model)
+            self._viewer.setSelectionModel(document.nodes_list_selection_model)
 
             # set the new document
             self._document = document
