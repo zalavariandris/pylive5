@@ -34,7 +34,7 @@ class DetailsView(QWidget):
         self._model_connections: list[tuple[Signal, Slot]] = []
         self._nodes_selection_model: QItemSelectionModel|None = None
         self._selection_model_connections: list[tuple[Signal, Slot]] = []
-        self._current_index:QModelIndex = QModelIndex()
+        self._current_root:QModelIndex = QModelIndex()
         self._selection_behaviour: DetailsView.SelectionBehaviour = DetailsView.SelectionBehaviour.Current
 
         # lock switch
@@ -45,7 +45,7 @@ class DetailsView(QWidget):
 
         # header
         viewer_header = QHBoxLayout()
-        viewer_header.addWidget(QLabel("Viewer", self))
+        # viewer_header.addWidget(QLabel("Viewer", self))
         viewer_header.addStretch()
         viewer_header.addWidget(self._viewer_lock_switch)
 
@@ -56,6 +56,9 @@ class DetailsView(QWidget):
 
         self._body_widget = QLabel("-body-", self)
         viewer_layout.addWidget(self._body_widget)
+
+    def setSelectionBehaviour(self, behaviour: SelectionBehaviour) -> None:
+        self._selection_behaviour = behaviour
 
     def selectionBehaviour(self):
         return self._selection_behaviour
@@ -97,8 +100,8 @@ class DetailsView(QWidget):
         self._model = model
         # self._setCurrentIndex(QModelIndex())
 
-    def currentNodeName(self):
-        return self._current_index
+    def currentRoot(self)->QModelIndex:
+        return self._current_root
 
     def _on_selection_changed(self, selected:QItemSelection, deselected:QItemSelection):
         if self._viewer_lock_switch.isChecked():
@@ -111,14 +114,14 @@ class DetailsView(QWidget):
         match self._selection_behaviour:
             case DetailsView.SelectionBehaviour.FirstSelected:
                 first_index = selected.indexes()[0] if selected.indexes() else QModelIndex()
-                self._current_index = first_index
-                self._viewer_lock_switch.setText(f"{self._current_index.data()}") 
-                self.showCurrentEvent()
+                self._current_root = first_index
+                self._viewer_lock_switch.setText(f"{self._current_root.data()}") 
+                self.showCurrentRootEvent()
             case DetailsView.SelectionBehaviour.LastSelected:
                 last_index = selected.indexes()[-1] if selected.indexes() else QModelIndex()
-                self._current_index = last_index
-                self._viewer_lock_switch.setText(f"{self._current_index.data()}")
-                self.showCurrentEvent()
+                self._current_root = last_index
+                self._viewer_lock_switch.setText(f"{self._current_root.data()}")
+                self.showCurrentRootEvent()
             case _:
                 pass
 
@@ -130,9 +133,9 @@ class DetailsView(QWidget):
         if self._selection_behaviour != self.SelectionBehaviour.Current:
             return 
             
-        self._current_index = current
-        self._viewer_lock_switch.setText(f"{self._current_index.data()}")
-        self.showCurrentEvent()
+        self._current_root = current
+        self._viewer_lock_switch.setText(f"{self._current_root.data()}")
+        self.showCurrentRootEvent()
 
     def setSelectionModel(self, selection_model: QItemSelectionModel):
         assert isinstance(selection_model, QItemSelectionModel) or selection_model is None
@@ -166,15 +169,14 @@ class DetailsView(QWidget):
 
         rows = range(topLeft.row(), bottomRight.row() + 1)
 
-        if self._current_index.row() in rows:
-            self.showCurrentEvent()
+        if self._current_root.row() in rows:
+            self.showCurrentRootEvent()
 
     def _on_rows_removed(self, parent:QModelIndex, first: int, last: int):
-        if self._current_index.row() >= first and self._current_index.row() <= last:
+        if self._current_root.row() >= first and self._current_root.row() <= last:
             self._setCurrentIndex(QModelIndex())
 
-
-    def showCurrentEvent(self):
+    def showCurrentRootEvent(self):
         # todo: make it an abstrat emthod
         #todo:
         """this will be called automatically when the current selection changes."""

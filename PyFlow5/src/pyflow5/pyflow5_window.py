@@ -2,6 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
+from pyflow5.node_inspector_view import NodeInspectorView
 from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
 from pygraphrt.script_module import ScriptOperatorRef
@@ -115,6 +116,10 @@ class PyFlow5Window(QMainWindow):
         )
         self._node_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         # self._node_tree_view.hide()
+
+        # self._node_inspector = self._node_tree_view
+
+        self._node_inspector = NodeInspectorView()
         
         # - Setup display widget -
         self._viewer = Viewer(self)
@@ -147,15 +152,17 @@ class PyFlow5Window(QMainWindow):
             Path(self._settings.fileName()).parent / "session.json"
         )
 
-        # - Overlay the selected node tree on the graph -
         self._nodes_list_view = QListView(self)
         self._nodes_list_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+                
+
+        # - Overlay the selected node tree on the graph -
         self._graph_container = QWidget(self)
         graph_layout = QGridLayout(self._graph_container)
         graph_layout.setContentsMargins(0, 0, 0, 0)
         graph_layout.addWidget(self._graph_view, 0, 0)
         graph_layout.addWidget(
-            self._node_tree_view,
+            self._node_inspector,
             0,
             0,
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
@@ -179,7 +186,6 @@ class PyFlow5Window(QMainWindow):
         )
         
         splitter.addWidget(self._tabwidget)
-        # splitter.addWidget(self._nodes_list_view)
         splitter.addWidget(self._node_inlet_treeview)
         splitter.addWidget(self._viewer)
         splitter.setSizes([730, 200, 730])
@@ -229,8 +235,10 @@ class PyFlow5Window(QMainWindow):
             self._viewer.setModel(document.nodes_list_adapter)
             self._viewer.setSelectionModel(document.nodes_list_selection_adapter)
 
-            self._node_inlet_treeview.setModel(document.node_inlet_tree_adapter)
-            self._node_inlet_treeview.setSelectionModel(document.node_inlet_tree_selection_adapter)
+            self._viewer.setModel(document.node_inlet_tree_adapter)
+            self._viewer.setSelectionModel(document.node_inlet_tree_selection_adapter)
+            self._node_inspector.setModel(document.node_inlet_tree_adapter)
+            self._node_inspector.setSelectionModel(document.node_inlet_tree_selection_adapter)
 
             # set the new document
             self._document = document
