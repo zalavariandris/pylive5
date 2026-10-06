@@ -1,4 +1,6 @@
 # TODO
+- [ ] Compile graph to a runnable python script. So if the PyFlow app is broken, and the
+      graph processing library is borken its still runnable, and the work is not lost.
 - [ ] Implement flags for Graphmodel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
 - [ ] distinguishe the current and selected nodes in the graphivew. And make slection propagation to the modules view, viewer etc consistent, with the current and seleciton indexes.
 - [ ] indicate cursor linenumber on the code editor even when its not active.
