@@ -13,10 +13,11 @@ from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
 from .pygraphrt_graphmodel import PyGraphRTGraphModel
-from .inspector.pygraphrt_nodedetails_model import PyGraphRTNodeDetailsModel
+from .properties_editor.pygraphrt_node_inlet_tree_model_adapter import PyGraphRTNodeInletTreeModelAdapter
 
 from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
 from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
+from qdageditor5.adapters.node_inlet_tree_selection_model_adapter import NodeInletTreeSelectionModelAdapter
 
 
 class PyFlowDocument(QObject):
@@ -34,26 +35,32 @@ class PyFlowDocument(QObject):
         self._invalidator = rt.GraphInvalidator(self._graph_rt, self._module_registry)
 
         # Models
+        ## Graph Model
         self.graph_model = PyGraphRTGraphModel(
             self._graph_rt, 
             self._module_registry, 
             self._invalidator,
             self._executor
         )
+        self.graphselection_model = GraphSelectionModel(self.graph_model)
 
-        self.modules_model = ModulesOperatorsTreeModel(parent=self)
+        ## Modules Model
+        self.modules_model = ModulesOperatorsTreeModel()
         self.modules_model.setSourceRegistry(self._module_registry)
         self.modulesselection_model = QItemSelectionModel(self.modules_model)
-        self.node_details_model = PyGraphRTNodeDetailsModel(self._graph_rt, self._module_registry)
 
-        self.graphselection_model = GraphSelectionModel(self.graph_model)
-        
-        # adapters
+        # Adapters
+        ## Node inlet tree adapter
+        self.node_inlet_tree_adapter = PyGraphRTNodeInletTreeModelAdapter(self.graph_model)
+        self.node_inlet_tree_selection_adapter = NodeInletTreeSelectionModelAdapter(self.node_inlet_tree_adapter)
+        self.node_inlet_tree_selection_adapter.setSourceSelection(self.graphselection_model)
+
+        ## NodeList adapter
         self.nodes_list_adapter = NodesListModelAdapter(self.graph_model)
         self.nodes_list_selection_adapter = NodesListSelectionModelAdapter(self.nodes_list_adapter)
         self.nodes_list_selection_adapter.setSourceSelection(self.graphselection_model)
-
-        # initial execution
+        
+        # Initial execution
         for node_ref in self._graph_rt.nodes():
             self._executor.execute(node_ref)
 

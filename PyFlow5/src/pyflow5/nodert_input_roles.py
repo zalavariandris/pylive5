@@ -12,7 +12,7 @@ from qtpy.QtCore import Qt
 UNSET = object()
 
 
-class InspectorRole(IntEnum):
+class NodeRTInputRole(IntEnum):
     KeyRole = int(Qt.ItemDataRole.UserRole) + 1
     DefaultRole = KeyRole + 2
     BindingRole = KeyRole + 3

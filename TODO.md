@@ -1,7 +1,10 @@
 # TODO
+- [ ] Node inspector should become a DetailsView subclass
+- [ ] compile the graph into a native python script, in case the graph processing library brakes, the graph will be still runnable.
 - [x] The `Viewer` should connect to the standard NodesList(+Selection)Model instead of the GraphModel.
-- [ ] Now use the NodeList(+selection)Model adapters to drive the UI instead of directly connecting to the GraphModel.
+- [x] Now use the NodeList(+selection)Model adapters to drive the UI instead of directly connecting to the GraphModel.
       if necessary introduce NodeRoles, for roles apply generally, and PyGraphRT Roles to acces data from the specialized PyGraphRT graph model.
+- [ ] We also Need a NodeInletTree(+selection?)ModelAdapter for the inspector to work with standard qt models
 - [ ] Names become pretty problematic. 
       - `PyGraphRtDagModel`
       - `NodesListModelAdapter`
