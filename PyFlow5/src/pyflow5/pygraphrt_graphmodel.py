@@ -29,7 +29,7 @@ from qdageditor5.core.item_data_roles import (
     NodeDataRole
 )
 
-class PyFlowRTModel(AbstractDAGModel):
+class PyGraphRTGraphModel(AbstractDAGModel):
     ExecutionRole = Qt.ItemDataRole.UserRole+1
     ResolutionRole = Qt.ItemDataRole.UserRole+2
 

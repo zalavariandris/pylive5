@@ -12,8 +12,11 @@ import pygraphrt as rt
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
-from .pygraphrt_dag_model import PyFlowRTModel
-from .inspector.pygraphrt_nodes_inputs_tree_model import NodesTreeAdapterModel
+from .pygraphrt_graphmodel import PyGraphRTGraphModel
+from .inspector.pygraphrt_nodedetails_model import PyGraphRTNodeDetailsModel
+
+from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
+from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
 
 
 class PyFlowDocument(QObject):
@@ -25,14 +28,14 @@ class PyFlowDocument(QObject):
         super().__init__(parent=parent)
         # RT
         self._module_registry = registry or rt.ModuleRegistry()
-        self._graph = graph or rt.GraphDefinitionRT()
+        self._graph_rt = graph or rt.GraphDefinitionRT()
 
-        self._executor = rt.GraphExecutorRT(self._graph)
-        self._invalidator = rt.GraphInvalidator(self._graph, self._module_registry)
+        self._executor = rt.GraphExecutorRT(self._graph_rt)
+        self._invalidator = rt.GraphInvalidator(self._graph_rt, self._module_registry)
 
         # Models
-        self.graph_model = PyFlowRTModel(
-            self._graph, 
+        self.graph_model = PyGraphRTGraphModel(
+            self._graph_rt, 
             self._module_registry, 
             self._invalidator,
             self._executor
@@ -41,12 +44,17 @@ class PyFlowDocument(QObject):
         self.modules_model = ModulesOperatorsTreeModel(parent=self)
         self.modules_model.setSourceRegistry(self._module_registry)
         self.modulesselection_model = QItemSelectionModel(self.modules_model)
+        self.node_details_model = PyGraphRTNodeDetailsModel(self._graph_rt, self._module_registry)
 
         self.graphselection_model = GraphSelectionModel(self.graph_model)
-        self.nodes_tree_model = NodesTreeAdapterModel(self._graph, self._module_registry)
+        
+        # adapters
+        self.nodes_list_adapter = NodesListModelAdapter(self.graph_model)
+        self.nodes_list_selection_adapter = NodesListSelectionModelAdapter(self.nodes_list_adapter)
+        self.nodes_list_selection_adapter.setSourceSelection(self.graphselection_model)
 
         # initial execution
-        for node_ref in self._graph.nodes():
+        for node_ref in self._graph_rt.nodes():
             self._executor.execute(node_ref)
 
     def getNodeOperator(self, node_name: NodeName) -> QModelIndex|None:
@@ -61,6 +69,7 @@ class PyFlowDocument(QObject):
         operator_index = self.modules_model.mapFromSource(operator)
         return operator_index
 
+    # Serialization
     @classmethod
     def fromfile(cls, file_path: str | Path) -> "PyFlowDocument":
         path = Path(file_path).resolve()
@@ -72,7 +81,7 @@ class PyFlowDocument(QObject):
 
     def save(self, file_path: str | Path) -> None:
         """Save the runtime and node positions as UTF-8 JSON."""
-        serializer = rt.GraphSerializer(self._graph, self._module_registry)
+        serializer = rt.GraphSerializer(self._graph_rt, self._module_registry)
         data = serializer.todict()
 
         # inject position
@@ -83,6 +92,7 @@ class PyFlowDocument(QObject):
         text = json.dumps(data, indent=4)
         Path(file_path).write_text(text, encoding="utf-8")
 
+    # Editing
     def addNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
         assert operator_index.isValid(), "Operator index must be valid."
         assert operator_index.model() is self.modules_model, "Operator index must belong to the modules model."

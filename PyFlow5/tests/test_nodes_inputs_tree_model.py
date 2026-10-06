@@ -2,7 +2,7 @@ import pygraphrt as rt
 from qtpy.QtCore import QPersistentModelIndex, QModelIndex
 
 from pyflow5.inspector.inspector_roles import InspectorRole
-from pyflow5.inspector.pygraphrt_nodes_inputs_tree_model import NodesTreeAdapterModel
+from pyflow5.inspector.pygraphrt_nodedetails_model import PyGraphRTNodeDetailsModel
 from pygraphrt.abstract_operator import ParameterData
 
 
@@ -14,7 +14,7 @@ def test_clear_input_removes_and_shifts_positional_arguments(qtbot):
         return first + second
 
     node_ref = graph.nodes()[0]
-    model = NodesTreeAdapterModel(graph, rt.ModuleRegistry())
+    model = PyGraphRTNodeDetailsModel(graph, rt.ModuleRegistry())
     node_index = model.index(0, 0)
     input_index = model.index(0, 1, node_index)
 
@@ -34,7 +34,7 @@ def test_clear_input_removes_keyword_binding_and_restores_default(qtbot):
         return first + second
 
     node_ref = graph.nodes()[0]
-    model = NodesTreeAdapterModel(graph, rt.ModuleRegistry())
+    model = PyGraphRTNodeDetailsModel(graph, rt.ModuleRegistry())
 
     node_index = model.index(0, 0)
     input_index = model.index(1, 1, node_index)
@@ -51,7 +51,7 @@ def test_input_update_emits_data_changed_without_resetting_model(qtbot):
         return first + second
 
     node_ref = graph.nodes()[0]
-    model = NodesTreeAdapterModel(graph, rt.ModuleRegistry())
+    model = PyGraphRTNodeDetailsModel(graph, rt.ModuleRegistry())
     node_index = model.index(0, 0)
     input_index = model.index(0, 1, node_index)
     persistent_input_index = QPersistentModelIndex(input_index)
@@ -82,7 +82,7 @@ def test_node_add_and_remove_emit_row_signals_without_resetting_model(qtbot):
     def first(value: int) -> int:
         return value
 
-    model = NodesTreeAdapterModel(graph, rt.ModuleRegistry())
+    model = PyGraphRTNodeDetailsModel(graph, rt.ModuleRegistry())
     inserted_rows = []
     removed_rows = []
     resets = []
@@ -110,7 +110,7 @@ def test_node_add_and_remove_emit_row_signals_without_resetting_model(qtbot):
 def test_input_row_changes_emit_child_row_signals_without_resetting_model(qtbot):
     graph = rt.GraphDefinitionRT()
     node_ref = graph._create_node(args=(10,))
-    model = NodesTreeAdapterModel(graph, rt.ModuleRegistry())
+    model = PyGraphRTNodeDetailsModel(graph, rt.ModuleRegistry())
     node_index = model.index(0, 0)
     inserted_rows = []
     removed_rows = []

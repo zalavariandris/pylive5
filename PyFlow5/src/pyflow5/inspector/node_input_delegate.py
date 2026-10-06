@@ -108,8 +108,13 @@ class NodeInputDelegate(QStyledItemDelegate):
             return
         target = editor.editor if isinstance(editor, NodeInputWidget) else editor
         signals_were_blocked = target.blockSignals(True)
+
         try:
-            super().setEditorData(target, index)
+            # todo: this is a temporary fix for the current twoway binding cycle see bug in TODO.md
+            if isinstance(target, QLineEdit) and target.text() == index.data(Qt.ItemDataRole.EditRole):
+                pass
+            else:
+                super().setEditorData(target, index) 
         finally:
             target.blockSignals(signals_were_blocked)
 

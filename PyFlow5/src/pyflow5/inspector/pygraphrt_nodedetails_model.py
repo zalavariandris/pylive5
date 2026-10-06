@@ -78,7 +78,7 @@ class _InputDetails(NamedTuple):
     default: Any
 
 
-class NodesTreeAdapterModel(QAbstractItemModel):
+class PyGraphRTNodeDetailsModel(QAbstractItemModel):
     """A tree projection of one graphmodel."""
 
     def __init__(

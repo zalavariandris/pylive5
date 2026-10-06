@@ -1,9 +1,20 @@
 # TODO
-- [ ] Compile graph to a runnable python script. So if the PyFlow app is broken, and the
-      graph processing library is borken its still runnable, and the work is not lost.
+- [x] The `Viewer` should connect to the standard NodesList(+Selection)Model instead of the GraphModel.
+- [ ] Now use the NodeList(+selection)Model adapters to drive the UI instead of directly connecting to the GraphModel.
+      if necessary introduce NodeRoles, for roles apply generally, and PyGraphRT Roles to acces data from the specialized PyGraphRT graph model.
+- [ ] Names become pretty problematic. 
+      - `PyGraphRtDagModel`
+      - `NodesListModelAdapter`
+      - `NodesListModelSelecitonAdapter`
+      - etc...
+      i think PyGraphRt could become PyGraphEngine
+- [ ] BUG: The current NodeInputDelegate wil update the model on everry stroke, that triggers to update the widget, wich resets its state. For example QLineEdit cursor jumps, ant this will potentially raise other issues with other InputEditors as well.
+
+- [x] Implement NodeListmodel Adapter and NodeListSelectionAdapter, to convert a Graphmodel (and its selection model)
+      to standard QItemModels that standard QT view understand.
 - [ ] Implement flags for Graphmodel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
-- [ ] distinguishe the current and selected nodes in the graphivew. And make slection propagation to the modules view, viewer etc consistent, with the current and seleciton indexes.
-- [ ] indicate cursor linenumber on the code editor even when its not active.
+- [x] distinguishe the current and selected nodes in the graphivew. 
+- [x] indicate cursor linenumber on the code editor even when its not active.
       for example highlight the numbers on the left. the cursor is not visible, when the code editor is not active.
 - [x] go to the operator line in the module script when a node is selected.
 - [x] Update data on each keystroke, when setting values for inputs.

@@ -146,6 +146,8 @@ class PyFlow5Window(QMainWindow):
         )
 
         # - Overlay the selected node tree on the graph -
+        self._nodes_list_view = QListView(self)
+        self._nodes_list_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._graph_container = QWidget(self)
         graph_layout = QGridLayout(self._graph_container)
         graph_layout.setContentsMargins(0, 0, 0, 0)
@@ -169,10 +171,12 @@ class PyFlow5Window(QMainWindow):
         self._tabwidget = QTabWidget(self)
         self._tabwidget.addTab(self._graph_container, "Graph")
         self._tabwidget.addTab(modules_panel, "Modules")
+
         
         splitter.addWidget(self._tabwidget)
+        splitter.addWidget(self._nodes_list_view)
         splitter.addWidget(self._viewer)
-        splitter.setSizes([730, 730])
+        splitter.setSizes([730, 200, 730])
         self.resize(1460, 600)
 
         self.setCentralWidget(splitter)
@@ -185,7 +189,11 @@ class PyFlow5Window(QMainWindow):
         # Create a new document and connect it to the window
         # Load the last session if it exists
         if self._use_session and self._session_path.exists():
-            new_document = PyFlowDocument().fromfile(str(self._session_path))
+            try:
+                new_document = PyFlowDocument().fromfile(str(self._session_path))
+            except Exception as e:
+                print(f"Failed to load session: {e}")
+                new_document = PyFlowDocument()
         else:
             new_document = PyFlowDocument()
 
@@ -200,28 +208,30 @@ class PyFlow5Window(QMainWindow):
             self._module_details_view.setModel(document.modules_model)
             self._module_details_view.setSelectionModel(document.modulesselection_model)
 
+            self._nodes_list_view.setModel(document.nodes_list_adapter)
+            
+            self._nodes_list_view.setSelectionModel(document.nodes_list_selection_adapter)
             self._graph_view.setModel(document.graph_model)
             self._graph_view.setSelectionModel(document.graphselection_model)
             self._graph_view.layout_nodes()
             # Fit after the window's startup layout has been established.
             QTimer.singleShot(0, self._graph_view.fitNodes)
-            self._node_tree_view.setModel(document.nodes_tree_model)
-            document.nodes_tree_model.modelReset.connect(
+            self._node_tree_view.setModel(document.node_details_model)
+            document.node_details_model.modelReset.connect(
                 lambda: self._node_tree_view.expandAll())
             # self._inspector_view.setModel(document.graphdetails_model)
-            self._viewer.setModel(document.graph_model)
-            self._viewer.setSelectionModel(document.graphselection_model)
+            self._viewer.setModel(document.nodes_list_adapter)
+            self._viewer.setSelectionModel(document.nodes_list_selection_adapter)
 
             # set the new document
             self._document = document
-
 
             def _refresh_node_tree_view_on_selectionchange() -> None:
                 assert self._document is not None
                 current = self._document.graphselection_model.currentNode()
                 if current is not None:
                     node_ref = self._document.graph_model.mapToSource(current)
-                    root = self._document.nodes_tree_model.mapFromSource(node_ref)
+                    root = self._document.node_details_model.mapFromSource(node_ref)
                 else:
                     root = QModelIndex()  # show all nodes
                 self._node_tree_view.setRootIndex(root)

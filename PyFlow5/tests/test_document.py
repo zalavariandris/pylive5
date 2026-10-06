@@ -50,7 +50,7 @@ def test_user_flow(qtbot: QtBot) -> None:
     assert list(document.graph_model.nodes()) == ["hello"]
     node = document.graph_model.mapToSource("hello")
     assert node is not None
-    assert document._graph.execute(node) == "boom"
+    assert document._graph_rt.execute(node) == "boom"
 
 if __name__ == "__main__":
     pytest.main([__file__])
