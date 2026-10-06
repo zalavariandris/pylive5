@@ -2,7 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
-from pyflow5.inspector.node_input_delegate import NodeInputDelegate
+from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
 from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex
@@ -58,7 +58,6 @@ from .modules_operator_tree_model import ModulesOperatorsTreeModel
 
 # views
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
-from .inspector.inspector_view import InspectorEditor, InspectorView
 from .module_details_view import ModuleDetailsView
 
 from qtpy.QtCore import QSettings
@@ -67,6 +66,9 @@ from pathlib import Path
 
 from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
 from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
+
+
+
 
 class PyFlow5Window(QMainWindow):
     def __init__(self, use_session=False, parent=None)->None:
@@ -96,7 +98,7 @@ class PyFlow5Window(QMainWindow):
             self._document.graph_model.addLink(source, outlet, target, inlet)
 
         # - Setup node inspector -
-        # self._inspector_view = InspectorView(self)
+        # self._node_inspector_view = 
         self._node_tree_view = QTreeView(self)
         self._node_tree_view.setMouseTracking(True)
         node_tree_header = self._node_tree_view.header()
@@ -166,15 +168,19 @@ class PyFlow5Window(QMainWindow):
         modules_panel.setLayout(module_panel_layout)
         module_panel_layout.addWidget(self._modules_listview, 0)
         module_panel_layout.addWidget(self._module_details_view, 1)
-        
 
         self._tabwidget = QTabWidget(self)
         self._tabwidget.addTab(self._graph_container, "Graph")
         self._tabwidget.addTab(modules_panel, "Modules")
 
+        self._node_inlet_treeview = QTreeView(self)
+        self._node_inlet_treeview.setItemDelegateForColumn(
+            1, NodeInputDelegate(self._node_inlet_treeview)
+        )
         
         splitter.addWidget(self._tabwidget)
-        splitter.addWidget(self._nodes_list_view)
+        # splitter.addWidget(self._nodes_list_view)
+        splitter.addWidget(self._node_inlet_treeview)
         splitter.addWidget(self._viewer)
         splitter.setSizes([730, 200, 730])
         self.resize(1460, 600)
@@ -216,12 +222,15 @@ class PyFlow5Window(QMainWindow):
             self._graph_view.layout_nodes()
             # Fit after the window's startup layout has been established.
             QTimer.singleShot(0, self._graph_view.fitNodes)
-            self._node_tree_view.setModel(document.node_details_model)
-            document.node_details_model.modelReset.connect(
+            self._node_tree_view.setModel(document.node_inlet_tree_adapter)
+            document.node_inlet_tree_adapter.modelReset.connect(
                 lambda: self._node_tree_view.expandAll())
             # self._inspector_view.setModel(document.graphdetails_model)
             self._viewer.setModel(document.nodes_list_adapter)
             self._viewer.setSelectionModel(document.nodes_list_selection_adapter)
+
+            self._node_inlet_treeview.setModel(document.node_inlet_tree_adapter)
+            self._node_inlet_treeview.setSelectionModel(document.node_inlet_tree_selection_adapter)
 
             # set the new document
             self._document = document
@@ -230,8 +239,7 @@ class PyFlow5Window(QMainWindow):
                 assert self._document is not None
                 current = self._document.graphselection_model.currentNode()
                 if current is not None:
-                    node_ref = self._document.graph_model.mapToSource(current)
-                    root = self._document.node_details_model.mapFromSource(node_ref)
+                    root = self._document.node_inlet_tree_adapter.mapFromSource(current)
                 else:
                     root = QModelIndex()  # show all nodes
                 self._node_tree_view.setRootIndex(root)

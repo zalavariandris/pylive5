@@ -1,4 +1,4 @@
-"""A flat inspector using real widgets, with one editor per property."""
+"""A flat property editor using real widgets, with one editor per property."""
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -9,11 +9,11 @@ from qtpy.QtWidgets import (
 
 import myqtx
 from myqtx.color_editor_widget import ColorEdit
-from .inspector_roles import InspectorRole, UNSET
+from ..nodert_input_roles import NodeRTInputRole, UNSET
 
 
 @dataclass
-class InspectorEditor:
+class PropertyEditor:
     """Adapter returned by an editor factory(index, parent).
 
     Complex editors read/write one complete value. committed should fire when
@@ -24,7 +24,7 @@ class InspectorEditor:
     write: Callable[[Any], None]
     committed: Any = None
 
-def _color_editor(index:QModelIndex, parent:QWidget|None=None)->InspectorEditor:
+def _color_editor(index:QModelIndex, parent:QWidget|None=None)->PropertyEditor:
     widget = ColorEdit(parent)
     color_type = type(index.data(Qt.ItemDataRole.EditRole))
 
@@ -33,7 +33,7 @@ def _color_editor(index:QModelIndex, parent:QWidget|None=None)->InspectorEditor:
         color_type = type(color)
         widget.setColor(color.r, color.g, color.b, color.a)
 
-    return InspectorEditor(
+    return PropertyEditor(
         widget,
         lambda: color_type(*widget.color()),
         write,
@@ -43,7 +43,7 @@ def _color_editor(index:QModelIndex, parent:QWidget|None=None)->InspectorEditor:
 def _text_editor(value_type):
     def create(index, parent):
         widget = QLineEdit(parent)
-        return InspectorEditor(
+        return PropertyEditor(
             widget, lambda: value_type(widget.text()),
             lambda value: widget.setText(str(value)), widget.editingFinished,
         )
@@ -51,14 +51,14 @@ def _text_editor(value_type):
 
 def _bool_editor(index, parent):
     widget = QCheckBox(parent)
-    return InspectorEditor(widget, widget.isChecked, widget.setChecked, widget.clicked)
+    return PropertyEditor(widget, widget.isChecked, widget.setChecked, widget.clicked)
 
 def _display_editor(index, parent):
     widget = QLabel(parent)
     widget.setTextFormat(Qt.TextFormat.PlainText)
     widget.setWordWrap(True)
     widget.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    return InspectorEditor(widget, lambda: None, lambda value: widget.setText(str(value)))
+    return PropertyEditor(widget, lambda: None, lambda value: widget.setText(str(value)))
 
 
 class _PropertyRow(QWidget):
@@ -86,8 +86,8 @@ class _PropertyRow(QWidget):
             return
         index = QModelIndex(self.index)
         value = index.data(Qt.ItemDataRole.EditRole)
-        binding = index.data(InspectorRole.BindingRole)
-        annotation = index.data(InspectorRole.TypeRole)
+        binding = index.data(NodeRTInputRole.BindingRole)
+        annotation = index.data(NodeRTInputRole.TypeRole)
         type_name = getattr(annotation, "__name__", str(annotation)) if annotation is not None else ""
         name = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         self.label.setText(f"{name} ({type_name})" if type_name else name)
@@ -95,7 +95,7 @@ class _PropertyRow(QWidget):
 
         factory = self.view._factory(index, value)
         if binding == "connection":
-            connection = index.data(InspectorRole.ConnectionRole)
+            connection = index.data(NodeRTInputRole.ConnectionRole)
             value = ".".join(map(str, connection)) if connection else "Unavailable connection"
             factory = _display_editor
         elif value is UNSET:
@@ -124,7 +124,7 @@ class _PropertyRow(QWidget):
                 self.editor.widget.setReadOnly(not editable)
             else:
                 self.editor.widget.setEnabled(editable or self.editor.committed is None)
-            error = index.data(InspectorRole.ErrorRole)
+            error = index.data(NodeRTInputRole.ErrorRole)
             self.message.setText(error or {
                 "default": "Default", "connection": "Connected", "missing": "Required",
             }.get(binding, ""))
@@ -139,7 +139,7 @@ class _PropertyRow(QWidget):
         model = self.view.model()
         if index.model() is not model or not index.flags() & Qt.ItemFlag.ItemIsEditable:
             return
-        if index.data(InspectorRole.BindingRole) == "connection":
+        if index.data(NodeRTInputRole.BindingRole) == "connection":
             return
         try:
             value = self.editor.read()
@@ -149,13 +149,13 @@ class _PropertyRow(QWidget):
             self.message.show()
             return
         if not accepted:
-            self.message.setText(index.data(InspectorRole.ErrorRole) or "Value was not accepted.")
+            self.message.setText(index.data(NodeRTInputRole.ErrorRole) or "Value was not accepted.")
             self.message.show()
         else:
             self.refresh()
 
 
-class InspectorView(QScrollArea):
+class PropertiesView(QScrollArea):
     """Render a flat item model with registered editor widgets.
 
     registerEditor(type_or_hint, factory) also accepts an explicit editor hint
@@ -225,8 +225,8 @@ class InspectorView(QScrollArea):
             row.refresh()
 
     def _factory(self, index, value):
-        hints = index.data(InspectorRole.EditorHintsRole) or {}
-        annotation = index.data(InspectorRole.TypeRole)
+        hints = index.data(NodeRTInputRole.EditorHintsRole) or {}
+        annotation = index.data(NodeRTInputRole.TypeRole)
         # Builtin annotations may be strings when postponed annotations are used.
         if isinstance(annotation, str):
             annotation = {"str": str, "int": int, "float": float, "bool": bool}.get(annotation, annotation)
@@ -250,7 +250,7 @@ class InspectorView(QScrollArea):
         self._rebuild()
 
     def _update_header(self, *args):
-        title, description = "Inspector", ""
+        title, description = "Properties", ""
         if self._model is not None:
             title = self._model.headerData(0, Qt.Orientation.Horizontal) or title
             description = self._model.headerData(

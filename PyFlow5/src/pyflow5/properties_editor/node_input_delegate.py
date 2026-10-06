@@ -13,7 +13,7 @@ from qtpy.QtWidgets import (
 
 from qtpy.QtGui import QPainter, QPalette
 
-from .inspector_roles import InspectorRole
+from ..nodert_input_roles import NodeRTInputRole
 from pygraphrt.abstract_operator import ParameterData
 
 
@@ -68,7 +68,7 @@ class NodeInputDelegate(QStyledItemDelegate):
     ) -> QWidget|None:
 
         # find appropriate editor based on the annotation
-        annotation = index.data(InspectorRole.AnnotationRole)
+        annotation = index.data(NodeRTInputRole.AnnotationRole)
         if annotation == "int" or annotation is int:
             editor = QSpinBox(parent)
         elif annotation == "float" or annotation is float:
@@ -139,7 +139,7 @@ class NodeInputDelegate(QStyledItemDelegate):
             return
         super().initStyleOption(option, index)
 
-        if index.data(InspectorRole.IsUsingDefaultRole):
+        if index.data(NodeRTInputRole.IsUsingDefaultRole):
             color = option.palette.color(
                 QPalette.ColorGroup.Disabled,
                 QPalette.ColorRole.Text,

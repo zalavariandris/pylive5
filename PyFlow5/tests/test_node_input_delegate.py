@@ -5,12 +5,11 @@ from qtpy.QtGui import QPalette
 from qtpy.QtTest import QTest
 from qtpy.QtWidgets import QLineEdit, QSpinBox, QStyle, QStyleOptionViewItem, QTreeView
 
-from pyflow5.inspector.node_input_delegate import NodeInputDelegate, NodeInputWidget
-from pyflow5.inspector.pygraphrt_nodedetails_model import PyGraphRTNodeDetailsModel
+from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate, NodeInputWidget
 
 
 @pytest.fixture
-def input_graph():
+def input_graph(make_input_model):
     graph = rt.GraphDefinitionRT()
 
     @graph.node(7, "before")
@@ -18,7 +17,7 @@ def input_graph():
         return label * count
 
     node_ref = graph.nodes()[0]
-    model = PyGraphRTNodeDetailsModel(graph, rt.ModuleRegistry())
+    model = make_input_model(graph)
     return node_ref, model
 
 
@@ -104,7 +103,7 @@ def test_line_edit_updates_model_for_each_keystroke(qtbot, input_graph, tree_vie
     index = model.index(1, 1, model.index(0, 0))
     updates = []
     model.dataChanged.connect(
-        lambda *_args: updates.append(node_ref.get_inputs()[0][1])
+        lambda first, *_: updates.append(node_ref.get_inputs()[0][1]) if first.parent().isValid() else None
     )
 
     tree_view.edit(index)
@@ -127,7 +126,7 @@ def test_spin_box_updates_model_without_committing_initial_value(
     index = model.index(0, 1, model.index(0, 0))
     updates = []
     model.dataChanged.connect(
-        lambda *_args: updates.append(node_ref.get_inputs()[0][0])
+        lambda first, *_: updates.append(node_ref.get_inputs()[0][0]) if first.parent().isValid() else None
     )
 
     tree_view.edit(index)
@@ -143,14 +142,14 @@ def test_spin_box_updates_model_without_committing_initial_value(
     assert wrapper.isVisible()
 
 
-def test_default_value_uses_dim_text_when_selected(qtbot):
+def test_default_value_uses_dim_text_when_selected(qtbot, make_input_model):
     graph = rt.GraphDefinitionRT()
 
     @graph.node()
     def with_default(count: int = 7) -> int:
         return count
 
-    model = PyGraphRTNodeDetailsModel(graph, rt.ModuleRegistry())
+    model = make_input_model(graph)
     index = model.index(0, 1, model.index(0, 0))
     option = QStyleOptionViewItem()
     option.state |= QStyle.StateFlag.State_Selected

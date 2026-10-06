@@ -16,6 +16,8 @@ from qtpy.QtGui import QColor
 
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel,
+    AddNodeMessage,
+    RemoveNodeMessage,
     CellIdx, 
     DirectionalLinkId, 
     InletName, 
@@ -48,6 +50,19 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         self._executions: dict[NodeName, rt.NodeExecution] = {}
 
+        # Adapters observe this model, including changes made directly to the RT.
+        graph.nodes_added.connect(self._on_rt_nodes_added)
+        graph.nodes_removed.connect(self._on_rt_nodes_removed)
+        graph.nodes_changed.connect(self._on_rt_nodes_changed)
+        for signal in (
+            registry.modules_added,
+            registry.modules_removed,
+            registry.operators_added,
+            registry.operators_removed,
+            registry.operators_changed,
+        ):
+            signal.connect(self._on_registry_changed)
+
         @self._invalidator.nodes_invalidated.connect
         def on_nodes_invalidated(nodes: list[rt.NodeRef]):
             print("Nodes invalidated: ", [node_ref.get_name() for node_ref in nodes])
@@ -77,6 +92,34 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 tuple([self.ExecutionRole])
             ) # list[NodeT], roles: list[int]
 
+    def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
+        if any(isinstance(msg, AddNodeMessage) for msg in self._message_queue):
+            return  # addNode already owns the source notification pair.
+        names = tuple(node.get_name() for node in nodes)
+        self.nodesAboutToBeAdded.emit(names)
+        self.nodesAdded.emit(names)
+
+    def _on_rt_nodes_removed(self, nodes: list[rt.NodeRef]) -> None:
+        names = tuple(node.get_name() for node in nodes)
+        for name in names:
+            self._positions.pop(name, None)
+            self._executions.pop(name, None)
+        if any(isinstance(msg, RemoveNodeMessage) for msg in self._message_queue):
+            return  # removeNodes already owns the source notification pair.
+        self.nodesAboutToBeRemoved.emit(names)
+        self.nodesRemoved.emit(names)
+
+    def _on_rt_nodes_changed(self, nodes: list[rt.NodeRef]) -> None:
+        names = tuple(node.get_name() for node in nodes)
+        for name in names:
+            # The base tree adapter compares inlet identities and only changes
+            # rows when necessary; unchanged rows still receive dataChanged.
+            self.inletsChanged.emit(name)
+        self.nodesDataChanged.emit(names, ())
+
+    def _on_registry_changed(self, *_: object) -> None:
+        self._on_rt_nodes_changed(self._graph.nodes())
+
     def setRT(self, graph: rt.GraphDefinitionRT, positions=None):
         raise NotImplementedError("setRT method is not implemented yet.")
 
@@ -92,7 +135,6 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._message_queue.clear()
         self._beginResetModel()
         self._positions = defaultdict(lambda: (0.0, 0.0), positions)
-        self._refresh_module_subscriptions()
         self._endResetModel()
 
     # = Mapping Source =
