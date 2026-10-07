@@ -14,17 +14,17 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from myqtx.interactive import (
+from myqtx.formwidget import (
     Interactive,
-    QFormWidget,
+    FormWidget,
     _form_from_function,
 )
 
-SubmitBehaviour = QFormWidget.SubmitBehaviour
+SubmitBehaviour = FormWidget.SubmitBehaviour
 
 
 def test_form_submits_independent_snapshots(qtbot: QtBot) -> None:
-    form = QFormWidget()
+    form = FormWidget()
     form.insertEditor("name", QLineEdit())
     qtbot.addWidget(form)
     submissions: list[dict[str, object]] = []
@@ -93,7 +93,7 @@ def test_auto_enter_submits_current_widget_values(qtbot: QtBot) -> None:
 
 
 def test_auto_submits_programmatic_changes_once(qtbot: QtBot) -> None:
-    form = QFormWidget(submit_behaviour=SubmitBehaviour.AUTO)
+    form = FormWidget(submit_behaviour=SubmitBehaviour.AUTO)
     editor = QLineEdit()
     form.insertEditor("name", editor)
     qtbot.addWidget(form)
@@ -124,7 +124,7 @@ def test_button_follows_submission_behaviour(
     initial_behaviour: SubmitBehaviour,
     next_behaviour: SubmitBehaviour,
 ) -> None:
-    form = QFormWidget(submit_behaviour=initial_behaviour)
+    form = FormWidget(submit_behaviour=initial_behaviour)
     qtbot.addWidget(form)
     form.show()
     button = form.findChild(QPushButton)
@@ -194,7 +194,7 @@ def test_auto_submission_waits_for_all_fields_to_be_valid(qtbot: QtBot) -> None:
 
 
 def test_repeated_enter_does_not_submit(qtbot: QtBot) -> None:
-    form = QFormWidget()
+    form = FormWidget()
     editor = QLineEdit()
     form.insertEditor("name", editor)
     qtbot.addWidget(form)
@@ -210,7 +210,7 @@ def test_repeated_enter_does_not_submit(qtbot: QtBot) -> None:
 
 
 def test_multiline_editor_keeps_enter_for_newlines(qtbot: QtBot) -> None:
-    form = QFormWidget()
+    form = FormWidget()
     editor = QPlainTextEdit()
     form.insertEditor("notes", editor)
     qtbot.addWidget(form)
@@ -367,7 +367,7 @@ def test_function_helper_rejects_initial_values_of_wrong_type() -> None:
 
 
 def test_default_binding_reads_back_clamped_values(qtbot: QtBot) -> None:
-    form = QFormWidget()
+    form = FormWidget()
     spinbox = QSpinBox()
     spinbox.setRange(0, 10)
     spinbox.setValue(3)
@@ -384,7 +384,7 @@ def test_default_binding_reads_back_clamped_values(qtbot: QtBot) -> None:
 
 
 def test_overridden_getter_setter_ignore_signal_payload(qtbot: QtBot) -> None:
-    form = QFormWidget()
+    form = FormWidget()
     combo = QComboBox()
     combo.addItem("First", 10)
     combo.addItem("Second", 20)
@@ -405,7 +405,7 @@ def test_overridden_getter_setter_ignore_signal_payload(qtbot: QtBot) -> None:
 
 
 def test_signal_override_controls_notifications_but_not_reads(qtbot: QtBot) -> None:
-    form = QFormWidget(submit_behaviour=SubmitBehaviour.AUTO)
+    form = FormWidget(submit_behaviour=SubmitBehaviour.AUTO)
     editor = QLineEdit("old")
     form.insertEditor("name", editor, signal=editor.editingFinished)
     qtbot.addWidget(form)
@@ -425,7 +425,7 @@ def test_signal_override_controls_notifications_but_not_reads(qtbot: QtBot) -> N
 
 
 def test_custom_composite_widget_binding(qtbot: QtBot) -> None:
-    form = QFormWidget(submit_behaviour=SubmitBehaviour.AUTO)
+    form = FormWidget(submit_behaviour=SubmitBehaviour.AUTO)
     container = QWidget()
     editor = QLineEdit("initial", container)
     with pytest.raises(ValueError, match="Provide a getter"):
@@ -445,7 +445,7 @@ def test_custom_composite_widget_binding(qtbot: QtBot) -> None:
 
 
 def test_insert_remove_disconnects_and_preserves_widget_for_reuse(qtbot: QtBot) -> None:
-    form = QFormWidget()
+    form = FormWidget()
     first = QLineEdit("first")
     last = QLineEdit("last")
     middle = QLineEdit("middle")
@@ -466,7 +466,7 @@ def test_insert_remove_disconnects_and_preserves_widget_for_reuse(qtbot: QtBot) 
     assert removed.parent() is None
     assert list(form.as_dict()) == ["first", "last"]
 
-    other = QFormWidget()
+    other = FormWidget()
     qtbot.addWidget(other)
     other.insertEditor("reused", removed)
     middle.setText("changed")
@@ -475,7 +475,7 @@ def test_insert_remove_disconnects_and_preserves_widget_for_reuse(qtbot: QtBot) 
 
 
 def test_invalid_registration_leaves_existing_parameters_intact(qtbot: QtBot) -> None:
-    form = QFormWidget()
+    form = FormWidget()
     editor = QLineEdit("existing")
     form.insertEditor("name", editor)
     qtbot.addWidget(form)

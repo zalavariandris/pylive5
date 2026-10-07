@@ -41,7 +41,7 @@ class _Binding[T]:
     signal: SignalInstance
     
 
-class QFormWidget(QFrame):
+class FormWidget(QFrame):
     """Read values from registered widgets and submit valid forms.
 
     Change notifications follow each widget's registered signal. AUTO submits
@@ -285,8 +285,8 @@ def _form_from_function(
     initial: Mapping[str, object] | None = None,
     parent: QWidget | None = None,
     *,
-    submit_behaviour: QFormWidget.SubmitBehaviour = QFormWidget.SubmitBehaviour.SUBMIT,
-) -> QFormWidget:
+    submit_behaviour: FormWidget.SubmitBehaviour = FormWidget.SubmitBehaviour.SUBMIT,
+) -> FormWidget:
     """Build a form for keyword-callable bool, int, float, and str editors."""
     function_signature = inspect.signature(function)
     hints = get_type_hints(function)
@@ -330,7 +330,7 @@ def _form_from_function(
             )
         specs.append((parameter.name, value_type, value))
 
-    form = QFormWidget(parent, submit_behaviour=submit_behaviour)
+    form = FormWidget(parent, submit_behaviour=submit_behaviour)
     for index, (name, value_type, value) in enumerate(specs):
         editor = _create_function_editor(name, value_type, value)
         form.insertEditor(
@@ -346,7 +346,7 @@ def _form_from_function(
 
 class Interactive(QFrame):
     executed = Signal(object)
-    ExecutionBehaviour = QFormWidget.SubmitBehaviour
+    ExecutionBehaviour = FormWidget.SubmitBehaviour
 
     def __init__(
         self,
