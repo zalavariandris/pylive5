@@ -2,7 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
-from pyflow5.node_inspector_view import NodeInspectorView
+from pyflow5.node_inspector_view2 import NodeInspectorView
 from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
 from pygraphrt.script_module import ScriptOperatorRef
@@ -155,7 +155,6 @@ class PyFlow5Window(QMainWindow):
         self._nodes_list_view = QListView(self)
         self._nodes_list_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
                 
-
         # - Overlay the selected node tree on the graph -
         self._graph_container = QWidget(self)
         graph_layout = QGridLayout(self._graph_container)

@@ -1,13 +1,15 @@
 from enum import StrEnum
-
+from typing import Callable, cast
 
 from qtpy.QtCore import (
     QAbstractItemModel,
     QItemSelection,
     QItemSelectionModel,
     QModelIndex,
+    QObject,
     Qt,
     Signal,
+    SignalInstance,
     Slot
 )
 
@@ -21,7 +23,7 @@ from qtpy.QtWidgets import (
 )
 
 
-class DetailsView(QFrame):
+class BaseDetailsView(QFrame):
     class SelectionBehaviour(StrEnum):
         FirstSelected = "first"
         LastSelected = "last"
@@ -34,11 +36,11 @@ class DetailsView(QFrame):
         
         # private members
         self._model: QAbstractItemModel|None = None
-        self._model_connections: list[tuple[Signal, Slot]] = []
+        self._model_connections: list[tuple[SignalInstance, Callable]] = []
         self._nodes_selection_model: QItemSelectionModel|None = None
-        self._selection_model_connections: list[tuple[Signal, Slot]] = []
+        self._selection_model_connections: list[tuple[SignalInstance, Callable]] = []
         self._current_root:QModelIndex = QModelIndex()
-        self._selection_behaviour: DetailsView.SelectionBehaviour = DetailsView.SelectionBehaviour.Current
+        self._selection_behaviour: BaseDetailsView.SelectionBehaviour = BaseDetailsView.SelectionBehaviour.Current
 
         # lock switch
         self._viewer_lock_switch = QCheckBox("-node-", self)
@@ -57,7 +59,7 @@ class DetailsView(QFrame):
         viewer_layout.setContentsMargins(0, 0, 0, 0)
         viewer_layout.addLayout(viewer_header)
 
-        self._body_widget = QLabel("-body-", self)
+        self._body_widget:QWidget = QLabel("-body-", self)
         viewer_layout.addWidget(self._body_widget)
 
     def setSelectionBehaviour(self, behaviour: SelectionBehaviour) -> None:
@@ -67,7 +69,7 @@ class DetailsView(QFrame):
         return self._selection_behaviour
 
     def setBodyWidget(self, widget: QWidget) -> None:
-        layout = self.layout()
+        layout = cast(QVBoxLayout, self.layout())
         if self._body_widget is not None:
             layout.removeWidget(self._body_widget)
             self._body_widget.deleteLater()
@@ -111,16 +113,16 @@ class DetailsView(QFrame):
             print("- Lock is checked, cant set current node")
             return
 
-        if self._selection_behaviour not in  {DetailsView.SelectionBehaviour.FirstSelected, DetailsView.SelectionBehaviour.LastSelected}:
+        if self._selection_behaviour not in  {BaseDetailsView.SelectionBehaviour.FirstSelected, BaseDetailsView.SelectionBehaviour.LastSelected}:
             return
 
         match self._selection_behaviour:
-            case DetailsView.SelectionBehaviour.FirstSelected:
+            case BaseDetailsView.SelectionBehaviour.FirstSelected:
                 first_index = selected.indexes()[0] if selected.indexes() else QModelIndex()
                 self._current_root = first_index
                 self._viewer_lock_switch.setText(f"{self._current_root.data()}") 
                 self.showCurrentRootEvent()
-            case DetailsView.SelectionBehaviour.LastSelected:
+            case BaseDetailsView.SelectionBehaviour.LastSelected:
                 last_index = selected.indexes()[-1] if selected.indexes() else QModelIndex()
                 self._current_root = last_index
                 self._viewer_lock_switch.setText(f"{self._current_root.data()}")
@@ -162,7 +164,8 @@ class DetailsView(QFrame):
             self._nodes_selection_model = selection_model
 
     def _on_model_reset(self):
-        self._setCurrentIndex(QModelIndex())
+        self._current_root = QModelIndex()
+        self.showCurrentRootEvent()
 
     def _on_data_changed(self, topLeft:QModelIndex, bottomRight:QModelIndex, roles:list[int]=[]):
         columns = range(topLeft.column(), bottomRight.column() + 1)
@@ -170,14 +173,22 @@ class DetailsView(QFrame):
         if 0 not in columns:
             return
 
-        rows = range(topLeft.row(), bottomRight.row() + 1)
+        if topLeft.parent() != self._current_root.parent():
+            return
 
+        if bottomRight.parent() != self._current_root.parent():
+            return
+
+        rows = range(topLeft.row(), bottomRight.row() + 1)
         if self._current_root.row() in rows:
             self.showCurrentRootEvent()
 
     def _on_rows_removed(self, parent:QModelIndex, first: int, last: int):
+        if parent != self._current_root.parent():
+            return
+        
         if self._current_root.row() >= first and self._current_root.row() <= last:
-            self._setCurrentIndex(QModelIndex())
+            self.showCurrentRootEvent()
 
     def showCurrentRootEvent(self):
         # todo: make it an abstrat emthod

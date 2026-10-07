@@ -179,6 +179,11 @@ class FormWidget(QFrame):
         binding.widget.setParent(None)
         return binding.widget
 
+    def clear(self) -> None:
+        """Remove all editors and clear the form."""
+        for name in list(self._bindings.keys()):
+            self.removeEditor(name)
+
     def submit_behaviour(self) -> SubmitBehaviour:
         return self._submit_behaviour
 
