@@ -29,9 +29,24 @@ class NodeInputWidget(QWidget):
         editor.setParent(self)
 
         self.clear_button = QPushButton("✖", self)
-        self.clear_button.setStyleSheet(
-            "QPushButton { background: transparent; border: none; padding: 0; margin: 0; }"
+        
+        self.clear_button.setStyleSheet("""\
+            QPushButton {
+                background: transparent; border: none; padding: 0; margin: 0; 
+            }
+            QPushButton:hover {
+                color: palette(Highlight);
+            }
+            """
         )
+        
+
+        # self.clear_button.setStyleSheet(""""""
+        #     "QPushButton { background-color: transparent; border: none; color: "
+        #     "transparent; }"
+        #     "QPushButton:hover { background-color: transparent; border: none; }"
+        #     "QPushButton:pressed { background-color: transparent; border: none; }"
+        # )
         self.clear_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.clear_button.clicked.connect(self.clearRequested.emit)
         self.setFocusProxy(editor)
@@ -51,10 +66,10 @@ class NodeInputWidget(QWidget):
             rect.height()
         )
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), self.palette().color(QPalette.Window))
-        super().paintEvent(event)
+    # def paintEvent(self, event):
+    #     painter = QPainter(self)
+    #     painter.fillRect(self.rect(), self.palette().color(QPalette.Window))
+    #     super().paintEvent(event)
 
 
 class NodeInputDelegate(QStyledItemDelegate):

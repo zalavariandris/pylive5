@@ -13,6 +13,7 @@ from qtpy.QtCore import (
 
 from qtpy.QtWidgets import (
     QCheckBox,
+    QFrame,
     QLabel,
     QHBoxLayout,
     QVBoxLayout, 
@@ -20,7 +21,7 @@ from qtpy.QtWidgets import (
 )
 
 
-class DetailsView(QWidget):
+class DetailsView(QFrame):
     class SelectionBehaviour(StrEnum):
         FirstSelected = "first"
         LastSelected = "last"
@@ -28,6 +29,8 @@ class DetailsView(QWidget):
 
     def __init__(self, parent=None)->None:
         super().__init__(parent)
+
+        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Plain)
         
         # private members
         self._model: QAbstractItemModel|None = None

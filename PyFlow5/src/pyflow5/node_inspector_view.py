@@ -1,7 +1,7 @@
 from .properties_editor.node_input_delegate import NodeInputDelegate
 
 from .details_view import DetailsView
-from qtpy.QtWidgets import QHeaderView, QLabel, QTableView
+from qtpy.QtWidgets import QAbstractScrollArea, QFrame, QHeaderView, QLabel, QSizePolicy, QTableView
 
 class NodeInspectorView(DetailsView):
     def __init__(self, parent=None):
@@ -12,6 +12,15 @@ class NodeInspectorView(DetailsView):
         # self.setBodyWidget(self._label)
 
         self._tableview = QTableView(self)
+        self._tableview.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Plain)
+        self._tableview.horizontalHeader().hide()
+        self._tableview.setSizeAdjustPolicy(
+            QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents
+        )
+        self._tableview.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self._tableview.setItemDelegateForColumn(
             1, 
             NodeInputDelegate(self._tableview)

@@ -127,7 +127,7 @@ class PyFlow5Window(QMainWindow):
         # - Settings
         self._settings = QSettings(
             QSettings.Format.IniFormat, # format
-            QSettings.Scope.UserScope, # scope
+            QSettings.Scope.UserScope, # scopetab
             "BABLab", # organization
             "PyFlow5" # application
         )
@@ -176,20 +176,18 @@ class PyFlow5Window(QMainWindow):
         module_panel_layout.addWidget(self._modules_listview, 0)
         module_panel_layout.addWidget(self._module_details_view, 1)
 
-        self._tabwidget = QTabWidget(self)
-        self._tabwidget.addTab(self._graph_container, "Graph")
-        self._tabwidget.addTab(modules_panel, "Modules")
+        self._left_tabwidget = QTabWidget(self)
+        self._left_tabwidget.addTab(self._graph_container, "Graph")
+        self._left_tabwidget.addTab(modules_panel, "Modules")
 
-        self._node_inlet_treeview = QTreeView(self)
-        self._node_inlet_treeview.setItemDelegateForColumn(
-            1, NodeInputDelegate(self._node_inlet_treeview)
-        )
         
-        splitter.addWidget(self._tabwidget)
-        splitter.addWidget(self._node_inlet_treeview)
-        splitter.addWidget(self._viewer)
-        splitter.setSizes([730, 200, 730])
-        self.resize(1460, 600)
+        splitter.addWidget(self._left_tabwidget)
+
+        self._right_tabwidget = QTabWidget(self)
+        self._right_tabwidget.addTab(self._viewer, "Viewer")
+        splitter.addWidget(self._right_tabwidget)
+        splitter.setSizes([730, 730])
+        self.resize(1460, 760)
 
         self.setCentralWidget(splitter)
 
@@ -317,7 +315,7 @@ class PyFlow5Window(QMainWindow):
         # get the node module, and select it in the module view
         operator_index = self._document.getNodeOperator(current_node)
         if operator_index:
-            self._tabwidget.setCurrentIndex(1)
+            self._left_tabwidget.setCurrentIndex(1)
             module_index = operator_index.parent()
             self._document.modulesselection_model.setCurrentIndex(module_index, QItemSelectionModel.ClearAndSelect)
 
