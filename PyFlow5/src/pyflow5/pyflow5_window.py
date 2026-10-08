@@ -2,12 +2,11 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
-<<<<<<< HEAD
+
 from pyflow5.formview import FormView
 from pyflow5.node_inspector_view import NodeInspectorView
-=======
-from pyflow5.node_inspector_view2 import NodeInspectorView
->>>>>>> 09b2b9ec92fa7d9a48c1e168bb16a6bcb099b099
+
+
 from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
 from pygraphrt.script_module import ScriptOperatorRef
