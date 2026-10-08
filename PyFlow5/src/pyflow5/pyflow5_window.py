@@ -2,6 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
+from pyflow5.formview import FormView
 from pyflow5.node_inspector_view import NodeInspectorView
 from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
@@ -120,6 +121,8 @@ class PyFlow5Window(QMainWindow):
         # self._node_inspector = self._node_tree_view
 
         self._node_inspector = NodeInspectorView()
+
+        self._node_form_view = FormView(self)
         
         # - Setup display widget -
         self._viewer = Viewer(self)
@@ -179,14 +182,16 @@ class PyFlow5Window(QMainWindow):
         self._left_tabwidget = QTabWidget(self)
         self._left_tabwidget.addTab(self._graph_container, "Graph")
         self._left_tabwidget.addTab(modules_panel, "Modules")
+        self._left_tabwidget.addTab(self._node_tree_view, "Node Tree")
 
         
         splitter.addWidget(self._left_tabwidget)
+        splitter.addWidget(self._node_form_view)
 
         self._right_tabwidget = QTabWidget(self)
         self._right_tabwidget.addTab(self._viewer, "Viewer")
         splitter.addWidget(self._right_tabwidget)
-        splitter.setSizes([730, 730])
+        splitter.setSizes([500, 200, 500]) # splitter.setSizes([730, 730])
         self.resize(1460, 760)
 
         self.setCentralWidget(splitter)
@@ -224,6 +229,15 @@ class PyFlow5Window(QMainWindow):
             self._graph_view.setModel(document.graph_model)
             self._graph_view.setSelectionModel(document.graphselection_model)
             self._graph_view.layout_nodes()
+            self._node_tree_view.setModel(document.node_inlet_tree_adapter)
+            self._node_tree_view.setSelectionModel(document.node_inlet_tree_selection_adapter)
+
+            self._node_form_view.setModel(document.node_inlet_tree_adapter)
+            document.node_inlet_tree_selection_adapter.currentChanged.connect(
+                lambda current, previous: self._node_form_view.setRootIndex(
+                    current
+                )
+            )
             # Fit after the window's startup layout has been established.
             QTimer.singleShot(0, self._graph_view.fitNodes)
             self._node_tree_view.setModel(document.node_inlet_tree_adapter)
@@ -241,20 +255,20 @@ class PyFlow5Window(QMainWindow):
             # set the new document
             self._document = document
 
-            def _refresh_node_tree_view_on_selectionchange() -> None:
-                assert self._document is not None
-                current = self._document.graphselection_model.currentNode()
-                if current is not None:
-                    root = self._document.node_inlet_tree_adapter.mapFromSource(current)
-                else:
-                    root = QModelIndex()  # show all nodes
-                self._node_tree_view.setRootIndex(root)
-                self._node_tree_view.setVisible(bool(current))
+            # def _refresh_node_tree_view_on_selectionchange() -> None:
+            #     assert self._document is not None
+            #     current = self._document.graphselection_model.currentNode()
+            #     if current is not None:
+            #         root = self._document.node_inlet_tree_adapter.mapFromSource(current)
+            #     else:
+            #         root = QModelIndex()  # show all nodes
+            #     self._node_tree_view.setRootIndex(root)
+            #     self._node_tree_view.setVisible(bool(current))
 
-            self._document.graphselection_model.currentNodeChanged.connect(
-                lambda selected, deselected: _refresh_node_tree_view_on_selectionchange()
-            )
-            _refresh_node_tree_view_on_selectionchange()
+            # self._document.graphselection_model.currentNodeChanged.connect(
+            #     lambda selected, deselected: _refresh_node_tree_view_on_selectionchange()
+            # )
+            # _refresh_node_tree_view_on_selectionchange()
 
             # self._document.graphselection_model.currentNodeChanged.connect(
             #     lambda current, previous: self._navigate_to_current_node_operator()
