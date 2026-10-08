@@ -2,7 +2,8 @@ from typing import Any
 import numpy as np
 
 from qtpy.QtCore import (
-    Qt
+    Qt,
+    QSize
 )
 from qtpy.QtWidgets import QSizePolicy, QVBoxLayout, QLabel
 
@@ -25,6 +26,7 @@ class DisplayWidget(QWidget):
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         layout.addWidget(self._label)
+        self._pixmap = None
 
     def _update_label_font_size(self):
         min_font_size = 10
@@ -43,14 +45,35 @@ class DisplayWidget(QWidget):
         font.setPointSize(max(min_font_size, int(min_font_size * scale)))
         self._label.setFont(font)
 
+    def minimumSizeHint(self):
+        return QSize(320, 240)
+
+    def sizeHint(self):
+        return QSize(320, 240)
+
+    def _update_pixmap(self):
+        if self._pixmap is not None:
+            self._label.setPixmap(
+                self._pixmap.scaled(
+                    self._label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+
     def resizeEvent(self, event):
+        super().resizeEvent(event)
         # set label font size, so text fits right in the widget
         self._update_label_font_size()
+        self._update_pixmap()
 
     def clear(self):
+        self._pixmap = None
         self._label.clear()
         
     def display(self, data:Any):
+        print(f"Displaying data of type: {type(data)}")
+        self._pixmap = None
         match data:
             case str() | int() | float() | bool():
                 self._label.setStyleSheet("color: black")
@@ -90,7 +113,8 @@ class DisplayWidget(QWidget):
                     4: QImage.Format.Format_RGBA8888,
                 }[channels]
                 qimg = QImage(data.data, data.shape[1], data.shape[0], data.strides[0], image_format)
-                self._label.setPixmap(QPixmap(qimg))
+                self._pixmap = QPixmap.fromImage(qimg)
+                self._update_pixmap()
                 self._update_label_font_size()
 
             case BaseException():

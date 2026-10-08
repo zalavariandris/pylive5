@@ -1,11 +1,15 @@
 import builtins
 import inspect
+from myqtx.displaywidget import DisplayWidget
+import numpy as np
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TypeVar
-from enum import StrEnum
+import pathlib
+from typing import Any, TypeVar
+from enum import Enum, StrEnum
 from functools import partial
 from typing import NamedTuple, get_type_hints
+import warnings
 
 
 from qtpy.QtCore import (
@@ -20,24 +24,27 @@ from qtpy.QtCore import (
 from qtpy.QtGui import QKeyEvent
 from qtpy.QtWidgets import (
     QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QFrame,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QSpinBox,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from myqtx import QPathEdit
 
-T = TypeVar("T")
 @dataclass
-class _Binding[T]:
+class _Binding:
     widget: QWidget
-    getter: Callable[[], T]
-    setter: Callable[[T], None]
+    getter: Callable[[], Any]
+    setter: Callable[[Any], None]
     signal: SignalInstance
     
 
@@ -134,6 +141,7 @@ class FormWidget(QFrame):
                         setter = lineedit.setText if setter is None else setter
                     if signal is None:
                         signal = lineedit.textChanged if signal is None else signal
+
                 case QCheckBox():
                     if getter is None:
                         getter = widget.isChecked if getter is None else getter
@@ -141,6 +149,14 @@ class FormWidget(QFrame):
                         setter = widget.setChecked if setter is None else setter
                     if signal is None:
                         signal = widget.stateChanged if signal is None else signal
+
+                case pathlib.Path() as pathedit:
+                    if getter is None:
+                        getter = pathedit.path if getter is None else getter
+                    if setter is None:
+                        setter = pathedit.setPath if setter is None else setter
+                    if signal is None:
+                        signal = pathedit.pathChanged if signal is None else signal
                 case _:
                     raise ValueError(f"Provide getter, setter, and signal for {name!r}")
 
@@ -265,18 +281,57 @@ def _create_function_editor(
         case builtins.bool:
             widget = QCheckBox()
             widget.setChecked(bool(initial))
-            return _Binding[bool](widget,
+            return _Binding(widget,
                 lambda: widget.isChecked(), 
                 lambda value: widget.setChecked(value), 
                 widget.checkStateChanged
             )
+        
         case builtins.str:
             widget = QLineEdit()
             widget.setText(str(initial))
-            return _Binding[str](widget,
+            return _Binding(widget,
                 lambda: widget.text(),
                 lambda value: widget.setText(value),
                 widget.textChanged
+            )
+        
+        case builtins.float:
+            widget = QDoubleSpinBox()
+            widget.setValue(float(initial))
+            return _Binding(widget,
+                lambda: widget.value(),
+                lambda value: widget.setValue(value),
+                widget.valueChanged
+            )
+
+        case builtins.int:
+            widget = QSpinBox()
+            widget.setValue(int(initial))
+            return _Binding(widget,
+                lambda: widget.value(),
+                lambda value: widget.setValue(value),
+                widget.valueChanged
+            )
+
+        case pathlib.Path:
+            widget = QPathEdit()
+            widget.setPath(str(initial))
+            return _Binding(widget,
+                lambda: pathlib.Path(widget.path()),
+                lambda value: widget.setPath(str(value)),
+                widget.pathChanged
+            )
+
+        case enum_type if isinstance(enum_type, type) and issubclass(enum_type, Enum):
+            widget = QComboBox()
+            for member in enum_type:
+                widget.addItem(member.name, member)
+            widget.setCurrentIndex(max(widget.findData(initial), 0))
+            return _Binding(widget,
+                lambda: widget.currentData(),
+                lambda value: widget.setCurrentIndex(max(widget.findData(value), 0)),
+                widget.currentIndexChanged
             )
 
         case _:
@@ -320,19 +375,25 @@ def _form_from_function(
                 )
             value_type = type(parameter.default)
 
-        if value_type not in (bool, int, float, str):
+        is_enum = isinstance(value_type, type) and issubclass(value_type, Enum)
+        if not is_enum and value_type not in (bool, int, float, str, pathlib.Path):
             raise TypeError(
                 f"Unsupported type for {parameter.name!r}: {value_type!r}"
             )
 
         value = provided.get(parameter.name, parameter.default)
         if value is inspect.Parameter.empty:
-            value = value_type()
+            value = next(iter(value_type)) if is_enum else value_type()
         if type(value) is not value_type:
-            raise TypeError(
+            warnings.warn(
                 f"{parameter.name!r} expects {value_type.__name__}, "
                 f"got {type(value).__name__}"
             )
+            # todo: review type checking. subclasses not pass
+            # raise TypeError(
+                #     f"{parameter.name!r} expects {value_type.__name__}, "
+                #     f"got {type(value).__name__}"
+            # )
         specs.append((parameter.name, value_type, value))
 
     form = FormWidget(parent, submit_behaviour=submit_behaviour)
@@ -350,6 +411,12 @@ def _form_from_function(
 
 
 class Interactive(QFrame):
+    """usage:
+        interactive = Interactive(some_function)
+        interactive.set_execution_behaviour(Interactive.ExecutionBehaviour.SUBMIT)
+        interactive.show()
+        interactive.executed.connect(lambda val: print(val))
+    """
     executed = Signal(object)
     ExecutionBehaviour = FormWidget.SubmitBehaviour
 
@@ -366,7 +433,7 @@ class Interactive(QFrame):
         self.header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.inputs = _form_from_function(func, parent=self)
 
-        self._output = QLabel()
+        self._output = DisplayWidget()
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.header)
@@ -379,9 +446,9 @@ class Interactive(QFrame):
 
     @Slot(object)
     def _execute(self, values: dict[str, object]) -> None:
-        results = str(self._func(**values))
+        results = self._func(**values)
         self.executed.emit(results)
-        self._output.setText(results)
+        self._output.display(results)
 
 
 if __name__ == "__main__":
