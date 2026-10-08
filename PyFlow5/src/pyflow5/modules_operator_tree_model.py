@@ -231,4 +231,13 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         self.endRemoveRows()
         return True
 
+    def removeRows(self, row: int, count: int, parent: QModelIndex = QModelIndex()) -> bool:
+        if self._registry is None:
+            return False
 
+        self.beginRemoveRows(parent, row, row + count - 1)
+        for i in range(count):
+            module = self.mapToSource(self.index(row + i, 0))
+            self._registry.remove_module(module)
+        self.endRemoveRows()
+        return True

@@ -15,6 +15,9 @@ dependencies = [
     "numpy",
 ]
 
+[tool.setuptools]
+py-modules = ["stage"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["myqtx", "myqtx.*"]

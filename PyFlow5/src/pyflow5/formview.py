@@ -12,36 +12,8 @@ from qtpy.QtWidgets import (
     QDataWidgetMapper,
     QStyledItemDelegate,
     QLineEdit,
-    QSpinBox,
-    QDoubleSpinBox,
-    QCheckBox,
     QStyleOptionViewItem,
 )
-
-
-class FormDelegate(QStyledItemDelegate):
-    def createEditor(self, parent, option, index):
-        value = index.data(Qt.ItemDataRole.EditRole)
-
-        if isinstance(value, bool):
-            return QCheckBox(parent)
-
-        elif isinstance(value, int):
-            editor = QSpinBox(parent)
-            editor.setRange(-1_000_000, 1_000_000)
-            return editor
-
-        elif isinstance(value, float):
-            editor = QDoubleSpinBox(parent)
-            editor.setRange(-1_000_000, 1_000_000)
-            return editor
-        else:
-            lineedit = QLineEdit(parent)
-            lineedit.setText(str(value))
-            lineedit.textChanged.connect(
-                lambda _: self.commitData.emit(lineedit)
-            )
-            return lineedit
 
 
 class FormView(QWidget):
@@ -49,11 +21,12 @@ class FormView(QWidget):
         super().__init__(parent)
         self._model = None
         self._root_index = QPersistentModelIndex()
+        self._root_removed = False
         self._editors = []
 
         self._layout = QFormLayout(self)
 
-        self._delegate = FormDelegate(self)
+        self._delegate = QStyledItemDelegate(self)
 
         self._mapper = QDataWidgetMapper(self)
         self._mapper.setOrientation(Qt.Orientation.Vertical)
@@ -74,6 +47,7 @@ class FormView(QWidget):
 
         self._model = model
         self._root_index = QPersistentModelIndex()
+        self._root_removed = False
 
         self._mapper.setModel(model)
         self._mapper.setRootIndex(QModelIndex())
@@ -90,9 +64,10 @@ class FormView(QWidget):
         if index.isValid() and index.model() is not self._model:
             raise ValueError("Index belongs to another model")
 
-        if index == self.rootIndex():
+        if index == self.rootIndex() and not self._root_removed:
             return
 
+        self._root_removed = False
         self._root_index = QPersistentModelIndex(index)
         self._mapper.setRootIndex(index)
 
@@ -117,6 +92,7 @@ class FormView(QWidget):
 
         model.dataChanged.connect(self._on_data_changed)
         model.rowsInserted.connect(self._on_rows_inserted)
+        model.rowsAboutToBeRemoved.connect(self._on_rows_about_to_be_removed)
         model.rowsRemoved.connect(self._on_rows_removed)
         model.rowsMoved.connect(self._on_rows_moved)
         model.layoutChanged.connect(self._on_layout_changed)
@@ -130,6 +106,10 @@ class FormView(QWidget):
         for signal, slot in (
             (self._model.dataChanged, self._on_data_changed),
             (self._model.rowsInserted, self._on_rows_inserted),
+            (
+                self._model.rowsAboutToBeRemoved,
+                self._on_rows_about_to_be_removed,
+            ),
             (self._model.rowsRemoved, self._on_rows_removed),
             (self._model.rowsMoved, self._on_rows_moved),
             (self._model.layoutChanged, self._on_layout_changed),
@@ -152,7 +132,7 @@ class FormView(QWidget):
     def _rebuild(self, *args):
         self._clear()
 
-        if self._model is None:
+        if self._model is None or self._root_removed:
             return
 
         root = self.rootIndex()
@@ -213,7 +193,7 @@ class FormView(QWidget):
         self._mapper.setCurrentIndex(1)
 
     def _on_data_changed(self, top_left, bottom_right, roles):
-        if top_left.parent() != self.rootIndex():
+        if not self._shows(top_left.parent()):
             return
 
         if roles and not any(
@@ -249,8 +229,12 @@ class FormView(QWidget):
 
         # QDataWidgetMapper updates the value editors.
 
+    def _shows(self, parent: QModelIndex) -> bool:
+        # An invalid root is ambiguous: top level, or a root that was deleted.
+        return not self._root_removed and parent == self.rootIndex()
+
     def _on_rows_inserted(self, parent, first, last):
-        if parent != self.rootIndex():
+        if not self._shows(parent):
             return
 
         for row in range(first, last + 1):
@@ -258,8 +242,23 @@ class FormView(QWidget):
 
         self._update_mappings()
 
+    def _on_rows_about_to_be_removed(
+        self, parent: QModelIndex, first: int, last: int
+    ) -> None:
+        if self._root_removed or not self._root_index.isValid():
+            return
+
+        # The root dies if it, or any ancestor, is in the removed range.
+        index = self.rootIndex()
+        while index.isValid():
+            if index.parent() == parent and first <= index.row() <= last:
+                self._root_removed = True
+                self._clear()
+                return
+            index = index.parent()
+
     def _on_rows_removed(self, parent, first, last):
-        if parent != self.rootIndex():
+        if not self._shows(parent):
             return
 
         for row in range(last, first - 1, -1):
@@ -276,6 +275,7 @@ class FormView(QWidget):
     def _on_model_about_to_reset(self):
         self._clear()
         self._root_index = QPersistentModelIndex()
+        self._root_removed = False
 
     def _on_model_reset(self):
         self._mapper.setRootIndex(QModelIndex())

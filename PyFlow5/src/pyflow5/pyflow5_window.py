@@ -3,7 +3,6 @@ import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
-from pyflow5.formview import FormView
 from pyflow5.node_inspector_view import NodeInspectorView
 
 
@@ -13,6 +12,7 @@ from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex
 
 from qtpy.QtCore import (
+    QPoint,
     QPointF,
     Qt,
     QTimer,
@@ -21,7 +21,7 @@ from qtpy.QtCore import (
 )
 
 from qtpy.QtGui import QCloseEvent
-from qtpy.QtGui import QActionGroup
+from qtpy.QtGui import QAction, QActionGroup
 
 from qtpy.QtWidgets import (
     QAbstractItemView,
@@ -49,6 +49,7 @@ from qtpy.QtWidgets import (
 
 # widgets
 from myqtx.selection_dialog import SelectionDialog
+from myqtx.editorregistry import EditorRegistry
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 
 # models
@@ -73,8 +74,6 @@ from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
 from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
 
 
-
-
 class PyFlow5Window(QMainWindow):
     def __init__(self, use_session=False, parent=None)->None:
         super().__init__(parent)
@@ -86,6 +85,8 @@ class PyFlow5Window(QMainWindow):
         self._modules_listview.setMouseTracking(True)
         self._modules_listview.setFixedWidth(100)
         self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._modules_listview.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._modules_listview.customContextMenuRequested.connect(self._show_modules_context_menu)
         
         # - Setup modules details view -
         self._module_details_view = ModuleDetailsView(self)
@@ -103,6 +104,7 @@ class PyFlow5Window(QMainWindow):
             self._document.graph_model.addLink(source, outlet, target, inlet)
 
         # - Setup node inspector -
+        self.editor_registry = EditorRegistry()
         # self._node_inspector_view = 
         self._node_tree_view = QTreeView(self)
         self._node_tree_view.setMouseTracking(True)
@@ -116,16 +118,14 @@ class PyFlow5Window(QMainWindow):
         )
         self._node_tree_view.setItemDelegateForColumn(
             1, 
-            NodeInputDelegate(self._node_tree_view)
+            NodeInputDelegate(self._node_tree_view, editor_registry=self.editor_registry)
         )
         self._node_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         # self._node_tree_view.hide()
 
         # self._node_inspector = self._node_tree_view
 
-        self._node_inspector = NodeInspectorView()
-
-        self._node_form_view = FormView(self)
+        self._node_inspector = NodeInspectorView(self, editor_registry=self.editor_registry)
         
         # - Setup display widget -
         self._viewer = Viewer(self)
@@ -175,25 +175,24 @@ class PyFlow5Window(QMainWindow):
 
         # - Add widgets to splitter -
         splitter = QSplitter(self)
-        modules_panel = QWidget(self)
+        self._modules_panel = QWidget(self)
         module_panel_layout = QHBoxLayout()
-        modules_panel.setLayout(module_panel_layout)
+        self._modules_panel.setLayout(module_panel_layout)
         module_panel_layout.addWidget(self._modules_listview, 0)
         module_panel_layout.addWidget(self._module_details_view, 1)
 
         self._left_tabwidget = QTabWidget(self)
+        self._left_tabwidget.addTab(self._modules_panel, "Modules")
         self._left_tabwidget.addTab(self._graph_container, "Graph")
-        self._left_tabwidget.addTab(modules_panel, "Modules")
-        self._left_tabwidget.addTab(self._node_tree_view, "Node Tree")
+        self._left_tabwidget.setCurrentIndex(1)
 
         
         splitter.addWidget(self._left_tabwidget)
-        splitter.addWidget(self._node_form_view)
 
         self._right_tabwidget = QTabWidget(self)
         self._right_tabwidget.addTab(self._viewer, "Viewer")
         splitter.addWidget(self._right_tabwidget)
-        splitter.setSizes([500, 200, 500]) # splitter.setSizes([730, 730])
+        splitter.setSizes([730, 730])
         self.resize(1460, 760)
 
         self.setCentralWidget(splitter)
@@ -217,6 +216,30 @@ class PyFlow5Window(QMainWindow):
         self.setupMenubar()
         self._connectDocument(new_document)
 
+    def _show_modules_context_menu(self, pos):
+        index = self._modules_listview.indexAt(pos)
+        global_pos = self._modules_listview.viewport().mapToGlobal(pos)
+        
+        # Create a fresh, local menu instance right here
+        menu = QMenu(self._modules_listview)
+        add_action = menu.addAction("Add Embedded Module")
+        add_action.triggered.connect(self.addEmbeddedModule)
+
+        if self._document.modulesselection_model.hasSelection():
+            # Pass the specific index data directly into your deletion method
+            item_text = index.data()
+            remove_action = menu.addAction(f"Remove '{item_text}'")
+
+            #todo remove selection with batches using the .selection()->QItemSelection
+            def remove_selected_modules():
+                selected_indexes = self._document.modulesselection_model.selectedIndexes()
+                for selected_index in selected_indexes:
+                    self._document.modules_model.removeRows(selected_index.row(), 1)
+            remove_action.triggered.connect(remove_selected_modules)
+            
+        # Execute the local menu (blocks until closed, then gets garbage collected)
+        menu.exec(global_pos)
+
     def _connectDocument(self, document: PyFlowDocument):
         # Keep the old document alive until its views have disconnected.
         if document:
@@ -234,12 +257,6 @@ class PyFlow5Window(QMainWindow):
             self._node_tree_view.setModel(document.node_inlet_tree_adapter)
             self._node_tree_view.setSelectionModel(document.node_inlet_tree_selection_adapter)
 
-            self._node_form_view.setModel(document.node_inlet_tree_adapter)
-            document.node_inlet_tree_selection_adapter.currentChanged.connect(
-                lambda current, previous: self._node_form_view.setRootIndex(
-                    current
-                )
-            )
             # Fit after the window's startup layout has been established.
             QTimer.singleShot(0, self._graph_view.fitNodes)
             self._node_tree_view.setModel(document.node_inlet_tree_adapter)
@@ -330,8 +347,8 @@ class PyFlow5Window(QMainWindow):
 
         # get the node module, and select it in the module view
         operator_index = self._document.getNodeOperator(current_node)
-        if operator_index:
-            self._left_tabwidget.setCurrentIndex(1)
+        if operator_index.isValid():
+            self._left_tabwidget.setCurrentWidget(self._modules_panel)
             module_index = operator_index.parent()
             self._document.modulesselection_model.setCurrentIndex(module_index, QItemSelectionModel.ClearAndSelect)
 
@@ -362,8 +379,6 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Paste", lambda: None)
         edit_menu.addSeparator()
 
-        edit_menu.addAction("Navigate to Current Node's Operator", lambda: self._navigate_to_current_node_operator()).setShortcut("Return")
-
         edit_menu.addAction("Select All", lambda: None)
         edit_menu.addAction("Select None", lambda: None)
         edit_menu.addSeparator()
@@ -377,14 +392,37 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addSeparator()
 
         edit_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
-        edit_menu.addAction("Add Local Module", lambda: self.addLocalModule())
+        edit_menu.addAction("Add Embedded Module", lambda: self.addEmbeddedModule())
         edit_menu.addAction("Remove Selected Module", lambda: self.removeSelectedModule())
 
         view_menu = QMenu("View", self)
-        view_menu.addAction("fit nodes",  lambda: None)
-        view_menu.addAction("layout nodes",  lambda: None)
+
+        fit_nodes_action = QAction("Fit Nodes",  self)
+        fit_nodes_action.triggered.connect(lambda: self._graph_view.fitNodes())
+        fit_nodes_action.setShortcut("F")
+        fit_nodes_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        view_menu.addAction(fit_nodes_action)
+
+        layout_nodes_action = QAction("Layout Nodes",  self)
+        layout_nodes_action.triggered.connect(lambda: self._graph_view.layoutNodes())
+        layout_nodes_action.setShortcut("L")
+        layout_nodes_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        view_menu.addAction(layout_nodes_action)
+
+        view_menu.addSeparator()
+        self._navigate_operator_action = QAction("Go to Current Node's Operator", self)
+        self._navigate_operator_action.setShortcuts(["Return", "Enter"])
+        self._navigate_operator_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        self._navigate_operator_action.triggered.connect(self._navigate_to_current_node_operator)
+        self._graph_view.addAction(self._navigate_operator_action)
+        view_menu.addAction(self._navigate_operator_action)
+
+        self._navigate_to_previous_graph_panel = QAction("Go to Graph Panel", self)
+        self._navigate_to_previous_graph_panel.setShortcuts(["Esc"])
+        self._navigate_to_previous_graph_panel.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        self._modules_panel.addAction(self._navigate_to_previous_graph_panel)
+        view_menu.addAction(self._navigate_to_previous_graph_panel)
         
-        view_menu.addAction("Go to Selected Node's Operator", lambda: self._navigate_to_current_node_operator())
         view_menu.addSeparator()
         menubar.addMenu(view_menu)
 
@@ -411,7 +449,7 @@ class PyFlow5Window(QMainWindow):
             self._settings.setValue("theme", theme)
             self._settings.sync()
 
-    def addLocalModule(self):
+    def addEmbeddedModule(self):
         self._document.addEmbeddedModule()
 
     def removeSelectedModule(self):

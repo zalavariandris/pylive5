@@ -1,6 +1,15 @@
 # TODO
-- [ ] Node inspector should become a DetailsView subclass
-- [ ] compile the graph into a native python script, in case the graph processing library brakes, the graph will be still runnable.
+- [ ] factor out the session and probably settings from the current Window.
+       window should be a document window. this will allow testing empty GUI (without loading the last session)
+       as well as opening multiple documents. The problem is, that the Window acstions are controlled by the document window for now.
+       probably we should have a DocumentsList model as well.
+       I like it when projectfiles open in another instance of the whole application, but also the session, and recent files in the menu
+       has a wider responsibility than a single document. So... maybe we could have tabs as well as opening document in multiple window, 
+       but in a single app.
+- [x] BUG: when deleting a node with no inputs, the FormView raise an exception, and the app crash
+- [ ] create a method that compiles the graph into a native python script so its runnable without the app.
+      also think about if we could compile it to a python app without using the PyGraphRT module.
+      in case the graph processing library brakes, the graph will be still runnable.
 - [x] The `Viewer` should connect to the standard NodesList(+Selection)Model instead of the GraphModel.
 - [x] Now use the NodeList(+selection)Model adapters to drive the UI instead of directly connecting to the GraphModel.
       if necessary introduce NodeRoles, for roles apply generally, and PyGraphRT Roles to acces data from the specialized PyGraphRT graph model.
@@ -11,7 +20,7 @@
       - `NodesListModelSelecitonAdapter`
       - etc...
       i think PyGraphRt could become PyGraphEngine
-- [ ] BUG: The current NodeInputDelegate wil update the model on everry stroke, that triggers to update the widget, wich resets its state. For example QLineEdit cursor jumps, ant this will potentially raise other issues with other InputEditors as well.
+- [x] BUG: The current NodeInputDelegate wil update the model on everry stroke, that triggers to update the widget, wich resets its state. For example QLineEdit cursor jumps, ant this will potentially raise other issues with other InputEditors as well.
 
 - [x] Implement NodeListmodel Adapter and NodeListSelectionAdapter, to convert a Graphmodel (and its selection model)
       to standard QItemModels that standard QT view understand.
@@ -23,16 +32,10 @@
 - [x] Update data on each keystroke, when setting values for inputs.
       this probably needs a nodeTreeModel refactor,
       so it wont reset the model all the time, and recreate the whole view each time it receives an update.
-- [ ] How to use input signal instead of finished editing in the NodeInputDelegate?
+- [x] How to use input signal instead of finished editing in the NodeInputDelegate?
 - [x] Why its not able to use standard QLayouts?
       Turns out using layout would overcomplicate things
-- [ ] factor out the session and probably settings from the current Window.
-       window should be a document window. this will allow testing empty GUI (without loading the last session)
-       as well as opening multiple documents. The problem is, that the Window acstions are controlled by the document window for now.
-       probably we should have a DocumentsList model as well.
-       I like it when projectfiles open in another instance of the whole application, but also the session, and recent files in the menu
-       has a wider responsibility than a single document. So... maybe we could have tabs as well as opening document in multiple window, 
-       but in a single app.
+
 
 - [x] fix saving and loading broken graphs
       `create_placeholder_operator`
@@ -51,8 +54,8 @@
 - [ ] Two details in your current code also need fixing for restoration: fromfile() ignores saved node positions, and _connectDocument() always rearranges the nodes. Imported modules with relative paths also need a stable base directory when the snapshot lives in AppData.  
 
 ## fix open and save
-- [ ] open the lates graph, on launch
-- [ ] Recents
+- [x] open the lates session, on launch
+- [x] Recents
 - [x] Fix saving opening in the GUI
 
 ## GraphView
@@ -97,7 +100,7 @@ Keep execution synchronous for now, but let the UI consume signals so it can sup
 
 - [ ] we somehow need to indicate, when an ImportModule has a path, but the file does not exist.
 
-- [ ] consider addin a rename method to the node_ref. it would probaly change the NodeRef hash. so it might not be a good idea. Unless NodeRefs are used by their objectid under the hood, and not its hash.
+- [ ] consider adding a rename method to the node_ref. it would probaly change the NodeRef hash. so it might not be a good idea. Unless NodeRefs are used by their objectid under the hood, and not its hash.
 
 **The Book Keeping problem**
 I think the current architecture has a deply routed problem. We call it the *book keeping problem*.
@@ -202,8 +205,13 @@ NOTE: these might be outdated:
 - [x] GraphRT should be allowed to load and reaload(!) operators from a python script!
       -> ScriptmoduleRT added, that manages operators from a python script.
 - [x] consider making operators first class citizens. \#pygraph
+      what does this mean?
+      -> does that mean, that the Graph is responsoble to store relations between 
+      nodes<->operators? this is true now. and Nodes are holding the funcionts.
 
-- [ ] Consider GraphRT responsibility to be nodes and links only. and factor out, the python script-like additions: operators, modules etc. \#pygraph
+- [x] Consider GraphRT responsibility to be nodes and links only. and factor out, the python script-like additions: operators, modules etc. \#pygraph
+      -> Now Nodes hold callables. GraphRT is no more responsible for modules, but
+      responsible for node<->operator relation
 - [x] consider using references inside the GraphRT datastructure.
       eg graph.output, node.inputs, node.operators etc. \#pygraph
 - [x] when a node is removed, the GraphRT.output still holds on to it.

@@ -1,54 +1,36 @@
-from .properties_editor.node_input_delegate import NodeInputDelegate
+from qtpy.QtCore import QAbstractItemModel, QModelIndex
+from qtpy.QtWidgets import QSizePolicy, QWidget
+from myqtx.editorregistry import EditorRegistry
 
 from .base_details_view import BaseDetailsView
-from qtpy.QtWidgets import QAbstractScrollArea, QFrame, QHeaderView, QLabel, QSizePolicy, QTableView
-from qtpy.QtCore import QAbstractItemModel
+from .formview import FormView
+from .properties_editor.node_input_delegate import NodeInputDelegate
+
 
 class NodeInspectorView(BaseDetailsView):
-    def __init__(self, parent=None):
+    def __init__(
+        self, parent: QWidget | None = None, *,
+        editor_registry: EditorRegistry | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setSelectionBehaviour(BaseDetailsView.SelectionBehaviour.FirstSelected)
-        # self.setTitle("Node Inspector")
-        # self._label = QLabel("Node Inspector")
-        # self.setBodyWidget(self._label)
 
-        self._tableview = QTableView(self)
-        self._tableview.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Plain)
-        self._tableview.horizontalHeader().hide()
-        self._tableview.setSizeAdjustPolicy(
-            QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents
+        self._form_view = FormView(self)
+        self._form_view.setItemDelegate(
+            NodeInputDelegate(self._form_view, editor_registry=editor_registry)
         )
-        self._tableview.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Fixed,
-        )
-        self._tableview.setItemDelegateForColumn(
-            1, 
-            NodeInputDelegate(self._tableview)
-        )
-        # set table column resizing
-        table_header = self._tableview.horizontalHeader()
-        table_header.setStretchLastSection(True)
-        table_header.setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        table_header.setSectionResizeMode(
-            1, QHeaderView.ResizeMode.ResizeToContents
-        )
+        self._form_view.hide()
+        self.setBodyWidget(self._form_view)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
-        self.setBodyWidget(self._tableview)
-
-    def setModel(self, model:QAbstractItemModel):
+    def setModel(self, model: QAbstractItemModel | None) -> None:
         super().setModel(model)
-        self._tableview.setModel(model)
+        self._current_root = QModelIndex()
+        self._form_view.setModel(model)
+        self.showCurrentRootEvent()
 
-    def showCurrentRootEvent(self):
-        print(f"show current root: {self.currentRoot().data()}")
-        if self.currentRoot().isValid() == False:
-            # self._label.setText("No node selected")
-            self._tableview.setVisible(False)
-        else:
-            # self._label.setText(self.currentRoot().data())
-            self._tableview.setRootIndex(self.currentRoot())
-            self._tableview.setVisible(True)
-        return super().showCurrentRootEvent()
+    def showCurrentRootEvent(self) -> None:
+        root = self.currentRoot()
+        self._form_view.setVisible(root.isValid())
+        if root.isValid():
+            self._form_view.setRootIndex(root.siblingAtColumn(0))

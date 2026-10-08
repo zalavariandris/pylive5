@@ -1,151 +1,197 @@
+from typing import Any
 
-
-from qtpy.QtCore import QModelIndex, Qt, Signal
+from qtpy.QtCore import (
+    QAbstractItemModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal,
+)
+from qtpy.QtGui import QPalette
 from qtpy.QtWidgets import (
-    QDoubleSpinBox,
-    QSpinBox,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
-    QWidget,
-    QPushButton,
-    QLineEdit,
+    QHBoxLayout, QPushButton, QStyledItemDelegate, QStyleOptionViewItem, QWidget,
 )
 
-from qtpy.QtGui import QPainter, QPalette
+from myqtx.editorregistry import EditorRegistry
+from myqtx.editors import Editor, EditorFactory, label_editor, read_only_editor
+from pygraphrt.abstract_operator import ParameterData
 
 from ..nodert_input_roles import NodeRTInputRole
-from pygraphrt.abstract_operator import ParameterData
 
 
 class NodeInputWidget(QWidget):
     clearRequested = Signal()
+    valueChanged = Signal()
 
-    def __init__(self, editor: QWidget, parent=None):
+    def __init__(
+        self, datatype: type, factory: EditorFactory, parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setAutoFillBackground(True)
-
-        # create the editor
-        self.editor = editor
-        editor.setParent(self)
+        self.setStyleSheet("""
+            QWidget[usingDefault="true"], QWidget[usingDefault="true"] QWidget {
+                color: palette(PlaceholderText);
+                font-style: italic;
+            }
+        """)
+        self.datatype = datatype
+        self.factory = factory
+        self.modified = False
+        self._updating = False
+        self.binding = self._create_binding(datatype, factory)
+        self.editor = self.binding.widget
+        if self.binding.changed is not None:
+            self.binding.changed.connect(self._on_value_changed)
 
         self.clear_button = QPushButton("✖", self)
-        
-        self.clear_button.setStyleSheet("""\
+        self.clear_button.setToolTip("Clear input")
+        self.clear_button.setStyleSheet("""
             QPushButton {
-                background: transparent; border: none; padding: 0; margin: 0; 
+                background: transparent; border: none; padding: 0; margin: 0;
             }
             QPushButton:hover {
                 color: palette(Highlight);
             }
-            """
-        )
-        
-
-        # self.clear_button.setStyleSheet(""""""
-        #     "QPushButton { background-color: transparent; border: none; color: "
-        #     "transparent; }"
-        #     "QPushButton:hover { background-color: transparent; border: none; }"
-        #     "QPushButton:pressed { background-color: transparent; border: none; }"
-        # )
+        """)
         self.clear_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.clear_button.clicked.connect(self.clearRequested.emit)
-        self.setFocusProxy(editor)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        rect = self.contentsRect()
-        button_width = min(self.clear_button.sizeHint().width(), rect.width())
-        editor_width = max(0, rect.width() - button_width)
-        self.editor.setGeometry(
-            rect.x(), rect.y(), editor_width, rect.height()
-        )
-        self.clear_button.setGeometry(
-            rect.x() + editor_width,
-            rect.y(),
-            button_width,
-            rect.height()
-        )
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self._layout.addWidget(self.editor, 1)
+        self._layout.addWidget(self.clear_button)
+        self.setFocusProxy(self.editor)
 
-    # def paintEvent(self, event):
-    #     painter = QPainter(self)
-    #     painter.fillRect(self.rect(), self.palette().color(QPalette.Window))
-    #     super().paintEvent(event)
+    def _create_binding(self, datatype: type, factory: EditorFactory) -> Editor[Any]:
+        binding = factory(datatype, self)
+        if not isinstance(binding, Editor) or not isinstance(binding.widget, QWidget):
+            raise TypeError("Editor factories must return an Editor containing a QWidget")
+        return binding
+
+    def replace_editor(self, datatype: type, factory: EditorFactory) -> None:
+        binding = self._create_binding(datatype, factory)
+        if self.binding.changed is not None:
+            self.binding.changed.disconnect(self._on_value_changed)
+        previous = self.editor
+        self._layout.replaceWidget(previous, binding.widget)
+        previous.hide()
+        previous.deleteLater()
+        self.datatype = datatype
+        self.factory = factory
+        self.binding = binding
+        self.editor = binding.widget
+        if self.binding.changed is not None:
+            self.binding.changed.connect(self._on_value_changed)
+        self.setFocusProxy(self.editor)
+        self.editor.show()
+
+    def set_value(self, value: object, *, using_default: bool = False) -> None:
+        self._updating = True
+        try:
+            if using_default and self.binding.set_default is not None:
+                self.binding.set_default(value)
+            else:
+                self.binding.set_value(value)
+            if self.editor.property("usingDefault") != using_default:
+                self.editor.setProperty("usingDefault", using_default)
+                for widget in [self.editor, *self.editor.findChildren(QWidget)]:
+                    widget.style().unpolish(widget)
+                    widget.style().polish(widget)
+                    widget.update()
+                self.editor.updateGeometry()
+            self.modified = False
+        finally:
+            self._updating = False
+
+    def _on_value_changed(self, *args: object) -> None:
+        if not self._updating:
+            self.modified = True
+            self.valueChanged.emit()
 
 
 class NodeInputDelegate(QStyledItemDelegate):
-    def __init__(self, parent=None):
+    def __init__(
+        self, parent: QObject | None = None, *,
+        editor_registry: EditorRegistry | None = None,
+    ) -> None:
         super().__init__(parent)
-
-    def createEditor(self, 
-        parent: QWidget|None, 
-        option: QStyleOptionViewItem, 
-        index: QModelIndex
-    ) -> QWidget|None:
-
-        # find appropriate editor based on the annotation
-        annotation = index.data(NodeRTInputRole.AnnotationRole)
-        if annotation == "int" or annotation is int:
-            editor = QSpinBox(parent)
-        elif annotation == "float" or annotation is float:
-            editor = QDoubleSpinBox(parent)
-            editor.setDecimals(3)
-            editor.setSingleStep(0.1)
-        elif annotation == "str" or annotation is str:
-            editor = QLineEdit(parent)
-        else:
-            editor = super().createEditor(parent, option, index)
-
-        if editor is None:
-            return None
-
-        # create wrapper widget
-        wrapper = NodeInputWidget(editor, parent)
-
-        if isinstance(editor, QLineEdit):
-            editor.textEdited.connect(
-                lambda *_: self.commitData.emit(wrapper)
-            )
-        elif isinstance(editor, (QSpinBox, QDoubleSpinBox)):
-            editor.valueChanged.connect(
-                lambda *_: self.commitData.emit(wrapper)
-            )
-
-        wrapper.clearRequested.connect(
-            lambda: self._clear_input(wrapper, index)
+        self.editor_registry = (
+            editor_registry if editor_registry is not None else EditorRegistry()
         )
 
+    def register_editor(self, datatype: type, factory: EditorFactory) -> None:
+        """Register an editor in this delegate's registry."""
+        self.editor_registry.register_editor(datatype, factory)
+
+    def _editor_factory(self, index: QModelIndex) -> tuple[type, EditorFactory]:
+        annotation = index.data(NodeRTInputRole.AnnotationRole)
+        datatype = (
+            annotation if isinstance(annotation, type)
+            else type(index.data(Qt.ItemDataRole.EditRole))
+        )
+        if index.data(NodeRTInputRole.ConnectionRole) is not None:
+            return datatype, label_editor
+        factory = None
+        if index.flags() & Qt.ItemFlag.ItemIsEditable:
+            factory = self.editor_registry.factory_for(datatype)
+        return datatype, factory if factory is not None else read_only_editor
+
+    def createEditor(
+        self,
+        parent: QWidget | None,
+        option: QStyleOptionViewItem,
+        index: QModelIndex,
+    ) -> QWidget:
+        datatype, factory = self._editor_factory(index)
+        wrapper = NodeInputWidget(datatype, factory, parent)
+        wrapper.valueChanged.connect(lambda: self.commitData.emit(wrapper))
+        persistent_index = QPersistentModelIndex(index)
+        wrapper.clearRequested.connect(
+            lambda: self._clear_input(wrapper, persistent_index)
+        )
         return wrapper
 
-    def setEditorData(
-        self, editor: QWidget | None, index: QModelIndex
-    ) -> None:
+    def setEditorData(self, editor: QWidget | None, index: QModelIndex) -> None:
         if editor is None:
             return
-        target = editor.editor if isinstance(editor, NodeInputWidget) else editor
-        signals_were_blocked = target.blockSignals(True)
-
-        try:
-            # todo: this is a temporary fix for the current twoway binding cycle see bug in TODO.md
-            if isinstance(target, QLineEdit) and target.text() == index.data(Qt.ItemDataRole.EditRole):
-                pass
-            else:
-                super().setEditorData(target, index) 
-        finally:
-            target.blockSignals(signals_were_blocked)
-
-    def setModelData(self, editor, model, index):
-        if isinstance(editor, NodeInputWidget):
-            super().setModelData(editor.editor, model, index)
+        if not isinstance(editor, NodeInputWidget):
+            super().setEditorData(editor, index)
             return
-        super().setModelData(editor, model, index)
 
-    def _clear_input(self, editor, index) -> None:
-        self.closeEditor.emit(
-            editor, QStyledItemDelegate.EndEditHint.NoHint
+        datatype, factory = self._editor_factory(index)
+        if editor.datatype is not datatype or editor.factory is not factory:
+            editor.replace_editor(datatype, factory)
+        role = (
+            Qt.ItemDataRole.DisplayRole
+            if factory in (read_only_editor, label_editor) else Qt.ItemDataRole.EditRole
         )
-        index.model().setData(
-            index, ParameterData.EMPTY, Qt.ItemDataRole.EditRole
+        editor.set_value(
+            index.data(role),
+            using_default=bool(index.data(NodeRTInputRole.IsUsingDefaultRole)),
         )
+
+    def setModelData(
+        self, editor: QWidget, model: QAbstractItemModel, index: QModelIndex
+    ) -> None:
+        if not isinstance(editor, NodeInputWidget):
+            super().setModelData(editor, model, index)
+            return
+        # Focus changes must not turn an untouched default into a stored input.
+        if (
+            not editor.modified
+            or editor.factory in (read_only_editor, label_editor)
+            or not index.flags() & Qt.ItemFlag.ItemIsEditable
+        ):
+            return
+        editor.modified = False
+        model.setData(index, editor.binding.get_value(), Qt.ItemDataRole.EditRole)
+
+    def _clear_input(
+        self, editor: NodeInputWidget, index: QPersistentModelIndex
+    ) -> None:
+        editor.modified = False
+        self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
+        if index.isValid():
+            index.model().setData(
+                QModelIndex(index), ParameterData.EMPTY, Qt.ItemDataRole.EditRole
+            )
 
     def initStyleOption(
         self, option: QStyleOptionViewItem | None, index: QModelIndex
@@ -164,9 +210,7 @@ class NodeInputDelegate(QStyledItemDelegate):
                 QPalette.ColorGroup.Active,
                 QPalette.ColorGroup.Inactive,
             ):
-                option.palette.setColor(
-                    group, QPalette.ColorRole.Text, color
-                )
+                option.palette.setColor(group, QPalette.ColorRole.Text, color)
                 option.palette.setColor(
                     group, QPalette.ColorRole.HighlightedText, color
                 )

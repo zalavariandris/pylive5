@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import pygraphrt as rt
 from pygraphrt.abstract_operator import ParameterData
@@ -29,9 +31,7 @@ class _InputDetails:
     def editable_type(self) -> type | None:
         if isinstance(self.value, rt.NodeRef):
             return None
-        if isinstance(self.annotation, type) and self.annotation in (
-            int, float, str, bool, Path
-        ):
+        if isinstance(self.annotation, type) and self.annotation is not Any:
             return self.annotation
         return None
 
@@ -138,6 +138,8 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
             return None
 
         value = details.value
+        if role == NodeRTInputRole.ConnectionRole:
+            return (value.get_name(),) if isinstance(value, rt.NodeRef) else None
         if role == NodeRTInputRole.NodeRefRole:
             return details.node
         if role == NodeRTInputRole.InputLocationRole:
@@ -161,7 +163,7 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                 return str(details.default)
             if isinstance(value, rt.NodeRef):
                 return f"-> {value.get_name()}"
-            return str(value) if isinstance(value, Path) else value
+            return str(value) if isinstance(value, (Path, Enum)) else value
 
         if role == Qt.ItemDataRole.EditRole:
             if isinstance(value, rt.NodeRef):
@@ -170,10 +172,10 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                 value = details.default
             if value is ParameterData.EMPTY:
                 value_type = details.editable_type
-                if value_type is Path:
-                    return ""
-                return value_type() if value_type is not None else None
-            return str(value) if isinstance(value, Path) else value
+                if value_type in (int, float, str, bool):
+                    return value_type()
+                return None
+            return value
 
         return None
 
@@ -217,8 +219,11 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                     if text not in ("true", "false"):
                         return False
                     value = text == "true"
-                else:
+                elif issubclass(value_type, (int, float, str, Path, Enum)):
                     value = value_type(value)
+                elif not isinstance(value, value_type):
+                    # Custom editors return the actual object; do not reconstruct it.
+                    return False
             except (TypeError, ValueError, OverflowError):
                 return False
 

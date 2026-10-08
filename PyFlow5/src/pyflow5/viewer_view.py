@@ -11,12 +11,12 @@ class Viewer(BaseDetailsView):
     def showCurrentRootEvent(self):
         print(f"Viewer->_update_display {{current_nodename={self._current_root}}}")
         if self._current_root.isValid() is False:
-            self._viewer_lock_switch.setText("-no node selected-")
+            self._lock_switch.setText("-no node selected-")
             self._body_widget.clear()
             return
         
         if self._model is None: 
-            self._viewer_lock_switch.setText("! no model !")
+            self._lock_switch.setText("! no model !")
             self._body_widget.clear()
             return
 

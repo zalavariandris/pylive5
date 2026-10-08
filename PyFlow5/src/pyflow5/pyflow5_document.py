@@ -64,14 +64,14 @@ class PyFlowDocument(QObject):
         for node_ref in self._graph_rt.nodes():
             self._executor.execute(node_ref)
 
-    def getNodeOperator(self, node_name: NodeName) -> QModelIndex|None:
+    def getNodeOperator(self, node_name: NodeName) -> QModelIndex:
         node_ref = self.graph_model.mapToSource(node_name)
         if node_ref is None:
-            return None
+            return QModelIndex()
         
         operator = node_ref.get_operator()
         if operator is None:
-            return None
+            return QModelIndex()
 
         operator_index = self.modules_model.mapFromSource(operator)
         return operator_index

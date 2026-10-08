@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 
 dependencies = [
-    "pyflow5"
+    "pyflow5",
+    "rich>=15.0.0",
 ]
 
 [tool.setuptools]
