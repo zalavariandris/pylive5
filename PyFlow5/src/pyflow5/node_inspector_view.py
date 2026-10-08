@@ -2,6 +2,7 @@ from .properties_editor.node_input_delegate import NodeInputDelegate
 
 from .details_view import DetailsView
 from qtpy.QtWidgets import QAbstractScrollArea, QFrame, QHeaderView, QLabel, QSizePolicy, QTableView
+from qtpy.QtCore import QAbstractItemModel
 
 class NodeInspectorView(DetailsView):
     def __init__(self, parent=None):

@@ -2,6 +2,7 @@ import json
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING
+<<<<<<< HEAD
 from pyflow5.formview import FormView
 from pyflow5.node_inspector_view import NodeInspectorView
 from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate

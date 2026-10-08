@@ -1,9 +1,9 @@
-from pyflow5.details_view import DetailsView
+from pyflow5.base_details_view import BaseDetailsView
 from pyflow5.pygraphrt_graphmodel import PyGraphRTGraphModel
 import myqtx
 
 
-class Viewer(DetailsView):
+class Viewer(BaseDetailsView):
     def __init__(self, parent=None)->None:
         super().__init__(parent)
         self.setBodyWidget(myqtx.DisplayWidget())
