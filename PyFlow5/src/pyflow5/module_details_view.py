@@ -33,7 +33,7 @@ class ModuleDetailsView(QWidget):
             if self._model is None or not self._current_index.isValid():
                 return
             
-            if not self._code_editor.isEnabled():
+            if not self._code_editor.isEnabled() or self._code_editor.isReadOnly():
                 return
             
             self._model.setData(
@@ -146,10 +146,12 @@ class ModuleDetailsView(QWidget):
         current = self.currentIndex()
         title = current.data(Qt.ItemDataRole.DisplayRole) if current.isValid() else "<No Selection>"
         source = current.data(ModulesOperatorsTreeModel.SourceRole)
+        read_only = bool(current.data(ModulesOperatorsTreeModel.ReadOnlyRole))
         self._title_label.setText(title or "")
-        # with myqtx.blockingSignals(self._code_editor):
         text = source if isinstance(source, str) else ""
-        # Model notifications echo edits; replacing identical text loses undo and the cursor.
-        if reset_editor or self._code_editor.toPlainText() != text:
-            self._code_editor.setPlainText(text)
-        self._code_editor.setEnabled(isinstance(source, str))
+        with myqtx.blockingSignals(self._code_editor):
+            self._code_editor.setReadOnly(read_only)
+            self._code_editor.setEnabled(isinstance(source, str))
+            # Model notifications echo edits; replacing identical text loses undo and the cursor.
+            if reset_editor or self._code_editor.toPlainText() != text:
+                self._code_editor.setPlainText(text)

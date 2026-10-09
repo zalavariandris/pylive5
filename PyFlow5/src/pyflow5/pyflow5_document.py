@@ -128,9 +128,14 @@ class PyFlowDocument(QObject):
         if current_index:
             self.modules_model.removeModule(current_index)
 
-    def importModule(self, file_path: str) -> None:
-        if module_idx := self.modules_model.importModule(file_path):
+    def importModule(self, file_path: str | Path) -> rt.ImportModuleRT | None:
+        """Import and select a module, returning it with its evaluation state."""
+        if module_idx := self.modules_model.importModule(Path(file_path)):
             self.modulesselection_model.setCurrentIndex(
                 module_idx, 
                 QItemSelectionModel.ClearAndSelect
             )
+            module = self.modules_model.mapToSource(module_idx)
+            assert isinstance(module, rt.ImportModuleRT)
+            return module
+        return None

@@ -19,8 +19,7 @@ from pygraphrt import (
 def hello_world(tmp_path):
     registry = ModuleRegistry()
     module_path = tmp_path / "hello.py"
-    hello_module = ImportModuleRT("hello", path=module_path)
-    hello_module.set_script(dedent("""\
+    module_path.write_text(dedent("""\
         def the_name():
             return 'Mása'
 
@@ -30,8 +29,8 @@ def hello_world(tmp_path):
         def hello_world(name:str, greeting:str='Hello'):
             return f"{greeting}, {name}!"
     """
-    ))
-    hello_module.save_file()
+    ), encoding="utf-8")
+    hello_module = ImportModuleRT("hello", path=module_path)
     registry.add_module(hello_module)
     graph = GraphDefinitionRT()
     

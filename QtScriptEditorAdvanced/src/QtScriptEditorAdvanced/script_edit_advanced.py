@@ -120,7 +120,11 @@ class ScriptEditAdvanced(QPlainTextEdit):
             if effect is not None:
                 effect.setEnabled(not self.isEnabled())
 
-    def contextMenuEvent(self, e: QContextMenuEvent|None):
+    def contextMenuEvent(self, e: QContextMenuEvent | None) -> None:
+        if self.isReadOnly():
+            super().contextMenuEvent(e)
+            return
+
         edit_menu = QMenu("Edit", self)
         edit_menu.addAction("Toggle Comment", lambda: self.toggleComment())
         edit_menu.addSeparator()

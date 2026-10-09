@@ -1,5 +1,6 @@
 import json
 import os
+import traceback
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
@@ -456,7 +457,7 @@ class PyFlow5Window(QMainWindow):
     def removeSelectedModule(self):
         self._document.removeSelectedModule()
 
-    def importModule(self):
+    def importModule(self) -> None:
         # open file browser dialog
         file_dialog = QFileDialog(self)
         file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
@@ -479,7 +480,22 @@ class PyFlow5Window(QMainWindow):
                             "The file must be on the same drive as the current working directory.",
                         )
                         return
-                self._document.importModule(file_path)
+                module = self._document.importModule(file_path)
+                if module is not None:
+                    state = module.get_state()
+                    if isinstance(state, Exception):
+                        error = state.__cause__ or state
+                        warning = QMessageBox(self)
+                        warning.setIcon(QMessageBox.Icon.Warning)
+                        warning.setWindowTitle("Script has issues")
+                        warning.setTextFormat(Qt.TextFormat.PlainText)
+                        warning.setText(f"{type(error).__name__}: {error}")
+                        warning.setInformativeText(
+                            f'The script "{file_path}" could not be evaluated.\n\n'
+                            "The source is available to view, but its operators are unavailable.",
+                        )
+                        warning.setDetailedText("".join(traceback.format_exception(error)))
+                        warning.exec()
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None) -> None:
         if scene_pos is None:

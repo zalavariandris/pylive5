@@ -1,38 +1,29 @@
-"""
-Runtime representation of an importable script module.
-responsibility: ...
-"""
+"""Runtime representation of a script loaded from an external file."""
 
+from os import PathLike
 from pathlib import Path
 import warnings
 from qtpy.QtCore import QObject
 from .script_module import ScriptModuleRT
 
-from .errors import ModuleError, ImportModuleNotFoundError
+from .errors import ImportModuleNotFoundError
 
 
 class ImportModuleRT(ScriptModuleRT):
-    """A script module whose edits are written back to its source file."""
+    """Load source and expose its path without writing to the source file."""
 
-    def __init__(self, name:str, path: Path|None=None, parent: QObject | None = None):
+    def __init__(self, name:str, path: PathLike|None=None, parent: QObject | None = None):
         super().__init__(name, parent=parent)
-        assert isinstance(path, Path) or path is None, "path must be a Path object or None"
-        self._path = path
+        assert isinstance(path, PathLike) or path is None, "path must be a PathLike object or None"
+        self._path = Path(path) if path is not None else None
         try:
             self.reload_file()
-        except ImportModuleNotFoundError as error:
-            # todo: we need to handle the case, when an importmodule is created from scratch without an actual file. basically its not saved yet.
+        except ImportModuleNotFoundError:
+            # A missing source can be supplied later and loaded with reload_file().
             warnings.warn(f"Import module '{name}' not found at path {self._path}")
 
     def path(self) -> Path|None:
         return self._path
-
-    def save_file(self) -> None:
-        """Save the current script to the source file."""
-        try:
-            Path(self._path).write_text(self.get_source(), encoding="utf-8")
-        except FileNotFoundError as error:
-            raise ImportModuleNotFoundError(f"Cannot save file: path is None {self._path}") from error
 
     def reload_file(self)-> None:
         """raises ImportModuleNotFoundError, if the source file does not exist."""

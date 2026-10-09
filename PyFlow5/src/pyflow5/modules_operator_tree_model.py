@@ -1,3 +1,6 @@
+from os import PathLike
+from pathlib import Path
+
 from pygraphrt import (
     AbstractModule,
     GraphDefinitionRT,
@@ -19,6 +22,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
     """
 
     SourceRole = int(Qt.ItemDataRole.UserRole) + 4
+    ReadOnlyRole = SourceRole + 1
 
     NO_PARENT = 0
 
@@ -142,14 +146,30 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             match item:
                 case ImportModuleRT() as im:
-                    return im.get_display_name()
+                    match role:
+                        case Qt.ItemDataRole.DisplayRole:
+                            return Path(im.get_display_name()).name
+                        
+                        case Qt.ItemDataRole.WhatsThisRole:
+                            return im.get_display_name()
+                        
+                        case Qt.ItemDataRole.EditRole:
+                            return im.get_display_name()
+                        case _:
+                            return None
+                        
                 case ScriptModuleRT() as sm:
                     return sm.get_display_name()
+                
                 case ScriptOperatorRef() as operator:
                     return operator.get_name()
+                
                 case _:
                     assert False, f"Unexpected item type in modules and operators tree: {item}"
         
+        if role == self.ReadOnlyRole:
+            return isinstance(item, ImportModuleRT)
+
         if role == self.SourceRole and isinstance(item, ScriptModuleRT):
             return item.get_source()
         
@@ -192,6 +212,9 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         if not isinstance(module, ScriptModuleRT):
             return False
 
+        if isinstance(module, ImportModuleRT):
+            return False
+
         module.set_script(value)
         self.dataChanged.emit(index, index, [self.SourceRole])
         return True
@@ -211,9 +234,10 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         self.endInsertRows()
         return self.index(row, 0)
 
-    def importModule(self, file_path: str) -> QModelIndex|None:
+    def importModule(self, file_path: PathLike) -> QModelIndex|None:
         assert self._registry is not None, "Graph must be initialized before importing a module."
-        module = ImportModuleRT(file_path)
+        file_path = Path(file_path)
+        module = ImportModuleRT(name=file_path.name, path=file_path)
         row = self.rowCount()
         self.beginInsertRows(QModelIndex(), row, row)
         self._registry.add_module(module)

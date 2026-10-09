@@ -1,4 +1,5 @@
 # TODO
+- [ ] ImportModule should support importing from a file without specifying a name
 - [ ] factor out the session and probably settings from the current Window.
        window should be a document window. this will allow testing empty GUI (without loading the last session)
        as well as opening multiple documents. The problem is, that the Window acstions are controlled by the document window for now.
