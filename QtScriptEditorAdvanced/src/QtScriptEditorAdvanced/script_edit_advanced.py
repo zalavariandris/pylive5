@@ -22,18 +22,40 @@ from .components.linter_widget import TextEditLinterWidget
 from .components.line_number_area import LineNumberArea
 from .cell_support import Cell, split_cells, cell_at_line
 
+from qtpy.QtGui import QFont, QFontDatabase
+from importlib.resources import files, as_file
+
+from importlib.resources.abc import Traversable
+from importlib.resources import files, as_file
+from qtpy.QtGui import QFontDatabase
+
+
+
 
 
 class ScriptEditAdvanced(QPlainTextEdit):
     def __init__(self, 
-                 highlighter=PygmentsSyntaxHighlighter, 
-                 completer:Type[AsyncJediCompleter]|Type[PythonKeywordsCompleter]|None=AsyncJediCompleter, 
-                 parent=None
-                ):
+        highlighter=PygmentsSyntaxHighlighter, 
+        completer:Type[AsyncJediCompleter]|Type[PythonKeywordsCompleter]|None=AsyncJediCompleter, 
+        parent=None
+    ):
         super().__init__(parent)
         ### Font###
+        # todo: loading fonts here, feels awkward. review!
+        def populate_font_database(folder: Traversable, recursive: bool = True):
+            """Populates QFontDatabase with all .ttf files from a folder and returns loaded family names."""
+            if folder.is_dir():
+                # Match recursively or flat based on argument
+                pattern = "**/*.ttf" if recursive else "*.ttf"
+
+                for font_file in folder.glob(pattern):
+                    with as_file(font_file) as font_path:
+                        QFontDatabase.addApplicationFont(str(font_path))
+
+        populate_font_database(files(__package__) / "assets" / "fonts")
+
         font = self.font()
-        font.setFamilies(["monospace", "Operator Mono Book"])
+        font.setFamilies(["Fira Code", "Open Sans", "monospace", "Operator Mono Book"])
         # font.setPointSize(10)
         font.setWeight(QFont.Weight.Medium)
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)

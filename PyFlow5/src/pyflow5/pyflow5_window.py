@@ -222,6 +222,8 @@ class PyFlow5Window(QMainWindow):
         
         # Create a fresh, local menu instance right here
         menu = QMenu(self._modules_listview)
+        add_action = menu.addAction("Import Module")
+        add_action.triggered.connect(self.importModule)
         add_action = menu.addAction("Add Embedded Module")
         add_action.triggered.connect(self.addEmbeddedModule)
 
@@ -356,7 +358,6 @@ class PyFlow5Window(QMainWindow):
             
     def setupMenubar(self):
         menubar: QMenuBar = self.menuBar()
-        menubar.addAction("Restart Graph", lambda: self._document.reset_graph())
 
         file_menu = QMenu("File", self)
         menubar.addMenu(file_menu)
@@ -383,7 +384,7 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Select None", lambda: None)
         edit_menu.addSeparator()
 
-        edit_menu.addAction("Restart Graph", lambda: self._document.reset_graph())
+        edit_menu.addAction("Restart Graph", lambda: self._document.restart_graph())
         edit_menu.addSeparator()
 
         edit_menu.addAction("New Node", self.openOperatorDialog).setShortcut("Ctrl+P")

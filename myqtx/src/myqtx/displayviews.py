@@ -107,7 +107,11 @@ class ImageCompareView(DisplayView[ImageCompare]):
         a = image_to_qimage(data.a)
         b = image_to_qimage(data.b)
         if a.size() != b.size():
-            raise ValueError("ImageCompare images must have the same width and height")
+            b = b.scaled(
+                a.size(),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
         self._a, self._b = a, b
         self._render()
 

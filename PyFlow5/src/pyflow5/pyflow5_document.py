@@ -111,11 +111,10 @@ class PyFlowDocument(QObject):
         selected_nodes = self.graphselection_model.selectedNodes()
         self.graph_model.removeNodes(selected_nodes)
 
-    def reset_graph(self):
+    def restart_graph(self):
         """Recover the model/view while preserving the current runtime and script."""
-        # self.setOutputNode(None)
+        # todo: this needs to be reimplemented
         self.graph_model.reset_graph_from_scratch()
-        # self.setOutputLocked(False)
 
     def addEmbeddedModule(self, name="_local_") -> None:
         if module_idx := self.modules_model.addEmbeddedModule(name):

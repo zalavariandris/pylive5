@@ -2,23 +2,40 @@
 
 from .data import HTML, Image, ImageCompare, Markdown
 from .stage import Stage
+import logging
+logger = logging.getLogger(__name__)
 
 _stage = Stage()
 
 
-def show(data: object = None) -> None:
+def show(data: object = None) -> bool:
     """Display data in the shared stage, starting its viewer if needed."""
-    _stage.show(data)
+    try:
+        _stage.show(data)
+    except Exception as exc:
+        logger.warning("Could not display preview: %s", exc)
+        return False
+    return True
 
 
-def clear() -> None:
+def clear() -> bool:
     """Clear the shared stage if its viewer is running."""
-    _stage.clear()
+    try:
+        _stage.clear()
+    except Exception as exc:
+        logger.warning("Could not clear the stage: %s", exc)
+        return False
+    return True
 
 
-def close() -> None:
+def close() -> bool:
     """Stop the shared stage's viewer."""
-    _stage.close()
+    try:
+        _stage.close() 
+    except Exception as exc:
+        logger.warning("Could not close the stage: %s", exc)
+        return False
+    return True
 
 
 __all__ = [

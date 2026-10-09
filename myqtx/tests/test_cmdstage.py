@@ -95,6 +95,29 @@ def test_server_retains_comparison_after_sender_cleanup(qtbot: QtBot) -> None:
         server.display_widget.close()
 
 
+
+@pytest.mark.parametrize("b_shape", [(2, 3), (40, 60), (20, 5), (10, 20)])
+def test_comparison_fits_b_to_a(qtbot: QtBot, b_shape: tuple[int, int]) -> None:
+    view = ImageCompareView()
+    qtbot.addWidget(view)
+    a = np.zeros((10, 20, 3), dtype=np.uint8)
+    a[..., 0] = 255
+    b = np.zeros((*b_shape, 3), dtype=np.uint8)
+    b[..., 2] = 255
+    original_b = b.copy()
+    view.set_data(ImageCompare(a, b))
+
+    for slider_value in (0, 500, 1000):
+        view.slider.setValue(slider_value)
+        rendered = view.canvas.item.pixmap().toImage()
+        assert (rendered.width(), rendered.height()) == (20, 10)
+        split = 20 * slider_value // 1000
+        for x in range(20):
+            expected = (255, 0, 0, 255) if x < split else (0, 0, 255, 255)
+            assert rendered.pixelColor(x, 9).getRgb() == expected
+    np.testing.assert_array_equal(b, original_b)
+
+
 def test_stage_end_to_end_and_error_recovery(
     monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str],
 ) -> None:
@@ -118,8 +141,9 @@ def test_stage_end_to_end_and_error_recovery(
         stage.show(Markdown("# Hello"))
         stage.show("plain text")
         stage.show({"result": [1, 2, 3]})
-        with pytest.raises(RuntimeError, match="same width and height") as error:
-            stage.show(ImageCompare(a, a[:1]))
+        stage.show(ImageCompare(a, a[:1]))
+        with pytest.raises(RuntimeError, match="Image dimensions must be positive") as error:
+            stage.show(ImageCompare(a, a[:0]))
         stderr = capfd.readouterr().err
         assert "Traceback (most recent call last)" in stderr
         assert f"ValueError: {error.value}" in stderr

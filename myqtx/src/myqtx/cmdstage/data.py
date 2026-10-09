@@ -22,7 +22,7 @@ class Markdown:
 
 @dataclass
 class ImageCompare:
-    """Two images of equal width and height, displayed with a wipe slider."""
+    """Two images with a wipe slider; B is stretched to fit the dimensions of A."""
 
     a: np.ndarray
     b: np.ndarray

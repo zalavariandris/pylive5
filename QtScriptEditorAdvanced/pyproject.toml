@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "QtScriptEditorAdvanced"
@@ -17,10 +17,5 @@ dependencies = [
     "jedi"
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["QtScriptEditorAdvanced", "QtScriptEditorAdvanced.*"]
-namespaces = false
-
-[tool.setuptools.exclude-package-data]
-"*" = ["__pycache__/*", ".venv_/*"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/QtScriptEditorAdvanced"]
