@@ -27,7 +27,8 @@ members = [
     "PyGraphRT", 
     "QDAGEditor5", 
     "QScriptEdit2",
-    "QtScriptEditorAdvanced"
+    "QtScriptEditorAdvanced",
+    "vfxops"
 ]
 
 [dependency-groups]
