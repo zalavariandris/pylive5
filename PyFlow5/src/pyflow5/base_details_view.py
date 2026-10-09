@@ -22,6 +22,8 @@ from qtpy.QtWidgets import (
     QWidget
 )
 
+from myqtx.lock_switch import LockSwitch
+
 
 class BaseDetailsView(QFrame):
     class SelectionBehaviour(StrEnum):
@@ -43,16 +45,16 @@ class BaseDetailsView(QFrame):
         self._selection_behaviour: BaseDetailsView.SelectionBehaviour = BaseDetailsView.SelectionBehaviour.Current
 
         # lock switch
-        self._viewer_lock_switch = QCheckBox("-node-", self)
-        self._viewer_lock_switch.setToolTip("Keep viewing this output when the selection changes.")
-        self._viewer_lock_switch.setChecked(False)
-        self._viewer_lock_switch.toggled.connect(lambda checked: None)
+        self._lock_switch = LockSwitch("-node-", self)
+        self._lock_switch.setToolTip("Keep viewing this output when the selection changes.")
+        self._lock_switch.setChecked(False)
+        self._lock_switch.toggled.connect(lambda checked: None)
 
         # header
         viewer_header = QHBoxLayout()
         # viewer_header.addWidget(QLabel("Viewer", self))
         viewer_header.addStretch()
-        viewer_header.addWidget(self._viewer_lock_switch)
+        viewer_header.addWidget(self._lock_switch)
 
         # main layout
         viewer_layout = QVBoxLayout(self)
@@ -109,7 +111,7 @@ class BaseDetailsView(QFrame):
         return self._current_root
 
     def _on_selection_changed(self, selected:QItemSelection, deselected:QItemSelection):
-        if self._viewer_lock_switch.isChecked():
+        if self._lock_switch.isChecked():
             print("- Lock is checked, cant set current node")
             return
 
@@ -120,18 +122,18 @@ class BaseDetailsView(QFrame):
             case BaseDetailsView.SelectionBehaviour.FirstSelected:
                 first_index = selected.indexes()[0] if selected.indexes() else QModelIndex()
                 self._current_root = first_index
-                self._viewer_lock_switch.setText(f"{self._current_root.data()}") 
+                self._lock_switch.setText(f"{self._current_root.data()}") 
                 self.showCurrentRootEvent()
             case BaseDetailsView.SelectionBehaviour.LastSelected:
                 last_index = selected.indexes()[-1] if selected.indexes() else QModelIndex()
                 self._current_root = last_index
-                self._viewer_lock_switch.setText(f"{self._current_root.data()}")
+                self._lock_switch.setText(f"{self._current_root.data()}")
                 self.showCurrentRootEvent()
             case _:
                 pass
 
     def _on_current_changed(self, current: QModelIndex, previous: QModelIndex):
-        if self._viewer_lock_switch.isChecked():
+        if self._lock_switch.isChecked():
             print("- Lock is checked, cant set current node")
             return
         
@@ -139,7 +141,7 @@ class BaseDetailsView(QFrame):
             return 
             
         self._current_root = current
-        self._viewer_lock_switch.setText(f"{self._current_root.data()}")
+        self._lock_switch.setText(f"{self._current_root.data()}")
         self.showCurrentRootEvent()
 
     def setSelectionModel(self, selection_model: QItemSelectionModel):

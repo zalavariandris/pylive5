@@ -126,7 +126,7 @@ def test_default_and_typed_editing(make_input_model, annotation, default, value,
     model = make_input_model(graph)
     index = model.index(0, 1, model.index(0, 0))
     assert index.data(NodeRTInputRole.IsUsingDefaultRole)
-    assert index.data(Qt.ItemDataRole.EditRole) == (str(default) if annotation is Path else default)
+    assert index.data(Qt.ItemDataRole.EditRole) == default
     assert model.setData(index, value)
     assert graph.nodes()[0].get_inputs()[1]["input"] == expected
     assert not index.data(NodeRTInputRole.IsUsingDefaultRole)
@@ -178,7 +178,8 @@ def test_graph_model_mutations_do_not_duplicate_rows(make_input_model) -> None:
     assert model.rowCount() == 1
 
 
-def test_window_uses_the_value_adapter_in_both_trees(qtbot) -> None:
+def test_window_uses_the_value_adapter_in_tree_and_form(qtbot) -> None:
+    from pyflow5.formview import FormView
     from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
     from pyflow5.pyflow5_document import PyFlowDocument
     from pyflow5.pyflow5_window import PyFlow5Window
@@ -194,13 +195,19 @@ def test_window_uses_the_value_adapter_in_both_trees(qtbot) -> None:
     document = PyFlowDocument(graph)
     window._connectDocument(document)
     model = document.node_inlet_tree_adapter
-    for view in (window._node_tree_view, window._node_inlet_treeview):
-        assert view.model() is model
-        assert isinstance(view.itemDelegateForColumn(1), NodeInputDelegate)
+    assert window._node_tree_view.model() is model
+    assert isinstance(window._node_tree_view.itemDelegateForColumn(1), NodeInputDelegate)
+    form = window._node_inspector.findChild(FormView)
+    assert form.model() is model
+    assert isinstance(form.itemDelegate(), NodeInputDelegate)
+    assert form.itemDelegate().editor_registry is window.editor_registry
+    assert window._node_tree_view.itemDelegateForColumn(1).editor_registry is window.editor_registry
+    assert window.centralWidget().count() == 2
 
     node = graph.nodes()[0]
     document.graphselection_model.setCurrentNode(node.get_name())
+    document.graphselection_model.selectNodes({node.get_name()})
     parent = model.mapFromSource(node.get_name())
-    assert window._node_tree_view.rootIndex() == parent
+    assert form.rootIndex() == parent
     assert model.setData(model.index(0, 1, parent), 9)
     assert node.get_inputs() == ((9,), {})
