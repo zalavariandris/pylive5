@@ -5,6 +5,7 @@ import sys
 from types import FunctionType, MappingProxyType, ModuleType
 from typing import Iterable, Literal, Any, Mapping
 import inspect
+from pathlib import Path
 from annotationlib import Format
 
 from qtpy.QtCore import Signal, QObject
@@ -110,6 +111,13 @@ class ScriptOperatorRef(AbstractOperator):
     def get_module(self) -> ScriptModuleRT:
         return self._module
 
+    def get_module_name(self) -> str:
+        func = self._module._functions_cache.get(self._name)
+        return (func.__module__ or "") if func is not None else ""
+
+    def get_source_path(self) -> Path | None:
+        return self._module.get_source_path()
+
     def __str__(self) -> str:
         return f"Op({self._module.get_display_name()}.{self._name})"
 
@@ -189,6 +197,9 @@ class ScriptModuleRT(AbstractModule):
 
     def get_source(self) -> str:
         return self._script
+
+    def get_source_path(self) -> Path | None:
+        return None
 
     def set_script(self, script: str) -> None:
         """Store source and report script errors through state and change signals.

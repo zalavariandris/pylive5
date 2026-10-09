@@ -23,3 +23,4 @@ class NodeRTInputRole(IntEnum):
     IsUsingDefaultRole = KeyRole + 8
     NodeRefRole = KeyRole + 9
     InputLocationRole = KeyRole + 10
+    EditorContextRole = KeyRole + 11

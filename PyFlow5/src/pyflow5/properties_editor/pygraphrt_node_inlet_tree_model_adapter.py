@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_origin
 
 import pygraphrt as rt
+from myqtx.editorregistry import EditorContext
 from pygraphrt.abstract_operator import ParameterData
 from qdageditor5.adapters.node_inlet_tree_model_adapter import (
     NodeInletTreeModelAdapter,
@@ -33,6 +34,8 @@ class _InputDetails:
             return None
         if isinstance(self.annotation, type) and self.annotation is not Any:
             return self.annotation
+        if get_origin(self.annotation) is tuple:
+            return tuple
         return None
 
 
@@ -146,6 +149,15 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
             return details.inlet_name
         if role == NodeRTInputRole.AnnotationRole:
             return details.annotation
+        if role == NodeRTInputRole.EditorContextRole:
+            operator = details.node.get_operator()
+            return EditorContext(
+                module_name=operator.get_module_name() if operator is not None else "",
+                operator_name=operator.get_name() if operator is not None else "",
+                parameter_name=str(details.inlet_name),
+                annotation=details.annotation,
+                source_path=operator.get_source_path() if operator is not None else None,
+            )
         if role == NodeRTInputRole.DefaultRole:
             if details.default is ParameterData.EMPTY:
                 return None
@@ -219,6 +231,14 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                     if text not in ("true", "false"):
                         return False
                     value = text == "true"
+                elif value_type is tuple and get_origin(details.annotation) is tuple:
+                    component_types = get_args(details.annotation)
+                    if not isinstance(value, tuple):
+                        return False
+                    if component_types and all(t in (int, float) for t in component_types):
+                        if len(value) != len(component_types):
+                            return False
+                        value = tuple(t(item) for t, item in zip(component_types, value))
                 elif issubclass(value_type, (int, float, str, Path, Enum)):
                     value = value_type(value)
                 elif not isinstance(value, value_type):

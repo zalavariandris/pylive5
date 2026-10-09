@@ -3,6 +3,7 @@ from types import MappingProxyType
 import sys
 import inspect
 from annotationlib import Format
+from pathlib import Path
 
 from .abstract_operator import AbstractOperator, ParameterData
 
@@ -16,6 +17,13 @@ class FunctionOperator(AbstractOperator):
 
     def get_name(self) -> str:
         return self._func.__name__
+
+    def get_module_name(self) -> str:
+        return self._func.__module__ or ""
+
+    def get_source_path(self) -> Path | None:
+        filename = self._func.__code__.co_filename
+        return None if filename.startswith("<") else Path(filename).resolve()
 
     def _signature(self):
         # Live edits can leave annotation names unfinished (e.g. s instead of str).
@@ -53,4 +61,3 @@ class FunctionOperator(AbstractOperator):
 
     def __call__(self, *args, **kwargs) -> Any:
         return self._func(*args, **kwargs)
-    

@@ -65,7 +65,6 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         @self._invalidator.nodes_invalidated.connect
         def on_nodes_invalidated(nodes: list[rt.NodeRef]):
-            print("Nodes invalidated: ", [node_ref.get_name() for node_ref in nodes])
             for node_ref in nodes:
                 if node_ref.get_name() in self._executions:
                     del self._executions[node_ref.get_name()]

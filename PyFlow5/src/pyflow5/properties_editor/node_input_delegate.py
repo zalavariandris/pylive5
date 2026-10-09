@@ -1,4 +1,5 @@
 from typing import Any
+from pathlib import Path
 
 from qtpy.QtCore import (
     QAbstractItemModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal,
@@ -8,7 +9,7 @@ from qtpy.QtWidgets import (
     QHBoxLayout, QPushButton, QStyledItemDelegate, QStyleOptionViewItem, QWidget,
 )
 
-from myqtx.editorregistry import EditorRegistry
+from myqtx.editorregistry import EditorContext, EditorProvider, EditorRegistry
 from myqtx.editors import Editor, EditorFactory, label_editor, read_only_editor
 from pygraphrt.abstract_operator import ParameterData
 
@@ -20,7 +21,7 @@ class NodeInputWidget(QWidget):
     valueChanged = Signal()
 
     def __init__(
-        self, datatype: type, factory: EditorFactory, parent: QWidget | None = None,
+        self, datatype: object, factory: EditorFactory, parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setAutoFillBackground(True)
@@ -59,13 +60,13 @@ class NodeInputWidget(QWidget):
         self._layout.addWidget(self.clear_button)
         self.setFocusProxy(self.editor)
 
-    def _create_binding(self, datatype: type, factory: EditorFactory) -> Editor[Any]:
+    def _create_binding(self, datatype: object, factory: EditorFactory) -> Editor[Any]:
         binding = factory(datatype, self)
         if not isinstance(binding, Editor) or not isinstance(binding.widget, QWidget):
             raise TypeError("Editor factories must return an Editor containing a QWidget")
         return binding
 
-    def replace_editor(self, datatype: type, factory: EditorFactory) -> None:
+    def replace_editor(self, datatype: object, factory: EditorFactory) -> None:
         binding = self._create_binding(datatype, factory)
         if self.binding.changed is not None:
             self.binding.changed.disconnect(self._on_value_changed)
@@ -120,17 +121,24 @@ class NodeInputDelegate(QStyledItemDelegate):
         """Register an editor in this delegate's registry."""
         self.editor_registry.register_editor(datatype, factory)
 
-    def _editor_factory(self, index: QModelIndex) -> tuple[type, EditorFactory]:
+    def register_provider(self, module: str | Path, provider: EditorProvider) -> None:
+        """Register a provider in this delegate's registry."""
+        self.editor_registry.register_provider(module, provider)
+
+    def _editor_factory(self, index: QModelIndex) -> tuple[object, EditorFactory]:
         annotation = index.data(NodeRTInputRole.AnnotationRole)
         datatype = (
-            annotation if isinstance(annotation, type)
+            annotation if annotation is not None
             else type(index.data(Qt.ItemDataRole.EditRole))
         )
         if index.data(NodeRTInputRole.ConnectionRole) is not None:
             return datatype, label_editor
         factory = None
         if index.flags() & Qt.ItemFlag.ItemIsEditable:
-            factory = self.editor_registry.factory_for(datatype)
+            context = index.data(NodeRTInputRole.EditorContextRole)
+            factory = self.editor_registry.factory_for(
+                datatype, context=context if isinstance(context, EditorContext) else None,
+            )
         return datatype, factory if factory is not None else read_only_editor
 
     def createEditor(
@@ -156,7 +164,7 @@ class NodeInputDelegate(QStyledItemDelegate):
             return
 
         datatype, factory = self._editor_factory(index)
-        if editor.datatype is not datatype or editor.factory is not factory:
+        if editor.datatype != datatype or editor.factory is not factory:
             editor.replace_editor(datatype, factory)
         role = (
             Qt.ItemDataRole.DisplayRole

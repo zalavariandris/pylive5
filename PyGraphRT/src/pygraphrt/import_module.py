@@ -25,6 +25,9 @@ class ImportModuleRT(ScriptModuleRT):
     def path(self) -> Path|None:
         return self._path
 
+    def get_source_path(self) -> Path | None:
+        return self._path.resolve() if self._path is not None else None
+
     def reload_file(self)-> None:
         """raises ImportModuleNotFoundError, if the source file does not exist."""
         if self._path is None:

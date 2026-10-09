@@ -32,7 +32,8 @@ class Editor(Generic[T]):
     set_default: Callable[[T | None], None] | None = None
 
 
-EditorFactory = Callable[[type, QWidget | None], Editor[Any]]
+# Parameterized annotations, such as Tuple[float, float], are not Python types.
+EditorFactory = Callable[[object, QWidget | None], Editor[Any]]
 
 
 def _set_text(widget: QLineEdit, value: object) -> None:
@@ -48,7 +49,7 @@ def _set_placeholder(widget: QLineEdit, value: object) -> None:
     widget.setPlaceholderText("" if value is None else str(value))
 
 
-def string_editor(datatype: type[str], parent: QWidget | None) -> Editor[str]:
+def string_editor(datatype: object, parent: QWidget | None) -> Editor[str]:
     widget = QLineEdit(parent)
     return Editor(
         widget, widget.text, lambda value: _set_text(widget, value), widget.textChanged,
@@ -56,7 +57,7 @@ def string_editor(datatype: type[str], parent: QWidget | None) -> Editor[str]:
     )
 
 
-def int_editor(datatype: type[int], parent: QWidget | None) -> Editor[int]:
+def int_editor(datatype: object, parent: QWidget | None) -> Editor[int]:
     widget = QSpinBox(parent)
     widget.setRange(-1_000_000, 1_000_000)
     return Editor(
@@ -66,7 +67,7 @@ def int_editor(datatype: type[int], parent: QWidget | None) -> Editor[int]:
     )
 
 
-def float_editor(datatype: type[float], parent: QWidget | None) -> Editor[float]:
+def float_editor(datatype: object, parent: QWidget | None) -> Editor[float]:
     widget = QDoubleSpinBox(parent)
     widget.setRange(-1_000_000, 1_000_000)
     widget.setDecimals(3)
@@ -78,7 +79,7 @@ def float_editor(datatype: type[float], parent: QWidget | None) -> Editor[float]
     )
 
 
-def bool_editor(datatype: type[bool], parent: QWidget | None) -> Editor[bool]:
+def bool_editor(datatype: object, parent: QWidget | None) -> Editor[bool]:
     widget = QCheckBox(parent)
 
     def set_value(value: bool | None) -> None:
@@ -95,7 +96,9 @@ def bool_editor(datatype: type[bool], parent: QWidget | None) -> Editor[bool]:
     )
 
 
-def path_editor(datatype: type[Path], parent: QWidget | None) -> Editor[Path]:
+def path_editor(datatype: object, parent: QWidget | None) -> Editor[Path]:
+    if not isinstance(datatype, type) or not issubclass(datatype, Path):
+        raise TypeError("Expected a Path type")
     widget = QLineEdit(parent)
     return Editor(
         widget, lambda: datatype(widget.text()),
@@ -104,7 +107,9 @@ def path_editor(datatype: type[Path], parent: QWidget | None) -> Editor[Path]:
     )
 
 
-def enum_editor(datatype: type[Enum], parent: QWidget | None) -> Editor[Enum | None]:
+def enum_editor(datatype: object, parent: QWidget | None) -> Editor[Enum | None]:
+    if not isinstance(datatype, type) or not issubclass(datatype, Enum):
+        raise TypeError("Expected an Enum type")
     widget = QComboBox(parent)
     members = list(datatype)
     widget.addItems([member.name for member in members])
@@ -119,7 +124,7 @@ def enum_editor(datatype: type[Enum], parent: QWidget | None) -> Editor[Enum | N
     return Editor(widget, get_value, set_value, widget.currentIndexChanged)
 
 
-def label_editor(datatype: type, parent: QWidget | None) -> Editor[object]:
+def label_editor(datatype: object, parent: QWidget | None) -> Editor[object]:
     widget = QLabel(parent)
     widget.setTextFormat(Qt.TextFormat.PlainText)
     return Editor(
@@ -129,7 +134,7 @@ def label_editor(datatype: type, parent: QWidget | None) -> Editor[object]:
     )
 
 
-def read_only_editor(datatype: type, parent: QWidget | None) -> Editor[object]:
+def read_only_editor(datatype: object, parent: QWidget | None) -> Editor[object]:
     widget = QLineEdit(parent)
     widget.setReadOnly(True)
     return Editor(

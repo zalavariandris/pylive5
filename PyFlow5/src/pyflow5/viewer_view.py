@@ -9,7 +9,6 @@ class Viewer(BaseDetailsView):
         self.setBodyWidget(myqtx.DisplayWidget())
         
     def showCurrentRootEvent(self):
-        print(f"Viewer->_update_display {{current_nodename={self._current_root}}}")
         if self._current_root.isValid() is False:
             self._lock_switch.setText("-no node selected-")
             self._body_widget.clear()
@@ -21,5 +20,7 @@ class Viewer(BaseDetailsView):
             return
 
         result = self._model.data(self._current_root, PyGraphRTGraphModel.ExecutionRole)
-        
-        self._body_widget.display(result)
+        try:
+            self._body_widget.display(result)
+        except Exception as e:
+            self._body_widget.display(e)

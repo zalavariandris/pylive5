@@ -9,6 +9,7 @@ from pyflow5.node_inspector_view import NodeInspectorView
 
 from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
 from pyflow5.viewer_view import Viewer
+from pyflow5.vfxops_editors import register_vfxops_editors
 from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex
 
@@ -106,6 +107,7 @@ class PyFlow5Window(QMainWindow):
 
         # - Setup node inspector -
         self.editor_registry = EditorRegistry()
+        register_vfxops_editors(self.editor_registry)
         # self._node_inspector_view = 
         self._node_tree_view = QTreeView(self)
         self._node_tree_view.setMouseTracking(True)

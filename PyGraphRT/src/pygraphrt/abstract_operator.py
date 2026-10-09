@@ -2,6 +2,7 @@ from typing import ClassVar, Any, Mapping
 import abc
 import inspect
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,14 @@ class AbstractOperator(abc.ABC):
     @abc.abstractmethod
     def get_name(self) -> str:
         pass
+
+    def get_module_name(self) -> str:
+        """Return the defining module name, or an empty string if unknown."""
+        return ""
+
+    def get_source_path(self) -> Path | None:
+        """Return the source file, if the operator comes from a file."""
+        return None
 
     @abc.abstractmethod
     def __call__(self, *args, **kwargs) -> Any:
