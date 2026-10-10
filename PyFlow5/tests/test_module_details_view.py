@@ -5,10 +5,10 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QSettings, Qt
 from qtpy.QtGui import QCloseEvent, QStandardItem, QStandardItemModel
 
-from pyflow5.module_details_view import ModuleDetailsView
-from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
-from pyflow5.pyflow5_document import PyFlowDocument
-from pyflow5 import pyflow5_window
+from pyflow5.views.module_details_view import ModuleDetailsView
+from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.models.pyflow5_document import PyFlowDocument
+from pyflow5.views import pyflow5_window
 from pygraphrt import ModuleRegistry, ScriptModuleRT
 
 

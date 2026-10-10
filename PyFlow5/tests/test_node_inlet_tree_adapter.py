@@ -7,7 +7,7 @@ from pygraphrt.script_module import ScriptOperatorRef
 from qdageditor5.adapters.node_inlet_tree_model_adapter import NodeInletTreeModelAdapter
 from qtpy.QtCore import QModelIndex, QPersistentModelIndex, Qt
 
-from pyflow5.nodert_input_roles import NodeRTInputRole
+from pyflow5.core.nodert_input_roles import NodeRTInputRole
 
 
 def test_tree_contract_and_persistent_indexes(qtmodeltester, make_input_model) -> None:
@@ -179,10 +179,10 @@ def test_graph_model_mutations_do_not_duplicate_rows(make_input_model) -> None:
 
 
 def test_window_uses_the_value_adapter_in_tree_and_form(qtbot) -> None:
-    from pyflow5.formview import FormView
-    from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
-    from pyflow5.pyflow5_document import PyFlowDocument
-    from pyflow5.pyflow5_window import PyFlow5Window
+    from pyflow5.views.formview import FormView
+    from pyflow5.views.node_input_delegate import NodeInputDelegate
+    from pyflow5.models.pyflow5_document import PyFlowDocument
+    from pyflow5.views.pyflow5_window import PyFlow5Window
 
     graph = rt.GraphDefinitionRT()
 

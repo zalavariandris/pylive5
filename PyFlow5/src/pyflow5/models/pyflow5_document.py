@@ -13,7 +13,7 @@ from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
 from .pygraphrt_graphmodel import PyGraphRTGraphModel
-from .properties_editor.pygraphrt_node_inlet_tree_model_adapter import PyGraphRTNodeInletTreeModelAdapter
+from .pygraphrt_node_inlet_tree_model_adapter import PyGraphRTNodeInletTreeModelAdapter
 
 from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
 from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter

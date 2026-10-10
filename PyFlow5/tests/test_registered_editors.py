@@ -9,8 +9,8 @@ from qtpy.QtGui import QPalette
 from qtpy.QtWidgets import QComboBox, QLineEdit, QSpinBox, QWidget
 
 from myqtx import Editor, EditorRegistry
-from pyflow5.formview import FormView
-from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
+from pyflow5.views.formview import FormView
+from pyflow5.views.node_input_delegate import NodeInputDelegate
 
 
 class Color(Enum):

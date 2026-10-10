@@ -2,7 +2,7 @@ import pytest
 from pytestqt.modeltest import ModelTester
 from qtpy.QtCore import QModelIndex, Qt
 
-from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
 from pygraphrt import ImportModuleRT, ModuleRegistry, ScriptModuleRT
 from pygraphrt.script_module import ScriptOperatorRef
 

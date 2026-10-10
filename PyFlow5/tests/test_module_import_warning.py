@@ -6,7 +6,7 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QSettings, Qt
 from qtpy.QtWidgets import QDialog, QMessageBox
 
-from pyflow5 import pyflow5_window
+from pyflow5.views import pyflow5_window
 from pygraphrt import ImportModuleRT
 
 
@@ -84,7 +84,7 @@ def test_import_warns_only_when_evaluation_fails(
 
     if error_type is None:
         assert warnings == []
-        assert module.get_state() == "VALID"
+        assert module.get_status() == "VALID"
     else:
         assert len(warnings) == 1
         warning = warnings[0]
@@ -108,7 +108,7 @@ def test_import_warns_only_when_evaluation_fails(
         if "KeyError" in source:
             assert "KeyError: 'missing'" in details
             assert "direct cause" in details
-        assert isinstance(module.get_state(), Exception)
+        assert isinstance(module.get_status(), Exception)
         assert list(module.operators()) == []
 
 

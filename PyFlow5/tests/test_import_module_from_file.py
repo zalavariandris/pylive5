@@ -5,7 +5,7 @@ import pytest
 from qtpy.QtCore import QPointF, Qt
 from pytestqt.qtbot import QtBot
 
-from pyflow5.pyflow5_document import PyFlowDocument
+from pyflow5.models.pyflow5_document import PyFlowDocument
 import pygraphrt as rt
 
 from textwrap import dedent

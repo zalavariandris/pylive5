@@ -1,6 +1,8 @@
 from os import PathLike
 from pathlib import Path
-
+from typing import Callable
+from qtpy.QtCore import SignalInstance
+from qtpy.QtWidgets import QApplication, QStyle
 from pygraphrt import (
     AbstractModule,
     GraphDefinitionRT,
@@ -10,6 +12,7 @@ from pygraphrt import (
 from pygraphrt.abstract_operator import AbstractOperator
 from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, QObject, Qt
+from qtpy.QtGui import QBrush
 
 import pygraphrt as rt
 
@@ -23,21 +26,57 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
 
     SourceRole = int(Qt.ItemDataRole.UserRole) + 4
     ReadOnlyRole = SourceRole + 1
+    StatusRole = ReadOnlyRole + 1
 
     NO_PARENT = 0
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._registry: rt.ModuleRegistry | None = None
+        self._registry_connections: list[tuple[SignalInstance, Callable]] = []
+        self._module_connections: dict[rt.AbstractModule, list[tuple[SignalInstance, Callable]]] = {}
 
     def sourceRegistry(self) -> rt.ModuleRegistry | None:
         return self._registry
 
     def setSourceRegistry(self, registry: rt.ModuleRegistry | None) -> None:
         """Replace the runtime used by this model."""
+        if self._registry is registry:
+            return
+
+        if self._registry is not None:
+            for module in list(self._module_connections.keys()):
+                self._disconnect_moduleconnections(module)
+        if registry is not None:
+            for module in registry.modules():
+                self._make_moduleconnections(module)
+
         self.beginResetModel()
         self._registry = registry
         self.endResetModel()
+
+    def _make_moduleconnections(self, module: rt.AbstractModule):
+        if module in self._module_connections:
+            raise ValueError("Module already has connections")
+
+        match module:
+            case rt.ScriptModuleRT():
+                self._module_connections[module] = [
+                    (module.state_changed, lambda: self.dataChanged.emit(self.mapFromSource(module), self.mapFromSource(module)))
+                ]
+                for signal, slot in self._module_connections[module]:
+                    signal.connect(slot)
+            case _:
+                self._module_connections[module] = []
+                return
+
+    def _disconnect_moduleconnections(self, module: rt.AbstractModule):
+        if module not in self._module_connections:
+            raise ValueError("Module not found in connections")
+        
+        for signal, slot in self._module_connections[module]:
+            signal.disconnect(slot)
+        self._module_connections.pop(module, None)
 
     def index(
         self,
@@ -143,39 +182,78 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         if item is None:
             return None
 
-        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            match item:
-                case ImportModuleRT() as im:
-                    match role:
-                        case Qt.ItemDataRole.DisplayRole:
-                            return Path(im.get_display_name()).name
-                        
-                        case Qt.ItemDataRole.WhatsThisRole:
-                            return im.get_display_name()
-                        
-                        case Qt.ItemDataRole.EditRole:
-                            return im.get_display_name()
-                        case _:
-                            return None
-                        
-                case ScriptModuleRT() as sm:
-                    return sm.get_display_name()
-                
-                case ScriptOperatorRef() as operator:
-                    return operator.get_name()
-                
-                case _:
-                    assert False, f"Unexpected item type in modules and operators tree: {item}"
-        
         if role == self.ReadOnlyRole:
             return isinstance(item, ImportModuleRT)
 
         if role == self.SourceRole and isinstance(item, ScriptModuleRT):
             return item.get_source()
+
+        if role == self.StatusRole:
+            if isinstance(item, ScriptModuleRT):
+                return item.get_status()
+            return None
+        
+        match item:
+            case ImportModuleRT() as im:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        return Path(im.get_display_name()).name
+                    
+                    case Qt.ItemDataRole.WhatsThisRole:
+                        return im.get_display_name()
+                    
+                    case Qt.ItemDataRole.EditRole:
+                        return im.get_display_name()
+
+                    case Qt.ItemDataRole.ForegroundRole:
+                        if im.get_status() != "VALID":
+                            return QBrush(Qt.GlobalColor.red)
+                        else:
+                            return QBrush(Qt.GlobalColor.black)
+                    
+                    case _:
+                        return None
+                    
+            case ScriptModuleRT() as sm:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        return sm.get_display_name()
+                    case Qt.ItemDataRole.EditRole:
+                        return sm.get_display_name()
+                    
+                    case Qt.ItemDataRole.WhatsThisRole:
+                        return sm.get_display_name()
+                    
+                    case Qt.ItemDataRole.DecorationRole:
+                        if sm.get_status() != "VALID":
+                            return QApplication.style().standardIcon(
+                                QStyle.StandardPixmap.SP_MessageBoxCritical
+                            )
+                        return None
+
+                    case Qt.ItemDataRole.ForegroundRole:
+                        if sm.get_status() != "VALID":
+                            return QBrush(Qt.GlobalColor.red)
+                        else:
+                            return None
+                    case _:
+                        return None
+            
+            case ScriptOperatorRef() as operator:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        return operator.get_name()
+                    case Qt.ItemDataRole.EditRole:
+                        return operator.get_name()
+                    case Qt.ItemDataRole.WhatsThisRole:
+                        return operator.get_name()
+                    case _:
+                        return None
+            
+            case _:
+                assert False, f"Unexpected item type in modules and operators tree: {item}"
         
         return None
-
-    
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         item = self.mapToSource(index)

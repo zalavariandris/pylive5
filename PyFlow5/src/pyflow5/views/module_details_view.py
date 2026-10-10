@@ -13,7 +13,7 @@ from qtpy.QtWidgets import QLabel, QVBoxLayout, QWidget
 import myqtx
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 
-from .modules_operator_tree_model import ModulesOperatorsTreeModel
+from ..models.modules_operator_tree_model import ModulesOperatorsTreeModel
 
 
 class ModuleDetailsView(QWidget):
@@ -27,7 +27,7 @@ class ModuleDetailsView(QWidget):
 
         self._title_label = QLabel(self)
         self._code_editor = ScriptEditAdvanced(completer=None, parent=self)
-
+        self._code_status_label = QLabel(self)
 
         def _on_editor_text_changed() -> None:
             if self._model is None or not self._current_index.isValid():
@@ -46,6 +46,7 @@ class ModuleDetailsView(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self._title_label)
         layout.addWidget(self._code_editor)
+        layout.addWidget(self._code_status_label)
         self._update_display()
 
     def model(self) -> ModulesOperatorsTreeModel | None:
@@ -155,3 +156,6 @@ class ModuleDetailsView(QWidget):
             # Model notifications echo edits; replacing identical text loses undo and the cursor.
             if reset_editor or self._code_editor.toPlainText() != text:
                 self._code_editor.setPlainText(text)
+
+        status_data = current.data(ModulesOperatorsTreeModel.StatusRole)
+        self._code_status_label.setText(f"{status_data}")

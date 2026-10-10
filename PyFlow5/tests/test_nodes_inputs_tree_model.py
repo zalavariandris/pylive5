@@ -1,7 +1,7 @@
 import pygraphrt as rt
 from qtpy.QtCore import QPersistentModelIndex, QModelIndex
 
-from pyflow5.nodert_input_roles import NodeRTInputRole
+from pyflow5.core.nodert_input_roles import NodeRTInputRole
 from pygraphrt.abstract_operator import ParameterData
 
 

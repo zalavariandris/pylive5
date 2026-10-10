@@ -3,15 +3,15 @@
 from textwrap import dedent
 from typing import Literal
 
-from pyflow5.pygraphrt_graphmodel import PyGraphRTGraphModel
-from pyflow5.viewer_view import Viewer
+from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
+from pyflow5.views.viewer_view import Viewer
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QMimeData, QModelIndex, Qt, QTimer
 from qtpy.QtWidgets import QApplication, QDialogButtonBox
 
-from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
-from pyflow5.pyflow5_window import PyFlow5Window
-from pyflow5.pyflow5_document import PyFlowDocument
+from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.views.pyflow5_window import PyFlow5Window
+from pyflow5.models.pyflow5_document import PyFlowDocument
 
 
 import pygraphrt as rt

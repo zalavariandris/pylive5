@@ -1,5 +1,5 @@
-from pyflow5.base_details_view import BaseDetailsView
-from pyflow5.pygraphrt_graphmodel import PyGraphRTGraphModel
+from .base_details_view import BaseDetailsView
+from ..models.pygraphrt_graphmodel import PyGraphRTGraphModel
 import myqtx
 
 

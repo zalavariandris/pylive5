@@ -7,9 +7,9 @@ import pytest
 from pytestqt.qtbot import QtBot
 from qtpy.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox, QWidget
 
-from myqtx import EditorContext, EditorFactory, EditorRegistry
-from myqtx.editors import int_editor, string_editor
-from myqtx.tuple_editor import numeric_tuple_editor
+from pyflow5.editorregistry import EditorContext, EditorFactory, EditorRegistry
+from pyflow5.editors import int_editor, string_editor
+from pyflow5.editors import numeric_tuple_editor
 
 
 class Color(Enum):

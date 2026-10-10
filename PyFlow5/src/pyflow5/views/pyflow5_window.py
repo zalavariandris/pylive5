@@ -4,14 +4,14 @@ import traceback
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
-from pyflow5.node_inspector_view import NodeInspectorView
+from pyflow5.views.node_inspector_view import NodeInspectorView
 
 
-from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
-from pyflow5.viewer_view import Viewer
-from pyflow5.vfxops_editors import register_vfxops_editors
+from pyflow5.views.node_input_delegate import NodeInputDelegate
+from pyflow5.views.viewer_view import Viewer
+
 from pygraphrt.script_module import ScriptOperatorRef
-from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex
+from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex, QSize
 
 from qtpy.QtCore import (
     QPoint,
@@ -51,7 +51,7 @@ from qtpy.QtWidgets import (
 
 # widgets
 from myqtx.selection_dialog import SelectionDialog
-from myqtx.editorregistry import EditorRegistry
+from pyflow5.editorregistry import EditorRegistry
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 
 # models
@@ -61,8 +61,8 @@ from qdageditor5.models.abstract_dag_model import (
     OutletName, 
     DirectionalLinkId
 )
-from .pyflow5_document import PyFlowDocument
-from .modules_operator_tree_model import ModulesOperatorsTreeModel
+from ..models.pyflow5_document import PyFlowDocument
+from ..models.modules_operator_tree_model import ModulesOperatorsTreeModel
 
 # views
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
@@ -89,7 +89,7 @@ class PyFlow5Window(QMainWindow):
         self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._modules_listview.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._modules_listview.customContextMenuRequested.connect(self._show_modules_context_menu)
-        
+        self._modules_listview.setIconSize(QSize(14, 14))
         # - Setup modules details view -
         self._module_details_view = ModuleDetailsView(self)
         
@@ -106,8 +106,6 @@ class PyFlow5Window(QMainWindow):
             self._document.graph_model.addLink(source, outlet, target, inlet)
 
         # - Setup node inspector -
-        self.editor_registry = EditorRegistry()
-        register_vfxops_editors(self.editor_registry)
         # self._node_inspector_view = 
         self._node_tree_view = QTreeView(self)
         self._node_tree_view.setMouseTracking(True)
@@ -119,17 +117,18 @@ class PyFlow5Window(QMainWindow):
         node_tree_header.setSectionResizeMode(
             1, QHeaderView.ResizeMode.ResizeToContents
         )
+        self._node_input_delegate = NodeInputDelegate(self._node_tree_view)
         self._node_tree_view.setItemDelegateForColumn(
             1, 
-            NodeInputDelegate(self._node_tree_view, editor_registry=self.editor_registry)
+            self._node_input_delegate
         )
         self._node_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         # self._node_tree_view.hide()
 
         # self._node_inspector = self._node_tree_view
 
-        self._node_inspector = NodeInspectorView(self, editor_registry=self.editor_registry)
-        
+        self._node_inspector = NodeInspectorView(self)
+        self._node_inspector.setItemDelegate(self._node_input_delegate)
         # - Setup display widget -
         self._viewer = Viewer(self)
 
@@ -484,7 +483,7 @@ class PyFlow5Window(QMainWindow):
                         return
                 module = self._document.importModule(file_path)
                 if module is not None:
-                    state = module.get_state()
+                    state = module.get_status()
                     if isinstance(state, Exception):
                         error = state.__cause__ or state
                         warning = QMessageBox(self)

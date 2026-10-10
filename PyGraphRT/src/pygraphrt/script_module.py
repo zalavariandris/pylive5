@@ -25,7 +25,7 @@ from .errors import ScriptEvaluationError
 
 
 def _get_all_callables_from_script(
-    script: str, *, name: str, defined_only: bool = True
+    script: str, *, name: str
 ) -> dict[str, FunctionType]:
     """Collect Python functions explicitly present in the script namespace.
 
@@ -71,18 +71,27 @@ def _get_all_callables_from_script(
         _export_names = set(names_in_all)
 
     def is_exported(item: tuple[str, Any]) -> bool:
+        """Check if the item is exported according to __all__."""
         key, _ = item
         return key in _export_names
 
     def is_public(item: tuple[str, Any]) -> bool:
+        """Check if the item is a public name (does not start with an underscore)."""
         key, _ = item
         return type(key) is str and not key.startswith("_")
 
     def is_function(item: tuple[str, Any]) -> bool:
+        """Check if the item is a function."""
         _, value = item
         return type(value) is FunctionType
 
+    def is_callable(item: tuple[str, Any]) -> bool:
+        """Check if the item is callable."""
+        _, value = item
+        return callable(value)
+
     def is_locally_defined(item: tuple[str, Any]) -> bool:
+        """Check if the function is defined within the script module itself."""
         _, value = item
         return value.__module__ == name
 
@@ -91,9 +100,11 @@ def _get_all_callables_from_script(
         objects = filter(is_exported, objects)
     else:
         objects = filter(is_public, objects)
-    objects = filter(is_function, objects)
-    if defined_only:
         objects = filter(is_locally_defined, objects)
+    objects = filter(is_callable, objects)
+
+    # if defined_only:
+    #     objects = filter(is_locally_defined, objects)
 
     return dict(objects)
 
@@ -229,9 +240,13 @@ class ScriptModuleRT(AbstractModule):
         except ScriptEvaluationError as error:
             new_state = error
             all_functions_from_script = {}
+            # indicate error by setting the state to the caught exception
+            self._state = new_state
         except ModuleError as error:
             new_state = error
             all_functions_from_script = {}
+            # indicate error by setting the state to the caught exception
+            self._state = new_state
         else:
             new_state = "VALID"
 
@@ -248,7 +263,9 @@ class ScriptModuleRT(AbstractModule):
         # update line numbers
         self._line_numbers = {
             name: func.__code__.co_firstlineno
-            for name, func in all_functions_from_script.items()
+            for name, func
+            in all_functions_from_script.items()
+            if hasattr(func, "__code__")
         }
 
         # Prepare the entire update before committing; runtime bugs propagate.
@@ -272,9 +289,8 @@ class ScriptModuleRT(AbstractModule):
         if changed_names:
             self.operators_changed.emit([ScriptOperatorRef(self, name) for name in changed_names])
         self._evaluated_script = self._script
-        print("script evaluated")
         
-    def get_state(self) -> Literal["VALID"] | Exception:
+    def get_status(self) -> Literal["VALID"] | Exception:
         """Return 'VALID' or the stored compilation, execution, or export error."""
         return self._state
 

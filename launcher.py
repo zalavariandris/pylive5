@@ -1,4 +1,4 @@
-from pyflow5.pyflow5_window import PyFlow5Window
+from pyflow5.views.pyflow5_window import PyFlow5Window
 
 def launch_pyflow5():
     from qtpy.QtWidgets import QApplication

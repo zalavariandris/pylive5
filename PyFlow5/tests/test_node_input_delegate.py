@@ -5,7 +5,7 @@ from qtpy.QtGui import QPalette
 from qtpy.QtTest import QTest
 from qtpy.QtWidgets import QLineEdit, QSpinBox, QStyle, QStyleOptionViewItem, QTreeView
 
-from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate, NodeInputWidget
+from pyflow5.views.node_input_delegate import NodeInputDelegate, NodeInputWidget
 
 
 @pytest.fixture

@@ -6,8 +6,13 @@ from enum import Enum
 from pathlib import Path
 
 from .editors import (
-    EditorFactory, bool_editor, enum_editor, float_editor, int_editor,
-    path_editor, string_editor,
+    EditorFactory, 
+    bool_editor, 
+    enum_editor, 
+    float_editor, 
+    int_editor,
+    path_editor, 
+    string_editor,
 )
 
 
@@ -46,8 +51,10 @@ class EditorRegistry:
         """
         if not isinstance(datatype, type):
             raise TypeError("datatype must be a Python type")
+        
         if not callable(factory):
             raise TypeError("factory must be callable")
+        
         self._registry[datatype] = factory
 
     def register_provider(self, module: str | Path, provider: EditorProvider) -> None:
@@ -73,7 +80,9 @@ class EditorRegistry:
             scopes: list[str | Path] = []
             if context.source_path is not None:
                 scopes.append(context.source_path.resolve())
+
             scopes.append(context.module_name)
+
             for scope in scopes:
                 provider = self._providers.get(scope)
                 if provider is None:
@@ -83,6 +92,7 @@ class EditorRegistry:
                     if not callable(factory):
                         raise TypeError("Editor providers must return a factory or None")
                     return factory
+                
         if not isinstance(datatype, type):
             return None
         is_enum = issubclass(datatype, Enum)

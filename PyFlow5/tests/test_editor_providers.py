@@ -8,10 +8,10 @@ from qtpy.QtWidgets import QDoubleSpinBox, QLineEdit, QSpinBox, QStyleOptionView
 
 from myqtx import EditorContext, EditorRegistry
 from myqtx.color_editor_widget import ColorEdit
-from myqtx.tuple_editor import NumericTupleEdit, numeric_tuple_editor
-from pyflow5.formview import FormView
-from pyflow5.nodert_input_roles import NodeRTInputRole
-from pyflow5.properties_editor.node_input_delegate import NodeInputDelegate
+from pyflow5.editors import NumericTupleEdit, numeric_tuple_editor
+from pyflow5.views.formview import FormView
+from pyflow5.core.nodert_input_roles import NodeRTInputRole
+from pyflow5.views.node_input_delegate import NodeInputDelegate
 from pyflow5.vfxops_editors import register_vfxops_editors, vfxops_editor_provider
 
 
@@ -174,13 +174,13 @@ def test_live_tuple_annotation_changes_refresh_component_count(make_provider_for
 
 
 def test_window_registers_the_workspace_vfxops_file(qtbot) -> None:
-    from pyflow5.pyflow5_window import PyFlow5Window
+    from pyflow5.views.pyflow5_window import PyFlow5Window
 
     window = PyFlow5Window()
     qtbot.addWidget(window)
     path = Path(__file__).resolve().parents[2] / "vfxops/src/vfxops/vfxops.py"
     module = window._document.importModule(path)
-    assert module is not None and module.get_state() == "VALID"
+    assert module is not None and module.get_status() == "VALID"
     operator = module.get_operator_by_name("constant")
     assert operator is not None
     parameter = operator.get_parameters()["color"]

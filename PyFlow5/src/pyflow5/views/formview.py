@@ -38,7 +38,7 @@ class FormView(QWidget):
     def model(self):
         return self._model
 
-    def setModel(self, model):
+    def setModel(self, model: QAbstractTableModel | None):
         if model is self._model:
             return
 
@@ -60,7 +60,7 @@ class FormView(QWidget):
     def rootIndex(self):
         return QModelIndex(self._root_index)
 
-    def setRootIndex(self, index):
+    def setRootIndex(self, index: QModelIndex):
         if index.isValid() and index.model() is not self._model:
             raise ValueError("Index belongs to another model")
 
@@ -76,7 +76,7 @@ class FormView(QWidget):
     def itemDelegate(self):
         return self._delegate
 
-    def setItemDelegate(self, delegate):
+    def setItemDelegate(self, delegate: QStyledItemDelegate):
         if delegate is None:
             raise ValueError("Delegate cannot be None")
 
@@ -89,7 +89,7 @@ class FormView(QWidget):
 
     def _connect_model(self):
         model = self._model
-
+        assert model is not None
         model.dataChanged.connect(self._on_data_changed)
         model.rowsInserted.connect(self._on_rows_inserted)
         model.rowsAboutToBeRemoved.connect(self._on_rows_about_to_be_removed)
@@ -144,17 +144,14 @@ class FormView(QWidget):
 
     def _insert_row(self, row):
         model = self._model
+        assert model is not None
         root = self.rootIndex()
 
         label_index = model.index(row, 0, root)
         value_index = model.index(row, 1, root)
 
-        label = label_index.data(
-            Qt.ItemDataRole.DisplayRole
-        )
-
+        label = label_index.data(Qt.ItemDataRole.DisplayRole)
         option = QStyleOptionViewItem()
-
         editor = self._delegate.createEditor(
             self,
             option,
@@ -282,67 +279,66 @@ class FormView(QWidget):
         self._rebuild()
 
 
-class ExampleModel(QAbstractTableModel):
-
-    def __init__(self):
-        super().__init__()
-
-        self._items = [
-            ["Name", "Alice"],
-            ["Age", 30],
-            ["Height", 1.75],
-            ["Active", True],
-            ["City", "Budapest"],
-        ]
-
-    def rowCount(self, parent=QModelIndex()):
-        return 0 if parent.isValid() else len(self._items)
-
-    def columnCount(self, parent=QModelIndex()):
-        return 0 if parent.isValid() else 2
-
-    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        if not index.isValid():
-            return None
-
-        if role in (
-            Qt.ItemDataRole.DisplayRole,
-            Qt.ItemDataRole.EditRole,
-        ):
-            return self._items[index.row()][index.column()]
-
-        return None
-
-    def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
-        if not index.isValid():
-            return False
-
-        if role != Qt.ItemDataRole.EditRole:
-            return False
-
-        self._items[index.row()][index.column()] = value
-
-        self.dataChanged.emit(
-            index,
-            index,
-            [
-                Qt.ItemDataRole.DisplayRole,
-                Qt.ItemDataRole.EditRole,
-            ]
-        )
-
-        return True
-
-    def flags(self, index):
-        flags = super().flags(index)
-
-        if index.isValid() and index.column() == 1:
-            flags |= Qt.ItemFlag.ItemIsEditable
-
-        return flags
-
 
 if __name__ == "__main__":
+    class ExampleModel(QAbstractTableModel):
+        def __init__(self):
+            super().__init__()
+
+            self._items = [
+                ["Name", "Alice"],
+                ["Age", 30],
+                ["Height", 1.75],
+                ["Active", True],
+                ["City", "Budapest"],
+            ]
+
+        def rowCount(self, parent=QModelIndex()):
+            return 0 if parent.isValid() else len(self._items)
+
+        def columnCount(self, parent=QModelIndex()):
+            return 0 if parent.isValid() else 2
+
+        def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+            if not index.isValid():
+                return None
+
+            if role in (
+                Qt.ItemDataRole.DisplayRole,
+                Qt.ItemDataRole.EditRole,
+            ):
+                return self._items[index.row()][index.column()]
+
+            return None
+
+        def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
+            if not index.isValid():
+                return False
+
+            if role != Qt.ItemDataRole.EditRole:
+                return False
+
+            self._items[index.row()][index.column()] = value
+
+            self.dataChanged.emit(
+                index,
+                index,
+                [
+                    Qt.ItemDataRole.DisplayRole,
+                    Qt.ItemDataRole.EditRole,
+                ]
+            )
+
+            return True
+
+        def flags(self, index):
+            flags = super().flags(index)
+
+            if index.isValid() and index.column() == 1:
+                flags |= Qt.ItemFlag.ItemIsEditable
+
+            return flags
+
     app = QApplication([])
 
     model = ExampleModel()

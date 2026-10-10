@@ -7,9 +7,9 @@ from typing import get_args, get_origin
 from qtpy.QtWidgets import QWidget
 
 from myqtx.color_editor_widget import ColorEdit
-from myqtx.editorregistry import EditorContext, EditorRegistry
-from myqtx.editors import Editor, EditorFactory
-from myqtx.tuple_editor import numeric_tuple_editor
+from pyflow5.editorregistry import EditorContext, EditorRegistry
+from pyflow5.editors import Editor, EditorFactory
+from pyflow5.editors import numeric_tuple_editor
 
 
 def vector_editor(
@@ -49,12 +49,16 @@ def vfxops_editor_provider(context: EditorContext) -> EditorFactory | None:
     components = get_args(context.annotation)
     if components == (float, float, float, float):
         return color_editor
+    
     if components in ((float, float), (float, float, float)):
         return vector_editor
+    
     if components == (int, int):
         return size_editor
+    
     if components == (int, int, int, int):
         return rect_editor
+    
     return None
 
 
@@ -75,6 +79,7 @@ def register_vfxops_editors(
         spec = find_spec("vfxops.vfxops")
     except ModuleNotFoundError:
         spec = None
+        
     if spec is not None and spec.origin is not None:
         registry.register_provider(Path(spec.origin), vfxops_editor_provider)
 

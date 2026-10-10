@@ -3,7 +3,7 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QItemSelection, QItemSelectionModel
 
 import pygraphrt as rt
-from pyflow5.pyflow5_document import PyFlowDocument
+from pyflow5.models.pyflow5_document import PyFlowDocument
 from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
 from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
 from qdageditor5.models.abstract_dag_model import NodeName

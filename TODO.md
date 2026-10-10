@@ -1,4 +1,6 @@
 # TODO
+- [ ] Rename embedded modules!
+- [ ] find a better name for graph modules, o distinguishe from standard pythno modules
 - [ ] ImportModule should support importing from a file without specifying a name
 - [ ] factor out the session and probably settings from the current Window.
        window should be a document window. this will allow testing empty GUI (without loading the last session)

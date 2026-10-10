@@ -3,8 +3,8 @@ from pathlib import Path
 
 from pytestqt.qtbot import QtBot
 
-from pyflow5.modules_operator_tree_model import ModulesOperatorsTreeModel
-from pyflow5.pyflow5_document import PyFlowDocument
+from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.models.pyflow5_document import PyFlowDocument
 from pygraphrt import ImportModuleRT
 
 

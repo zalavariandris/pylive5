@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, get_args, get_origin
 
 import pygraphrt as rt
-from myqtx.editorregistry import EditorContext
+from pyflow5.editorregistry import EditorContext
 from pygraphrt.abstract_operator import ParameterData
 from qdageditor5.adapters.node_inlet_tree_model_adapter import (
     NodeInletTreeModelAdapter,
@@ -14,8 +14,8 @@ from qdageditor5.adapters.node_inlet_tree_model_adapter import (
 from qdageditor5.models.abstract_dag_model import InletName
 from qtpy.QtCore import QModelIndex, QObject, Qt
 
-from ..nodert_input_roles import NodeRTInputRole
-from ..pygraphrt_graphmodel import PyGraphRTGraphModel
+from ..core.nodert_input_roles import NodeRTInputRole
+from .pygraphrt_graphmodel import PyGraphRTGraphModel
 
 
 @dataclass(frozen=True)
@@ -141,53 +141,56 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
             return None
 
         value = details.value
-        if role == NodeRTInputRole.ConnectionRole:
-            return (value.get_name(),) if isinstance(value, rt.NodeRef) else None
-        if role == NodeRTInputRole.NodeRefRole:
-            return details.node
-        if role == NodeRTInputRole.InputLocationRole:
-            return details.inlet_name
-        if role == NodeRTInputRole.AnnotationRole:
-            return details.annotation
-        if role == NodeRTInputRole.EditorContextRole:
-            operator = details.node.get_operator()
-            return EditorContext(
-                module_name=operator.get_module_name() if operator is not None else "",
-                operator_name=operator.get_name() if operator is not None else "",
-                parameter_name=str(details.inlet_name),
-                annotation=details.annotation,
-                source_path=operator.get_source_path() if operator is not None else None,
-            )
-        if role == NodeRTInputRole.DefaultRole:
-            if details.default is ParameterData.EMPTY:
-                return None
-            return details.default
-        if role == NodeRTInputRole.IsUsingDefaultRole:
-            return (
-                value is ParameterData.EMPTY
-                and details.default is not ParameterData.EMPTY
-            )
-
         if role == Qt.ItemDataRole.DisplayRole:
-            if value is ParameterData.EMPTY:
-                if details.default is ParameterData.EMPTY:
-                    return "Not set"
-                return str(details.default)
             if isinstance(value, rt.NodeRef):
                 return f"-> {value.get_name()}"
-            return str(value) if isinstance(value, (Path, Enum)) else value
-
+            if value is ParameterData.EMPTY:
+                return None
+            return f"{value}"
+        
         if role == Qt.ItemDataRole.EditRole:
             if isinstance(value, rt.NodeRef):
                 return None
             if value is ParameterData.EMPTY:
-                value = details.default
-            if value is ParameterData.EMPTY:
-                value_type = details.editable_type
-                if value_type in (int, float, str, bool):
-                    return value_type()
                 return None
+            
             return value
+
+        if role == NodeRTInputRole.DefaultRole:
+            # if details.default is ParameterData.EMPTY:
+            #     return None
+            return details.default
+
+        if role == NodeRTInputRole.AnnotationRole:
+            return details.annotation
+        
+        if role == NodeRTInputRole.ConnectionRole:
+            return value.get_name() if isinstance(value, rt.NodeRef) else None
+        
+        if role == NodeRTInputRole.NodeRefRole:
+            return details.node
+        
+        if role == NodeRTInputRole.InputLocationRole:
+            return details.inlet_name
+    
+        # if role == NodeRTInputRole.EditorContextRole:
+        #     operator = details.node.get_operator()
+        #     return EditorContext(
+        #         module_name=operator.get_module_name() if operator is not None else "",
+        #         operator_name=operator.get_name() if operator is not None else "",
+        #         parameter_name=str(details.inlet_name),
+        #         annotation=details.annotation,
+        #         source_path=operator.get_source_path() if operator is not None else None,
+        #     )
+        
+        
+        # if role == NodeRTInputRole.IsUsingDefaultRole:
+        #     return (
+        #         value is ParameterData.EMPTY
+        #         and details.default is not ParameterData.EMPTY
+        #     )
+
+        
 
         return None
 
@@ -231,6 +234,7 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                     if text not in ("true", "false"):
                         return False
                     value = text == "true"
+
                 elif value_type is tuple and get_origin(details.annotation) is tuple:
                     component_types = get_args(details.annotation)
                     if not isinstance(value, tuple):
@@ -239,11 +243,14 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                         if len(value) != len(component_types):
                             return False
                         value = tuple(t(item) for t, item in zip(component_types, value))
+
                 elif issubclass(value_type, (int, float, str, Path, Enum)):
                     value = value_type(value)
+
                 elif not isinstance(value, value_type):
                     # Custom editors return the actual object; do not reconstruct it.
                     return False
+                
             except (TypeError, ValueError, OverflowError):
                 return False
 

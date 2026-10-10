@@ -12,7 +12,8 @@ description = "A collection of functions for VFX operations"
 requires-python = ">=3.10"
 dependencies = [
     "pyglm",
-    "opencv-python"
+    "opencv-python",
+    "numba"
 ]
 
 [tool.setuptools.packages.find]

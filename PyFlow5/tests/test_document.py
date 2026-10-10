@@ -3,7 +3,7 @@ import pytest
 from qtpy.QtCore import QPointF
 from pytestqt.qtbot import QtBot
 
-from pyflow5.pyflow5_document import PyFlowDocument
+from pyflow5.models.pyflow5_document import PyFlowDocument
 import pygraphrt as rt
 
 # def make_document(tmp_path: Path) -> tuple[PyFlowDocument, rt.NodeRef, rt.NodeRef]:

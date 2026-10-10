@@ -3,10 +3,10 @@ from collections.abc import Callable
 import pygraphrt as rt
 import pytest
 
-from pyflow5.properties_editor.pygraphrt_node_inlet_tree_model_adapter import (
+from pyflow5.models.pygraphrt_node_inlet_tree_model_adapter import (
     PyGraphRTNodeInletTreeModelAdapter,
 )
-from pyflow5.pygraphrt_graphmodel import PyGraphRTGraphModel
+from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
 
 
 @pytest.fixture

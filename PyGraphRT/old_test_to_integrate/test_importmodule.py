@@ -66,7 +66,7 @@ def test_edits_write_source_before_notifying_observers(tmp_path):
 
     module.set_script("def op(:")
     assert path.read_text(encoding="utf-8") == "def op(:"
-    assert isinstance(module.get_state(), SyntaxError)
+    assert isinstance(module.get_status(), SyntaxError)
 
 
 def test_reload_does_not_write_to_the_file(tmp_path, monkeypatch):
@@ -150,8 +150,8 @@ def test_reading_script_with_inconsistent__all__(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(Path, "read_text", read_source)
     module = ImportModuleRT("tools.py")
-    assert isinstance(module.get_state(), AttributeError)
-    assert "op2" in str(module.get_state())
+    assert isinstance(module.get_status(), AttributeError)
+    assert "op2" in str(module.get_status())
     assert module.get_source() == source
     assert list(module.operators()) == []
 
@@ -175,7 +175,7 @@ def test_reload_records_script_errors(
     file_source = source
     module.reload_file()
 
-    assert isinstance(module.get_state(), error_type)
+    assert isinstance(module.get_status(), error_type)
     assert list(module.operators()) == []
     assert observed == [source]
 
@@ -207,7 +207,7 @@ def test_reload_read_errors_propagate_without_committing(
 
     assert caught.value is error
     assert module.get_source() == source
-    assert module.get_state() == "VALID"
+    assert module.get_status() == "VALID"
     assert next(iter(module.operators()))() == 1
     assert observed == []
 

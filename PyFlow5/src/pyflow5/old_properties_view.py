@@ -9,7 +9,7 @@ from qtpy.QtWidgets import (
 
 import myqtx
 from myqtx.color_editor_widget import ColorEdit
-from ..nodert_input_roles import NodeRTInputRole, UNSET
+from .core.nodert_input_roles import NodeRTInputRole, UNSET
 
 
 @dataclass

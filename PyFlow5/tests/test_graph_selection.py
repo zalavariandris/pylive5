@@ -5,7 +5,7 @@ from qtpy.QtGui import QMouseEvent, QPaintEvent
 from qtpy.QtWidgets import QApplication, QStyle
 
 import pygraphrt as rt
-from pyflow5.pyflow5_document import PyFlowDocument
+from pyflow5.models.pyflow5_document import PyFlowDocument
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 

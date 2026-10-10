@@ -4,9 +4,9 @@ from qtpy.QtCore import QItemSelectionModel, Qt
 from qtpy.QtTest import QTest
 from qtpy.QtWidgets import QCheckBox, QDoubleSpinBox, QLabel, QLineEdit, QSpinBox
 
-from pyflow5.formview import FormView
-from pyflow5.node_inspector_view import NodeInspectorView
-from pyflow5.properties_editor.node_input_delegate import NodeInputWidget
+from pyflow5.views.formview import FormView
+from pyflow5.views.node_inspector_view import NodeInspectorView
+from pyflow5.views.node_input_delegate import NodeInputWidget
 
 
 @pytest.fixture
