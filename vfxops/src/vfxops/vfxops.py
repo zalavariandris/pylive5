@@ -130,7 +130,7 @@ import math
 import numpy as np
 from numba import njit
 
-@njit
+@njit(nogil=True)
 def _gradient_numba(width, height, dir_x, dir_y, cs0, cs1, cs2, cs3, ce0, ce1, ce2, ce3):
     length = math.sqrt(dir_x * dir_x + dir_y * dir_y)
     if length == 0.0:
