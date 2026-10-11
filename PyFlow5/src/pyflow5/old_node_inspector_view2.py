@@ -1,4 +1,4 @@
-from .views.node_input_delegate import NodeInputDelegate
+from .views.node_input_delegate import NodeInputFieldDelegate
 
 from .base_details_view import BaseDetailsView
 from qtpy.QtWidgets import QAbstractScrollArea, QFrame, QHeaderView, QLabel, QLineEdit, QSizePolicy, QTableView

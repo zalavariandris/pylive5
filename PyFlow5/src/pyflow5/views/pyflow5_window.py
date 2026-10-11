@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from pyflow5.views.node_inspector_view import NodeInspectorView
 
 
-from pyflow5.views.node_input_delegate import NodeInputDelegate
+from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
 from pyflow5.views.viewer_view import Viewer
 
 from pygraphrt.script_module import ScriptOperatorRef
@@ -117,7 +117,7 @@ class PyFlow5Window(QMainWindow):
         node_tree_header.setSectionResizeMode(
             1, QHeaderView.ResizeMode.ResizeToContents
         )
-        self._node_input_delegate = NodeInputDelegate(self._node_tree_view)
+        self._node_input_delegate = NodeInputFieldDelegate(self._node_tree_view)
         self._node_tree_view.setItemDelegateForColumn(
             1, 
             self._node_input_delegate
@@ -128,7 +128,6 @@ class PyFlow5Window(QMainWindow):
         # self._node_inspector = self._node_tree_view
 
         self._node_inspector = NodeInspectorView(self)
-        self._node_inspector.setItemDelegate(self._node_input_delegate)
         # - Setup display widget -
         self._viewer = Viewer(self)
 

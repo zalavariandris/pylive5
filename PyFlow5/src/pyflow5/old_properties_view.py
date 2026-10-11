@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelIndex, Qt
+from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QCheckBox, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget,
 )
@@ -28,16 +29,16 @@ def _color_editor(index:QModelIndex, parent:QWidget|None=None)->PropertyEditor:
     widget = ColorEdit(parent)
     color_type = type(index.data(Qt.ItemDataRole.EditRole))
 
-    def write(color):
+    def write(color: Any) -> None:
         nonlocal color_type
         color_type = type(color)
-        widget.setColor(color.r, color.g, color.b, color.a)
+        widget.setColor(QColor.fromRgbF(color.r, color.g, color.b, color.a))
 
     return PropertyEditor(
         widget,
-        lambda: color_type(*widget.color()),
+        lambda: color_type(*widget.getColor().getRgbF()),
         write,
-        widget.valueChanged,
+        widget.colorChanged,
     )
 
 def _text_editor(value_type):

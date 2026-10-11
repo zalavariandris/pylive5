@@ -180,7 +180,7 @@ def test_graph_model_mutations_do_not_duplicate_rows(make_input_model) -> None:
 
 def test_window_uses_the_value_adapter_in_tree_and_form(qtbot) -> None:
     from pyflow5.views.formview import FormView
-    from pyflow5.views.node_input_delegate import NodeInputDelegate
+    from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
     from pyflow5.models.pyflow5_document import PyFlowDocument
     from pyflow5.views.pyflow5_window import PyFlow5Window
 
@@ -196,10 +196,10 @@ def test_window_uses_the_value_adapter_in_tree_and_form(qtbot) -> None:
     window._connectDocument(document)
     model = document.node_inlet_tree_adapter
     assert window._node_tree_view.model() is model
-    assert isinstance(window._node_tree_view.itemDelegateForColumn(1), NodeInputDelegate)
+    assert isinstance(window._node_tree_view.itemDelegateForColumn(1), NodeInputFieldDelegate)
     form = window._node_inspector.findChild(FormView)
     assert form.model() is model
-    assert isinstance(form.itemDelegate(), NodeInputDelegate)
+    assert isinstance(form.itemDelegate(), NodeInputFieldDelegate)
     assert form.itemDelegate().editor_registry is window.editor_registry
     assert window._node_tree_view.itemDelegateForColumn(1).editor_registry is window.editor_registry
     assert window.centralWidget().count() == 2

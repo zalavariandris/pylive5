@@ -10,7 +10,7 @@ from qtpy.QtWidgets import QComboBox, QLineEdit, QSpinBox, QWidget
 
 from myqtx import Editor, EditorRegistry
 from pyflow5.views.formview import FormView
-from pyflow5.views.node_input_delegate import NodeInputDelegate
+from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
 
 
 class Color(Enum):
@@ -49,7 +49,7 @@ def make_form(qtbot, make_input_model):
         model = make_input_model(graph)
         form = FormView()
         qtbot.addWidget(form)
-        form.setItemDelegate(NodeInputDelegate(form, editor_registry=registry))
+        form.setFieldDelegate(NodeInputFieldDelegate(form, editor_registry=registry))
         form.setModel(model)
         form.setRootIndex(model.index(0, 0))
         form.show()

@@ -17,7 +17,7 @@ def test_clear_input_removes_and_shifts_positional_arguments(qtbot, make_input_m
     node_index = model.index(0, 0)
     input_index = model.index(0, 1, node_index)
 
-    assert input_index.data(NodeRTInputRole.NodeRefRole) == node_ref
+    assert input_index.data(NodeRTInputRole.ConnectionRole) == node_ref
     assert input_index.data(NodeRTInputRole.InputLocationRole) == "first"
     assert model.setData(input_index, ParameterData.EMPTY)
     assert node_ref.get_inputs() == ((20,), {})

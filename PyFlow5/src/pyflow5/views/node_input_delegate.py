@@ -1,222 +1,216 @@
-from typing import Any, cast
+from functools import partial
+import inspect
 from pathlib import Path
+import traceback
+from typing import ClassVar
+from uuid import uuid4
 
 from qtpy.QtCore import (
-    QAbstractItemModel, QEvent, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
+    Property,
+    QAbstractItemModel,
+    QModelIndex,
+    QObject,
+    QSize,
+    QTimer,
+    Qt,
+    Signal,
 )
-from qtpy.QtCore import Property
-
-from qtpy.QtGui import QPalette
+from qtpy.QtGui import QPaintEvent, QPainter
 from qtpy.QtWidgets import (
-    QHBoxLayout, 
-    QPushButton, 
-    QStyledItemDelegate, 
-    QStyleOptionViewItem, 
-    QWidget
-)
-
-from qtpy.QtWidgets import (
+    QHBoxLayout,
     QLabel,
-    QLineEdit, 
-    QSpinBox, 
-    QDoubleSpinBox
-    )
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QWidget,
+)
 
-from pyflow5.editorregistry import EditorContext, EditorProvider, EditorRegistry
-from pyflow5.editors import Editor, EditorFactory, label_editor, read_only_editor
 from pygraphrt.abstract_operator import ParameterData
-from rich import style
 
 from ..core.nodert_input_roles import NodeRTInputRole
-from pyflow5.vfxops_editors import register_vfxops_editors
+from .abstract_input_editor_provider import AbstractInputEditorProvider
 
-# class NodeInputWidget(QWidget):
-#     clearRequested = Signal()
-#     valueChanged = Signal()
-
-#     def __init__(
-#         self, datatype: object, factory: EditorFactory, parent: QWidget | None = None,
-#     ) -> None:
-#         super().__init__(parent)
-#         self.setAutoFillBackground(True)
-#         self.setStyleSheet("""
-#             QWidget[usingDefault="true"], QWidget[usingDefault="true"] QWidget {
-#                 color: palette(PlaceholderText);
-#                 font-style: italic;
-#             }
-#         """)
-#         self.datatype = datatype
-#         self.factory = factory
-#         self.modified = False
-#         self._updating = False
-#         self.binding = self._create_binding(datatype, factory)
-#         self.editor = self.binding.widget
-#         if self.binding.changed is not None:
-#             self.binding.changed.connect(self._on_value_changed)
-
-#         self.clear_button = QPushButton("✖", self)
-#         self.clear_button.setToolTip("Clear input")
-#         self.clear_button.setStyleSheet("""
-#             QPushButton {
-#                 background: transparent; border: none; padding: 0; margin: 0;
-#             }
-#             QPushButton:hover {
-#                 color: palette(Highlight);
-#             }
-#         """)
-#         self.clear_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-#         self.clear_button.clicked.connect(self.clearRequested.emit)
-
-#         self._layout = QHBoxLayout(self)
-#         self._layout.setContentsMargins(0, 0, 0, 0)
-#         self._layout.setSpacing(0)
-#         self._layout.addWidget(self.editor, 1)
-#         self._layout.addWidget(self.clear_button)
-#         self.setFocusProxy(self.editor)
-
-#     def _create_binding(self, datatype: object, factory: EditorFactory) -> Editor[Any]:
-#         binding = factory(datatype, self)
-#         if not isinstance(binding, Editor) or not isinstance(binding.widget, QWidget):
-#             raise TypeError("Editor factories must return an Editor containing a QWidget")
-#         return binding
-
-#     def replace_editor(self, datatype: object, factory: EditorFactory) -> None:
-#         binding = self._create_binding(datatype, factory)
-#         if self.binding.changed is not None:
-#             self.binding.changed.disconnect(self._on_value_changed)
-#         previous = self.editor
-#         self._layout.replaceWidget(previous, binding.widget)
-#         previous.hide()
-#         previous.deleteLater()
-#         self.datatype = datatype
-#         self.factory = factory
-#         self.binding = binding
-#         self.editor = binding.widget
-#         if self.binding.changed is not None:
-#             self.binding.changed.connect(self._on_value_changed)
-#         self.setFocusProxy(self.editor)
-#         self.editor.show()
-
-#     def set_value(self, value: object, *, using_default: bool = False) -> None:
-#         self._updating = True
-#         try:
-#             if using_default and self.binding.set_default is not None:
-#                 self.binding.set_default(value)
-#             else:
-#                 self.binding.set_value(value)
-#             if self.editor.property("usingDefault") != using_default:
-#                 self.editor.setProperty("usingDefault", using_default)
-#                 for widget in [self.editor, *self.editor.findChildren(QWidget)]:
-#                     widget.style().unpolish(widget)
-#                     widget.style().polish(widget)
-#                     widget.update()
-#                 self.editor.updateGeometry()
-#             self.modified = False
-#         finally:
-#             self._updating = False
-
-#     def _on_value_changed(self, *args: object) -> None:
-#         if not self._updating:
-#             self.modified = True
-#             self.valueChanged.emit()
-
-# class MyLineEdit(QWidget):
-#     valueChanged = Signal(str)
-#     def __init__(self, parent: QWidget | None = None) -> None:
-#         super().__init__(parent)
-#         self._layout = QHBoxLayout(self)
-#         self._line_edit = QLineEdit(self)
-#         self._layout.addWidget(self._line_edit)
-#         self.setLayout(self._layout)
-        
-#         self._line_edit.textChanged.connect(lambda text: self.setValue(text))
-#         self._value: str = ""
-
-#     def setValue(self, value: str) -> None:
-#         if self._value == value:
-#             return
-#         self._value = value
-#         self._line_edit.setText(value)
-#         self.valueChanged.emit(value)
-
-#     def getValue(self):
-#         return self._value
-
-#     value = Property(str, getValue, setValue, notify=valueChanged, user=True)
-
-
-
-class _NodeInputWrapper(QWidget):
-    valueChanged = Signal(object)
-    clearRequested = Signal()
-
-    def __init__(self, widget: QWidget, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-
-        self._widget = widget
-        self._prop = widget.metaObject().userProperty()
+# Custom Widgets for the NodesInspector
+class InputClearButton(QPushButton):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__("✖", parent)
+        self.setToolTip("Clear input")
         self.setStyleSheet("""
-            QWidget[usingDefault="true"],
-            QWidget[usingDefault="true"] QWidget {
-                color: palette(mid);
-                selection-color: palette(mid);
-                font-style: italic;
+            QPushButton {
+                background: transparent; border: none; padding: 0; margin: 0;
+            }
+            QPushButton:hover {
+                color: palette(Highlight);
             }
         """)
 
-        self._clearbtn = QPushButton("Clear", self)
-        self._clearbtn.clicked.connect(self.clearRequested.emit)
+        # make it a fixed size matching an M character
+        fm = self.fontMetrics()
+        m_width = fm.horizontalAdvance("M")
+        self.setFixedSize(m_width, m_width)
+
+    def sizeHint(self) -> QSize:
+        fm = self.fontMetrics()
+        m_width = fm.horizontalAdvance("M")
+        return QSize(m_width, m_width)
+
+    def maximumSizeHint(self) -> QSize:
+        fm = self.fontMetrics()
+        m_width = fm.horizontalAdvance("M")
+        return QSize(m_width, m_width)
+
+    def minimumSizeHint(self) -> QSize:
+        fm = self.fontMetrics()
+        m_width = fm.horizontalAdvance("M")
+        return QSize(m_width, m_width)
+
+
+class InputLabelWidget(QWidget):
+    def __init__(self, label_text: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
 
         self._layout = QHBoxLayout(self)
         self._layout.setSpacing(0)
         self._layout.setContentsMargins(0, 0, 0, 0)
+
+        self._label = QLabel(label_text, self)
+        self._layout.addWidget(self._label)
+
+        self._clearbtn = InputClearButton(self)
+        self._clearbtn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._layout.addSpacing(5)
         self._layout.addWidget(self._clearbtn)
-        self._layout.addWidget(self._widget)
+        self._clearbtn.pressed.connect(self.clearRequested.emit)
 
-        # Connect to the user property's NOTIFY signal
-        if self._prop.hasNotifySignal():
-            signal_name = bytes(
-                self._prop.notifySignal().name()
-            ).decode()
+    def paintEvent(self, event: QPaintEvent) -> None:
+        # paint bg
+        painter = QPainter(self)
+        painter.drawRect(self.rect())
+        super().paintEvent(event)
 
-            getattr(self._widget, signal_name).connect(
-                self._onValueChanged
-            )
+    # define text as qt user prop
+    def setText(self, text: str) -> None:
+        self._label.setText(text)
 
-    # def setUsingDefault(self, using_default: bool) -> None:
-    #     if self._widget.property("usingDefault") == using_default:
-    #         return
+    def getText(self) -> str:
+        return self._label.text()
 
-    #     self._widget.setProperty("usingDefault", using_default)
-    #     for widget in [self._widget, *self._widget.findChildren(QWidget)]:
-    #         style = widget.style()
-    #         style.unpolish(widget)
-    #         style.polish(widget)
-    #         widget.updateGeometry()
-    #         widget.update()
-
-    def _onValueChanged(self, *args: object) -> None:
-        # self.setUsingDefault(False)
-        self.valueChanged.emit(self.getValue())
-
-    def setValue(self, value: object) -> None:
-        self._prop.write(self._widget, value)
-
-    def getValue(self) -> object:
-        return self._prop.read(self._widget)
-
-    value = Property(
-        "QVariant",
-        getValue,
-        setValue,
-        notify=valueChanged,
+    text = Property(
+        str,
+        getText,
+        setText,
         user=True
     )
 
+    clearRequested = Signal()
 
-class NodeInputDelegate(QStyledItemDelegate):
+# Delegates for the NodesInspector
+class NodeInputLabelDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        data_text = index.data(Qt.ItemDataRole.DisplayRole)
+        input_label_widget = InputLabelWidget(data_text, parent)
+        input_label_widget.clearRequested.connect(lambda: 
+            index.model().setData(index.siblingAtColumn(1), ParameterData.EMPTY)
+        )
+        # expland the widget to fill the available space
+        input_label_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        return input_label_widget
+
+
+class NodeInputFieldDelegate(QStyledItemDelegate):
+    """Route editor creation and value conversion to registered providers."""
+
+    _provider_classes: ClassVar[list[type[AbstractInputEditorProvider]]] = []
+    _plugins_loaded: ClassVar[bool] = False
+
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
+        self._providers: list[AbstractInputEditorProvider] = []
+        self._editor_providers: dict[QWidget, AbstractInputEditorProvider] = {}
+        self._updating_editors: set[QWidget] = set()
+
+        if not NodeInputFieldDelegate._plugins_loaded:
+            self._discover_providers()
+            NodeInputFieldDelegate._plugins_loaded = True
+
+        for provider_class in self._provider_classes:
+            try:
+                provider = provider_class(self)
+                provider.commitData.connect(self.commitData.emit)
+                self._providers.append(provider)
+            except Exception:
+                plugin_path = Path(inspect.getfile(provider_class))
+                QTimer.singleShot(
+                    0,
+                    partial(self._show_plugin_error, plugin_path, traceback.format_exc()),
+                )
+
+    def _discover_providers(self) -> None:
+        """Load shipped sidecars in a stable order during startup only."""
+        plugin_directory = Path(__file__).parent.parent / "editor_plugins"
+        for path in sorted(plugin_directory.glob("*.editors.py")):
+            if not path.is_file():
+                continue
+
+            previous_providers = self._provider_classes.copy()
+            try:
+                self._load_plugin_from_file(path)
+            except Exception:
+                # A failing sidecar may already have registered some classes.
+                self._provider_classes[:] = previous_providers
+                QTimer.singleShot(
+                    0,
+                    partial(self._show_plugin_error, path, traceback.format_exc()),
+                )
+
+    @classmethod
+    def register_input_editor_provider(
+        cls, provider_class: type[AbstractInputEditorProvider],
+    ) -> None:
+        """Register an editor provider class to instantiate for each new router."""
+        if not isinstance(provider_class, type) or not issubclass(
+            provider_class, AbstractInputEditorProvider
+        ):
+            raise TypeError("Expected an InputEditorProvider subclass")
+
+        if provider_class not in cls._provider_classes:
+            cls._provider_classes.append(provider_class)
+
+    def _show_plugin_error(self, path: Path, details: str) -> None:
+        parent = self.parent()
+        dialog = QMessageBox(
+            parent if isinstance(parent, QWidget) else None
+        )
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setWindowTitle("Editor plugin could not be loaded")
+        dialog.setText(f"Could not load {path.name}.")
+        dialog.setInformativeText(
+            "The application will continue without this editor plugin."
+        )
+        dialog.setDetailedText(details)
+        dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
+        dialog.exec()
+
+    def _load_plugin_from_file(self, path: Path) -> None:
+        import importlib.util
+        import sys
+        path = Path(path)
+        module_name = f"_pyflow_editor_{uuid4().hex}"
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load editor module: {path}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+
+        try:
+            spec.loader.exec_module(module)
+        except Exception as err:
+            del sys.modules[module_name]
+            raise ImportError(f"Cannot load editor module: {path}") from err
 
     def createEditor(
         self,
@@ -225,84 +219,98 @@ class NodeInputDelegate(QStyledItemDelegate):
         index: QModelIndex,
     ) -> QWidget:
         connected_node = index.data(NodeRTInputRole.ConnectionRole)
-        datatype = index.data(NodeRTInputRole.AnnotationRole)
+        
+        editor:QWidget | None = None
+
+        # if input is connected, show that.
         if connected_node:
-            widget = QLabel(f"-> {connected_node}", parent)
-            # btn.setEnabled(False)
-            return widget
-        elif datatype == str:
-            widget = QLineEdit(parent)
-            editor = _NodeInputWrapper(widget, parent)
-            widget.textChanged.connect(lambda: self.commitData.emit(editor))
-        elif datatype == int:
-            widget = QSpinBox(parent)
-            editor = _NodeInputWrapper(widget, parent)
-            
-        elif datatype == float:
-            widget = QDoubleSpinBox(parent)
-            editor = _NodeInputWrapper(widget, parent)
-            
-        else:
-            widget = QLineEdit(parent)
-            editor = _NodeInputWrapper(widget, parent)
-        
-        editor.clearRequested.connect(lambda: 
-            index.model().setData(index,ParameterData.EMPTY)
-        )
-        return editor
+            editor = QLineEdit(parent)
+            editor.setText(f"-> {connected_node}")
+            editor.setReadOnly(True)
+            return editor
 
-    def setEditorData(self, editor: QWidget | None, index: QModelIndex) -> None:
-        if editor is None:
-            return
+        # Route future value transfers to the provider that created the editor.
+        for provider in self._providers:
+            editor = provider.createEditor(parent, option, index)
+            if editor is not None:
+                self._editor_providers[editor] = provider
+                editor.destroyed.connect(lambda: self._forget_editor(editor))
+                return editor
 
-        super().setEditorData(editor, index)
-        default_value = index.data(NodeRTInputRole.DefaultRole)
-        if default_value is not ParameterData.EMPTY:
-            if isinstance(editor, QLineEdit):
-                editor.setPlaceholderText(default_value)
-            elif isinstance(editor, _NodeInputWrapper):
-                widget = editor._widget
-                if isinstance(widget, QLineEdit):
-                    if default_value is not None:
-                        widget.setPlaceholderText(f"{default_value}")
-        is_using_default = bool(index.data(NodeRTInputRole.IsUsingDefaultRole))
-        
-        # if isinstance(editor, _NodeInputWrapper):
-        #     editor.setProperty("usingDefault", is_using_default)
-        #     editor._widget.setProperty("usingDefault", is_using_default)
-        #     widget = editor._widget
-        #     style = widget.style()
-        #     style.unpolish(widget)
-        #     style.polish(widget)
-        #     widget.updateGeometry()
-        #     widget.update()
-        # else:
-        #     editor.setProperty("usingDefault", is_using_default)
-        #     style = editor.style()
-        #     style.unpolish(editor)
-        #     style.polish(editor)
-        #     editor.updateGeometry()
-        #     editor.update()
-            
+        return QLineEdit(parent)
 
-    def initStyleOption(
-        self, option: QStyleOptionViewItem | None, index: QModelIndex
+    def _forget_editor(self, editor: QWidget) -> None:
+        self._editor_providers.pop(editor, None)
+
+    def setModelData(
+        self, editor: QWidget, model: QAbstractItemModel, index: QModelIndex,
     ) -> None:
-        if option is None:
+        # Signals emitted while loading an editor must not write back to the model.
+        if editor in self._updating_editors:
             return
-        super().initStyleOption(option, index)
 
-        if index.data(NodeRTInputRole.IsUsingDefaultRole):
-            color = option.palette.color(
-                QPalette.ColorGroup.Disabled,
-                QPalette.ColorRole.Text,
-            )
-            option.font.setItalic(True)
-            for group in (
-                QPalette.ColorGroup.Active,
-                QPalette.ColorGroup.Inactive,
-            ):
-                option.palette.setColor(group, QPalette.ColorRole.Text, color)
-                option.palette.setColor(
-                    group, QPalette.ColorRole.HighlightedText, color
-                )
+        if index.data(NodeRTInputRole.ConnectionRole):
+            return
+
+        if provider:=self._editor_providers.get(editor):
+            value = provider.editorValue(editor)
+            model.setData(index, value, Qt.ItemDataRole.EditRole)
+        else:
+            super().setModelData(editor, model, index)
+            return
+        
+    def setEditorData(self, editor: QWidget | None, index: QModelIndex) -> None:
+        if editor is None or editor in self._updating_editors:
+            return
+
+        self._updating_editors.add(editor)
+        try:
+            value = index.data(Qt.ItemDataRole.EditRole)
+            
+            provider = self._editor_providers.get(editor)
+            if provider is None:
+                super().setEditorData(editor, index)
+            else:
+                try:
+                    provider.setEditorValue(editor, value)
+                except Exception as e:
+                    print(f"Error setting editor value: {e}")
+
+            # todo: review handling displaying defaults in widgets.
+            #.      - we need to show when inputs are not provided neither from the node input nor from the function definitions.
+            #.     - also widget should be at least optionally show a default value, if default is set in the function definition.
+            is_using_default = bool(index.data(NodeRTInputRole.IsUsingDefaultRole))
+            default_value = index.data(NodeRTInputRole.DefaultValueRole)
+            if is_using_default and default_value is not ParameterData.EMPTY:
+                value = default_value
+            if isinstance(editor, QLineEdit):
+                placeholder = ""
+                if default_value is not ParameterData.EMPTY and default_value is not None:
+                    placeholder = str(default_value)
+                editor.setPlaceholderText(placeholder)
+                if is_using_default:
+                    value = None
+        finally:
+            self._updating_editors.remove(editor)
+
+    # def initStyleOption(
+    #     self, option: QStyleOptionViewItem | None, index: QModelIndex
+    # ) -> None:
+    #     if option is None:
+    #         return
+    #     super().initStyleOption(option, index)
+
+    #     if index.data(NodeRTInputRole.IsUsingDefaultRole):
+    #         color = option.palette.color(
+    #             QPalette.ColorGroup.Disabled,
+    #             QPalette.ColorRole.Text,
+    #         )
+    #         option.font.setItalic(True)
+    #         for group in (
+    #             QPalette.ColorGroup.Active,
+    #             QPalette.ColorGroup.Inactive,
+    #         ):
+    #             option.palette.setColor(group, QPalette.ColorRole.Text, color)
+    #             option.palette.setColor(
+    #                 group, QPalette.ColorRole.HighlightedText, color
+    #             )

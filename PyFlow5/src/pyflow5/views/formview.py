@@ -7,6 +7,7 @@ from qtpy.QtCore import (
 )
 from qtpy.QtWidgets import (
     QApplication,
+    QLabel,
     QWidget,
     QFormLayout,
     QDataWidgetMapper,
@@ -15,6 +16,12 @@ from qtpy.QtWidgets import (
     QStyleOptionViewItem,
 )
 
+from enum import IntEnum
+
+
+class FormViewRole(IntEnum):
+    LabelRole = Qt.ItemDataRole.UserRole + 1
+    FieldRole = Qt.ItemDataRole.UserRole + 2
 
 class FormView(QWidget):
     def __init__(self, parent=None):
@@ -25,12 +32,15 @@ class FormView(QWidget):
         self._editors = []
 
         self._layout = QFormLayout(self)
+        self._layout.setLabelAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
 
-        self._delegate = QStyledItemDelegate(self)
-
+        self._field_delegate = QStyledItemDelegate(self)
+        self._label_delegate = None
         self._mapper = QDataWidgetMapper(self)
         self._mapper.setOrientation(Qt.Orientation.Vertical)
-        self._mapper.setItemDelegate(self._delegate)
+        self._mapper.setItemDelegate(self._field_delegate)
         self._mapper.setSubmitPolicy(
             QDataWidgetMapper.SubmitPolicy.AutoSubmit
         )
@@ -74,17 +84,25 @@ class FormView(QWidget):
         self._rebuild()
 
     def itemDelegate(self):
-        return self._delegate
+        return self._field_delegate
 
-    def setItemDelegate(self, delegate: QStyledItemDelegate):
+    def setFieldDelegate(self, delegate: QStyledItemDelegate):
         if delegate is None:
             raise ValueError("Delegate cannot be None")
 
-        if delegate is self._delegate:
+        if delegate is self._field_delegate:
             return
 
-        self._delegate = delegate
+        self._field_delegate = delegate
         self._mapper.setItemDelegate(delegate)
+        
+        self._rebuild()
+
+    def setLabelDelegate(self, delegate: QStyledItemDelegate|None):
+        if delegate is self._label_delegate:
+            return
+
+        self._label_delegate = delegate
         self._rebuild()
 
     def _connect_model(self):
@@ -147,14 +165,29 @@ class FormView(QWidget):
         assert model is not None
         root = self.rootIndex()
 
+        # todo: setup style option for each item
+        labelstyle_option = QStyleOptionViewItem()
+        labelstyle_option.initFrom(self)
+
         label_index = model.index(row, 0, root)
         value_index = model.index(row, 1, root)
 
-        label = label_index.data(Qt.ItemDataRole.DisplayRole)
-        option = QStyleOptionViewItem()
-        editor = self._delegate.createEditor(
+        label_text = label_index.data(Qt.ItemDataRole.DisplayRole)
+        if self._label_delegate is not None:
+            label_widget = self._label_delegate.createEditor(
+                self,
+                labelstyle_option,
+                label_index
+            )
+        else:
+            label_widget = QLabel("" if label_text is None else str(label_text), self)
+            
+        editor_style_option = QStyleOptionViewItem()
+        editor_style_option.initFrom(self)
+
+        editor = self._field_delegate.createEditor(
             self,
-            option,
+            editor_style_option,
             value_index
         )
 
@@ -163,7 +196,7 @@ class FormView(QWidget):
 
         self._layout.insertRow(
             row,
-            "" if label is None else str(label),
+            label_widget, # "" if label_text is None else str(label_text),
             editor
         )
 
@@ -189,7 +222,7 @@ class FormView(QWidget):
 
         self._mapper.setCurrentIndex(1)
 
-    def _on_data_changed(self, top_left, bottom_right, roles):
+    def _on_data_changed(self, top_left:QModelIndex, bottom_right:QModelIndex, roles: list[int] | None):
         if not self._shows(top_left.parent()):
             return
 
@@ -202,29 +235,45 @@ class FormView(QWidget):
         ):
             return
 
-        if top_left.column() <= 0 <= bottom_right.column():
-            for row in range(
-                top_left.row(),
-                bottom_right.row() + 1
-            ):
-                index = self._model.index(
-                    row, 0, self.rootIndex()
-                )
+        for col in range(top_left.column(), bottom_right.column() + 1):
+            for row in range(top_left.row(), bottom_right.row() + 1):
+                match col:
+                    case 0:
+                        # update label
+                        label_text = self._model.index(row, 0, self.rootIndex()).data(
+                            Qt.ItemDataRole.DisplayRole
+                        )
 
-                label = index.data(
-                    Qt.ItemDataRole.DisplayRole
-                )
+                        label_widget = self._layout.labelForField(
+                            self._editors[row]
+                        )
 
-                label_widget = self._layout.labelForField(
-                    self._editors[row]
-                )
+                        if label_widget is not None:
+                            prop = label_widget.metaObject().userProperty()
+                            prop.write(label_widget, label_text)
+                    case 1:
+                        # QDataWidgetMapper updates the value editors.
+                        pass
+                        # # update value
+                        # value_index = self._model.index(row, 1, self.rootIndex())
+                        # value = value_index.data(Qt.ItemDataRole.DisplayRole)
 
-                if label_widget is not None:
-                    label_widget.setText(
-                        "" if label is None else str(label)
-                    )
+                        # editor = self._editors[row]
+                        # if editor is not None:
+                        #     prop = editor.metaObject().userProperty()
+                        #     prop.write(editor, value)
+                    case _:
+                        # ignore other columns
+                        pass
 
-        # QDataWidgetMapper updates the value editors.
+
+
+                
+
+                
+                    
+
+        
 
     def _shows(self, parent: QModelIndex) -> bool:
         # An invalid root is ambiguous: top level, or a root that was deleted.

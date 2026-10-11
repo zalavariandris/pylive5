@@ -9,6 +9,8 @@ _EXPORTS = {
     "FormWidget": "formwidget",
     "Interactive": "formwidget",
     "LockSwitch": "lock_switch",
+    "NumericTupleEdit": "numberic_tuple_edit",
+
 }
 
 __all__ = list(_EXPORTS)

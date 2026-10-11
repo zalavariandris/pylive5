@@ -5,7 +5,7 @@ from qtpy.QtGui import QPalette
 from qtpy.QtTest import QTest
 from qtpy.QtWidgets import QLineEdit, QSpinBox, QStyle, QStyleOptionViewItem, QTreeView
 
-from pyflow5.views.node_input_delegate import NodeInputDelegate, NodeInputWidget
+from pyflow5.views.node_input_delegate import NodeInputFieldDelegate, NodeInputWidget
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def tree_view(qtbot, input_graph):
     _, model = input_graph
     view = QTreeView()
     qtbot.addWidget(view)
-    view.setItemDelegateForColumn(1, NodeInputDelegate(view))
+    view.setItemDelegateForColumn(1, NodeInputFieldDelegate(view))
     view.setModel(model)
     view.resize(640, 240)
     view.setColumnWidth(1, 320)
@@ -158,7 +158,7 @@ def test_default_value_uses_dim_text_when_selected(qtbot, make_input_model):
         QPalette.ColorRole.Text,
     )
 
-    NodeInputDelegate().initStyleOption(option, index)
+    NodeInputFieldDelegate().initStyleOption(option, index)
 
     assert option.palette.color(
         QPalette.ColorGroup.Active,

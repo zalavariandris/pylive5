@@ -1,14 +1,14 @@
 from math import atan2, cos, hypot, sin, tau
 
-from qtpy.QtCore import QPointF, QRectF, QSize, Signal, Qt
+from qtpy.QtCore import QPointF, QRectF, QSize, Signal, Qt, Property
 from qtpy.QtWidgets import QWidget
 from qtpy.QtGui import QColor, QConicalGradient, QPainter, QPen, QRadialGradient
 
 
 class ColorWheel(QWidget):
-    valueChanged = Signal(float, float, float, float)
+    colorChanged = Signal(QColor)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._color = QColor.fromRgbF(1.0, 1.0, 1.0)
         self._dragging = False
@@ -22,10 +22,15 @@ class ColorWheel(QWidget):
     def maximumSize(self):
         return QSize(100, 100)
 
-    def setColor(self, r: float, g: float, b: float, a: float = 1.0):
-        self._color = QColor.fromRgbF(r, g, b, a)
+    def getColor(self) -> QColor:
+        return QColor(self._color)
+
+    def setColor(self, color: QColor) -> None:
+        if color == self._color:
+            return
+        self._color = QColor(color)
         self.update()
-        self.valueChanged.emit(r, g, b, a)
+        self.colorChanged.emit(self.getColor())
 
     def _wheelRect(self):
         size = max(0, min(self.width(), self.height()) - 2)
@@ -65,7 +70,7 @@ class ColorWheel(QWidget):
         painter.drawEllipse(marker, 4, 4)
         painter.end()
 
-    def _selectColor(self, position):
+    def _selectColor(self, position: QPointF) -> None:
         rect = self._wheelRect()
         radius = rect.width() / 2
         if radius <= 0:
@@ -75,7 +80,7 @@ class ColorWheel(QWidget):
         hue = (atan2(-offset.y(), offset.x()) / tau) % 1.0
         saturation = min(1.0, hypot(offset.x(), offset.y()) / radius)
         color = QColor.fromHsvF(hue, saturation, 1.0, self._color.alphaF())
-        self.setColor(*color.getRgbF())
+        self.setColor(color)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -102,3 +107,5 @@ class ColorWheel(QWidget):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    color = Property(QColor, getColor, setColor, notify=colorChanged, user=True)

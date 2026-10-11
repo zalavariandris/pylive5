@@ -11,7 +11,7 @@ from myqtx.color_editor_widget import ColorEdit
 from pyflow5.editors import NumericTupleEdit, numeric_tuple_editor
 from pyflow5.views.formview import FormView
 from pyflow5.core.nodert_input_roles import NodeRTInputRole
-from pyflow5.views.node_input_delegate import NodeInputDelegate
+from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
 from pyflow5.vfxops_editors import register_vfxops_editors, vfxops_editor_provider
 
 
@@ -25,7 +25,7 @@ def make_provider_form(qtbot, make_input_model):
         model = make_input_model(graph, modules)
         form = FormView()
         qtbot.addWidget(form)
-        form.setItemDelegate(NodeInputDelegate(form, editor_registry=editors))
+        form.setFieldDelegate(NodeInputFieldDelegate(form, editor_registry=editors))
         form.setModel(model)
         form.setRootIndex(model.index(0, 0))
         return node, model, form
@@ -114,7 +114,7 @@ def test_required_tuple_and_tree_delegate_keep_values_unset_until_edited(
     index = model.index(0, 1, model.index(0, 0))
     assert index.flags() & Qt.ItemFlag.ItemIsEditable
     assert index.data(Qt.ItemDataRole.EditRole) is None
-    delegate = NodeInputDelegate(editor_registry=editors)
+    delegate = NodeInputFieldDelegate(editor_registry=editors)
     tree_editor = delegate.createEditor(None, QStyleOptionViewItem(), index)
     qtbot.addWidget(tree_editor)
     delegate.setEditorData(tree_editor, index)
@@ -149,7 +149,7 @@ def test_context_for_function_operators_and_connected_inputs(make_input_model, q
     calls: list[EditorContext] = []
     editors = EditorRegistry()
     editors.register_provider(__name__, lambda context: calls.append(context))
-    delegate = NodeInputDelegate(editor_registry=editors)
+    delegate = NodeInputFieldDelegate(editor_registry=editors)
     editor = delegate.createEditor(None, QStyleOptionViewItem(), index)
     qtbot.addWidget(editor)
     assert calls == []

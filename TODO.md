@@ -1,4 +1,8 @@
 # TODO
+
+
+- [ ] Form view does not update when data changes.
+      added a todo in the on_datachanged hook.
 - [ ] Rename embedded modules!
 - [ ] find a better name for graph modules, o distinguishe from standard pythno modules
 - [ ] ImportModule should support importing from a file without specifying a name
@@ -45,6 +49,10 @@
       when saving and opening a broken graph, the node operators loose binding to the broken operator
       so when i fix the script, it will note bind back, instead, the node seem to hold None as teh operator.
       his is broken on open, and probably on save as well.
+
+- [ ] Consider Support discovering and reloading editor providers after startup, synchronizing
+      provider instances across existing delegates and refreshing visible editors.
+      this could be a nice development feature.
 
 ## Inspector dev
 - [x] expose the inlets, based on the operator, and the actual inputs. 
