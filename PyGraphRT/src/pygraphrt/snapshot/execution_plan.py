@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Callable
-
+from copy import deepcopy
+from ..graph_definition_rt import GraphDefinitionRT, NodeRef
 
 @dataclass(frozen=True)
 class NodeOutput:
@@ -30,13 +31,12 @@ class ExecutionPlan:
     nodes: tuple[NodeSnapshot, ...]                      
 
 
-def prepare(noderef: NodeRef, *, revision: int) -> ExecutionPlan:
-    graph = noderef._graph
+def prepare(graph: GraphDefinitionRT, target: NodeRef, *, revision: int) -> ExecutionPlan:
+    # validate targets
+    if target not in graph.nodes():
+        raise ValueError(f"Node {target.get_name()!r} is not in the graph.")
 
-    if noderef not in graph.nodes():
-        raise ValueError(f"Node {noderef.get_name()!r} is not in the graph.")
-
-    ordered_nodes = graph.topological_sort(graph.ancestors(noderef))
+    ordered_nodes = graph.topological_sort(graph.ancestors(target))
 
     # Preserve shared inputs within this snapshot while copying them.
     memo: dict[int, Any] = {}

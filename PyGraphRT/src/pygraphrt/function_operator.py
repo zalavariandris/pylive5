@@ -1,4 +1,4 @@
-from typing import Mapping, Any
+from typing import Callable, Mapping, Any
 from types import MappingProxyType
 import sys
 import inspect
@@ -9,7 +9,7 @@ from .abstract_operator import AbstractOperator, ParameterData
 
 
 class FunctionOperator(AbstractOperator):
-    def __init__(self, func:callable):
+    def __init__(self, func: Callable):
         super().__init__()
         assert callable(func), f"func must be a callable function got{func}"
         assert hasattr(func, "__code__"), f"function with a __code__ attribute, got {func}"
