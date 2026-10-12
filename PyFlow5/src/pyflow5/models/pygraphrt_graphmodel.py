@@ -75,13 +75,18 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             ) # list[NodeT], roles: list[int]
 
             for node_ref in nodes:
-                self._executor.execute(node_ref)
+                try:
+                    plan = prepare(graph_rt, node_ref)
+                    execute(plan)
+                    self._executor.execute(node_ref)
+                except Exception as e:
+                    print(f"Failed to execute node {node_ref.get_name()}: {e}")
 
         @self._executor.executed.connect
-        def on_executed(results: dict[rt.NodeRef, rt.NodeExecution]):
-            print("Nodes executed: ", [node_ref.get_name() for node_ref in results.keys()])
+        def on_executed(executions: dict[rt.NodeRef, rt.NodeExecution]):
+            print("Nodes executed: ", [node_ref.get_name() for node_ref in executions.keys()])
             changed_nodenames: list[NodeName] = []
-            for node_ref, execution in results.items():
+            for node_ref, execution in executions.items():
                 if node_name := self.mapFromSource(node_ref):
                     self._executions[node_name] = execution
                     changed_nodenames.append(node_name)
@@ -89,7 +94,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             self.nodesDataChanged.emit(
                 tuple(changed_nodenames), 
                 tuple([self.ExecutionRole])
-            ) # list[NodeT], roles: list[int]
+            )
 
     def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
         if any(isinstance(msg, AddNodeMessage) for msg in self._message_queue):

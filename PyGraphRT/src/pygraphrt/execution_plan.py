@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Callable
 from copy import deepcopy
-from ..graph_definition_rt import GraphDefinitionRT, NodeRef
+from .graph_definition_rt import GraphDefinitionRT, NodeRef
 
 @dataclass(frozen=True)
 class NodeOutput:
@@ -21,17 +21,18 @@ class NodeSnapshot:
     args: tuple[Any, ...] = ()
     kwargs: tuple[tuple[str, Any], ...] = ()
 
-
 @dataclass(frozen=True)
 class ExecutionPlan:
-    """Captured nodes required to evaluate the requested outputs."""
+    """Captured nodes required to evaluate the requested outputs. In order."""
 
     revision: int
-    targets: tuple[str, ...]
+    target: str
     nodes: tuple[NodeSnapshot, ...]                      
 
-
 def prepare(graph: GraphDefinitionRT, target: NodeRef, *, revision: int) -> ExecutionPlan:
+    """
+    return an execution plan for the specified target node.
+    """
     # validate targets
     if target not in graph.nodes():
         raise ValueError(f"Node {target.get_name()!r} is not in the graph.")
@@ -40,7 +41,6 @@ def prepare(graph: GraphDefinitionRT, target: NodeRef, *, revision: int) -> Exec
 
     # Preserve shared inputs within this snapshot while copying them.
     memo: dict[int, Any] = {}
-
     def capture_input(value: Any) -> Any:
         if isinstance(value, NodeRef):
             return NodeOutput(value.get_name())
@@ -75,11 +75,11 @@ def prepare(graph: GraphDefinitionRT, target: NodeRef, *, revision: int) -> Exec
 
     return ExecutionPlan(
         revision=revision,
-        targets=(noderef.get_name(),),
+        target=target.get_name(),
         nodes=tuple(snapshots),
     )
 
-def execute(plan: ExecutionPlan) -> dict[str, Any]:
+def execute(plan: ExecutionPlan) -> Any:
     outputs: dict[str, Any] = {}
 
     def resolve_input(value: Any) -> Any:
@@ -106,7 +106,4 @@ def execute(plan: ExecutionPlan) -> dict[str, Any]:
                 f"Execution failed at node {node.name!r}."
             ) from error
 
-    return {
-        target: outputs[target]
-        for target in plan.targets
-    }
+    return outputs[plan.target]
