@@ -1,4 +1,4 @@
-from typing import Union, Tuple
+from typing import TypeAlias, Union, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 import math
@@ -22,9 +22,21 @@ import numpy as np
 import numpy.typing as npt
 
 # Semantic type hint
-ImageRGBA = Annotated[npt.NDArray[np.float32], "(H, W, 4)"] # consider using jaxtyping library for runtime exceptions
+ImageRGBA: TypeAlias = Annotated[
+    "npt.NDArray[np.float32]",
+    "shape: (height, width, 4); RGBA; straight alpha",
+] # consider using jaxtyping library for runtime exceptions
 
 Image_sRGB = np.ndarray   # HxWx3 RG uint8
+
+def validate_image_data(image_data: ImageRGBA) -> None:
+    """Reject data outside the pipeline contract without coercing or copying it."""
+    import numpy as np
+    if not isinstance(image_data, np.ndarray) or image_data.dtype != np.float32:
+        raise TypeError(f"image_data must be a float32 NumPy RGBA array. got {type(image_data)} with dtype {getattr(image_data, 'dtype', None)}")
+    if image_data.ndim != 3 or image_data.shape[-1] != 4 or image_data.size == 0:
+        raise ValueError(f"image_data must be a nonempty (height, width, 4) RGBA array. got shape {getattr(image_data, 'shape', None)}")
+
 
 # dataclasses
 @dataclass
@@ -174,38 +186,97 @@ def gradient_numba(size: Size, direction: Vec2 = (1, 0), color_start: Color = (0
 from pathlib import Path
 from typing import Union, Tuple
 
-def read_image(path:Union[str, Path]) -> ImageRGBA:
-    """Read image from disk as RGBA float32 (0-1)"""
-    if not Path(path).exists():
+from pathlib import Path
+from typing import Union
+
+import av
+import numpy as np
+
+def read_image(path: Union[str, Path]) -> ImageRGBA:
+    """Read image as RGBA float32.
+    Preserve HDR values for EXR."""
+    path = Path(path)
+
+    if not path.is_file():
         raise FileNotFoundError(f"File does not exist: {path}")
 
-    img_bgr = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-    if img_bgr is None:
-        raise Exception(f"Failed to read image from path: {path}")
+    with av.open(str(path)) as container:
+        frame = next(container.decode(video=0), None)
 
-    nr_of_channels = img_bgr.shape[2]
+        if frame is None:
+            raise ValueError(f"Failed to read image: {path}")
 
-    match nr_of_channels:
-        case 1:
-            # grayscale to BGRA
-            img = cv2.cvtColor(img_bgr, cv2.COLOR_GRAY2RGBA)
+        fmt = frame.format.name
+
+        # Float EXR: preserve native values and precision
+        if fmt.startswith(("gbrpf32", "gbrapf32")):
+            img = frame.to_ndarray()
+
+        elif fmt.startswith("grayf32"):
+            img = frame.to_ndarray()[..., None]
+
+        # 16-bit integer formats
+        elif (
+            fmt.startswith(("rgb48", "bgr48", "rgba64", "bgra64"))
+            or fmt.startswith(("gray16", "gbrp16", "gbrap16"))
+        ):
+            img = frame.to_ndarray(format="rgba64le")
+            img = img.astype(np.float32) / 65535.0
+            return img
+
+        # Standard 8-bit images
+        else:
+            img = frame.to_ndarray(format="rgba")
             return img.astype(np.float32) / 255.0
-        
-        case 3:
-            # BGR to BGRA
-            img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGBA)
-            return img.astype(np.float32) / 255.0
-        
-        case 4:
-            rgba = cv2.cvtColor(img_bgr, cv2.COLOR_BGRA2RGBA)
-            return rgba.astype(np.float32) / 255.0
-        
-        case _:
-            raise Exception(f"Unsupported number of channels: {nr_of_channels} in image: {path}")
+
+    # Float images: add opaque alpha if missing
+    if img.ndim == 2:
+        img = img[..., None]
+
+    if img.shape[-1] == 1:
+        img = np.repeat(img, 3, axis=-1)
+
+    if img.shape[-1] == 3:
+        alpha = np.ones((*img.shape[:2], 1), dtype=np.float32)
+        img = np.concatenate((img, alpha), axis=-1)
+
+    return img.astype(np.float32, copy=False)
 
 def to_sRGB(img: ImageRGBA) -> Image_sRGB:
     """Convert RGBA float32 (0-1) to RGB uint8 (0-255)."""
     return cv2.convertScaleAbs(img*255).astype(np.uint8)[:,:,:3]
+
+def encode_jpg(image: ImageRGBA, quality:int=75) -> bytes:
+    # clip to [0, 1] and convert to 8-bit integers
+    # clip to [0, 1] and convert to 8-bit integers
+    image = np.clip(image, 0, 1)
+    rgba = np.rint(np.clip(image, 0, 1) * 255).astype(np.uint8)
+    bgra = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)
+
+    extension = ".jpg"
+    params = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+    _, buffer = cv2.imencode(extension, bgra, params)
+    image_bytes = buffer.tobytes()
+    return image_bytes
+
+def encode_png(image: ImageRGBA) -> bytes:
+    """Encode one input as an in-memory PNG upload."""
+    import numpy as np
+    import cv2
+
+    # clip to [0, 1] and convert to 8-bit integers
+    image = np.clip(image, 0, 1)
+    rgba = np.rint(np.clip(image, 0, 1) * 255).astype(np.uint8)
+    bgra = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)
+
+    #
+    extension = ".png"
+    success, encoded = cv2.imencode(extension, bgra)
+    if not success:
+        raise RuntimeError(f"Could not encode as PNG.")
+    
+    image_bytes = encoded.tobytes()
+    return image_bytes
 
 # transform
 def crop_to_size(img: ImageRGBA, size:Tuple[int,int], pivot:Tuple[float, float]=(0.5,0.5)) -> ImageRGBA:
@@ -416,13 +487,52 @@ def noisy(img: ImageRGBA, noise_typ):
         noisy = img + img * gauss
         return noisy
 
-# image
-def encode_jpg(img: ImageRGBA, quality:int=75) -> bytes:
-    extension = ".jpg"
-    params = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
-    _, buffer = cv2.imencode(extension, to_sRGB(img), params)
-    return buffer.tobytes()
+def gaussian_blur(img: np.ndarray, size: float) -> np.ndarray:
+    """
+    Gaussian blur with After Effects-style control.
+    
+    Parameters
+    ----------
+    img : float32 RGBA or RGB image in range [0, 1]
+    size : blur radius in pixels
+    """
+    if size <= 0:
+        return img
 
+    # Kernel size must be odd and positive
+    ksize = int(size * 2) | 1          # make sure it's odd
+    ksize = max(3, ksize)              # minimum useful size
+
+    # OpenCV works directly on float32
+    # We blur only the RGB channels and keep alpha unchanged
+    blurred = img.copy()
+    blurred[..., :3] = cv2.GaussianBlur(
+        img[..., :3],
+        ksize=(ksize, ksize),
+        sigmaX=size / 3.0,             # AE-like falloff
+        borderType=cv2.BORDER_REFLECT
+    )
+
+    return blurred
+
+def clip(img: np.ndarray, min_val: float = 0.0, max_val: float = 1.0) -> np.ndarray:
+    """
+    Clip image values to the specified range [min_val, max_val].
+
+    Parameters
+    ----------
+    img : float32 RGBA or RGB image
+    min_val : float, optional
+        Minimum value to clip to, by default 0.0
+    max_val : float, optional
+        Maximum value to clip to, by default 1.0
+
+    Returns
+    -------
+    np.ndarray
+        Clipped image
+    """
+    return np.clip(img, min_val, max_val)
 # merge
 def merge_over(A: np.ndarray, B: np.ndarray, mix: float) -> np.ndarray:
     # 1. Determine common dimensions (the intersection)
