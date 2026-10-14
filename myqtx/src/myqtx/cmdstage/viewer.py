@@ -7,7 +7,7 @@ from qtpy.QtCore import QTimer
 from qtpy.QtNetwork import QLocalServer, QLocalSocket
 from qtpy.QtWidgets import QApplication
 
-from myqtx.displaywidget import DisplayWidget
+from myqtx.widgets.displaywidget import DisplayWidget
 
 from .transport import decode_payload
 

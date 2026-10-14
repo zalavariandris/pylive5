@@ -1,6 +1,6 @@
 import builtins
 import inspect
-from myqtx.displaywidget import DisplayWidget
+from myqtx.widgets.displaywidget import DisplayWidget
 import numpy as np
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass

@@ -150,7 +150,7 @@ class ModuleDetailsView(QWidget):
         read_only = bool(current.data(ModulesOperatorsTreeModel.ReadOnlyRole))
         self._title_label.setText(title or "")
         text = source if isinstance(source, str) else ""
-        with myqtx.blockingSignals(self._code_editor):
+        with myqtx.utils.blockingSignals(self._code_editor):
             self._code_editor.setReadOnly(read_only)
             self._code_editor.setEnabled(isinstance(source, str))
             # Model notifications echo edits; replacing identical text loses undo and the cursor.

@@ -16,8 +16,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from myqtx.widgets.color_editor_widget import ColorEdit
+from myqtx.widgets.coloredit import ColorEdit
 from myqtx.widgets.numeric_tuple_edit import NumericTupleEdit
+
 from pyflow5.core.nodert_input_roles import NodeRTInputRole
 from pyflow5.views.abstract_input_editor_provider import AbstractInputEditorProvider
 from pyflow5.views.node_input_delegate import NodeInputFieldDelegate

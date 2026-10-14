@@ -85,7 +85,7 @@ def test_server_retains_comparison_after_sender_cleanup(qtbot: QtBot) -> None:
         with encode_payload(ImageCompare(a, a + 255)) as payload:
             assert server.handle({"action": "show", "data": payload}) == {"ok": True}
         a[:] = 127
-        view = server.display_widget.current_viewer
+        view = server.display_widget._current_viewer
         assert isinstance(view, ImageCompareView)
         rendered = view.canvas.item.pixmap().toImage()
         assert rendered.pixelColor(0, 0).red() == 0

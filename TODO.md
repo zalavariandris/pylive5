@@ -1,5 +1,5 @@
 # TODO
-- [ ] cleanup myqtx file structure and class names.
+- [x] cleanup myqtx file structure and class names.
 
 - [ ] Consider using AnyIO for async tasks, like
       graph execution. it support cancelling jobs.
@@ -45,40 +45,49 @@
 - [x] How to use input signal instead of finished editing in the NodeInputDelegate?
 - [x] Why its not able to use standard QLayouts?
       Turns out using layout would overcomplicate things
-
-
 - [x] fix saving and loading broken graphs
       `create_placeholder_operator`
       when saving and opening a broken graph, the node operators loose binding to the broken operator
       so when i fix the script, it will note bind back, instead, the node seem to hold None as teh operator.
       his is broken on open, and probably on save as well.
-
 - [ ] Consider Support discovering and reloading editor providers after startup, synchronizing
       provider instances across existing delegates and refreshing visible editors.
       this could be a nice development feature.
 
+
 ## Inspector dev
+
 - [x] expose the inlets, based on the operator, and the actual inputs. 
 - [x] create a TreeView using the rt.GraphDefinition and rt.moduleRegistry directly.
       (note: we are dliberatelly bypassing the current GraphModel. 
       exposing these data might not makes sense for the graph.
       also the GraphModel interface is not yet finalized. eg using NodeNames instead of 'ModelKey' analoge to the QModelIndex. see other todos.)
 
+
 ## Restore Session
+
 - [ ] Two details in your current code also need fixing for restoration: fromfile() ignores saved node positions, and _connectDocument() always rearranges the nodes. Imported modules with relative paths also need a stable base directory when the snapshot lives in AppData.  
 
+
 ## fix open and save
+
 - [x] open the lates session, on launch
 - [x] Recents
 - [x] Fix saving opening in the GUI
 
+
 ## GraphView
+
 - a delegate, to draw custom nodes. with potentially custom roles in a custom GraphModel.
 
+
 ## Inspector
+
 - register InspectorInputs
 
+
 ## Execution lifecycle and future async support
+
 **Prepare for Async GraphExecutor** (ptobalby after refactoring the even system)
 Keep execution synchronous for now, but let the UI consume signals so it can support background execution later.
 - [ ] Add a `GraphExecution` report containing an evaluation ID, the requested root, and each relevant node's final state. Publish a fresh snapshot for every evaluation and return the same report from `execute()`.
@@ -94,7 +103,9 @@ Keep execution synchronous for now, but let the UI consume signals so it can sup
 - [ ] Define completion reporting for preparation errors, unexpected executor errors, and future cancellation so the UI cannot remain stuck in a running state. Preserve the distinction between operator failure and an executor/API error.
 - [ ] Test notification order, evaluation IDs, exactly one completion report, cached and blocked states, independent branches, profiling, and rejection of obsolete updates. Add UI-thread delivery tests when background execution is introduced.
 
+
 ## ExampleApps
+
 - [ ] Image Grade
   - [ ] node graph, with image operators: 
     - [ ] read, write
@@ -106,7 +117,9 @@ Keep execution synchronous for now, but let the UI consume signals so it can sup
 
 - [ ] Image CornerPin
 
+
 ## DEV
+
 - [x] smoke test covering basic functionality *2026/09/30*
   - [x] importint module from files, and executing the graph
   - [x] serialization

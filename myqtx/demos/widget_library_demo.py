@@ -2,9 +2,9 @@ from qtpy.QtWidgets import QDialog, QListView, QWidget, QVBoxLayout, QPushButton
 from qtpy.QtCore import QItemSelection, QItemSelectionModel, QStringListModel
 
 from myqtx.widgets.qpathedit import QPathEdit
-from myqtx.selection_dialog import SelectionDialog
+from myqtx.selection_dialog_view import SelectionDialog
 from myqtx.widgets.qfloatslider import QFloatSlider
-from myqtx.widgets.color_editor_widget import ColorEdit
+from myqtx.widgets.coloredit import ColorEdit
 from myqtx.widgets.colorwheel import ColorWheel
 
 

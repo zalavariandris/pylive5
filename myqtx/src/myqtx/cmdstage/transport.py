@@ -10,15 +10,14 @@ from typing import Any
 
 import numpy as np
 
-from .data import HTML, Image, ImageCompare, Markdown
-
+from ..widgets import DisplayWidget
 
 MAX_ARRAY_BYTES = 1024 * 1024 * 1024
 DISPLAY_TYPES = {
-    "image": Image,
-    "html": HTML,
-    "markdown": Markdown,
-    "compare": ImageCompare,
+    "image": DisplayWidget.Image,
+    "html": DisplayWidget.HTML,
+    "markdown": DisplayWidget.Markdown,
+    "compare": DisplayWidget.ImageCompare,
 }
 DISPLAY_KINDS = {datatype: kind for kind, datatype in DISPLAY_TYPES.items()}
 Payload = dict[str, Any]

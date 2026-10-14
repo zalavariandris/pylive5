@@ -50,7 +50,7 @@ from qtpy.QtWidgets import (
 )
 
 # widgets
-from myqtx.selection_dialog import SelectionDialog
+from myqtx.selection_dialog_view import SelectionDialog
 from pyflow5.editorregistry import EditorRegistry
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 

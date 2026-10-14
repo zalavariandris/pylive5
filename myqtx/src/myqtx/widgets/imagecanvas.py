@@ -1,6 +1,15 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+    
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QImage, QKeyEvent, QPainter, QPixmap, QShowEvent, QWheelEvent
 from qtpy.QtWidgets import QGraphicsPixmapItem, QGraphicsScene, QGraphicsView, QWidget
+
+
+from .. import utils
+
 
 
 class ImageCanvas(QGraphicsView):
@@ -18,10 +27,19 @@ class ImageCanvas(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self._fit_pending = False
-
-    def set_image(self, image: QImage) -> None:
+        
+    def set_image(self, data: 'np.ndarray'|QImage|QPixmap) -> None:
+        import numpy as np
+        match data:
+            case np.ndarray() as img:
+                qimage = utils.img_to_qimage(img)
+            case QImage() as img:
+                qimage = img
+            case QPixmap() as pixmap:
+                # pixmap to QImage
+                qimage = pixmap.toImage().copy()
         first_image = self.item.pixmap().isNull()
-        self.item.setPixmap(QPixmap.fromImage(image))
+        self.item.setPixmap(QPixmap.fromImage(qimage))
         if first_image:
             self.fit_image()
 

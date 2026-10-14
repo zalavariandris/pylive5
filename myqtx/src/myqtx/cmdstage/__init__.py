@@ -1,6 +1,5 @@
 """A visual stage for command-line programs."""
 
-from .data import HTML, Image, ImageCompare, Markdown
 from .stage import Stage
 import logging
 logger = logging.getLogger(__name__)

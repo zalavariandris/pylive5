@@ -1,3 +1,7 @@
+from typing import Any, Callable, NamedTuple
+from qtpy.QtCore import Signal
+from qtpy.QtWidgets import QWidget, QHBoxLayout, QLineEdit
+
 class Binding(NamedTuple):
     editor: QWidget
     getter: Callable[[QWidget], Any]

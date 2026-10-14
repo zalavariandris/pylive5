@@ -54,3 +54,19 @@ class SelectionDialog(QDialog):
 
     def selected_index(self):
         return self._operator_tree.currentIndex()
+
+if __name__ == "__main__":
+    from qtpy.QtWidgets import QApplication
+    import sys
+
+    app = QApplication(sys.argv)
+    from qtpy.QtGui import QStandardItemModel, QStandardItem
+
+    model = QStandardItemModel()
+    parent_item = QStandardItem("Parent")
+    child_item = QStandardItem("Child")
+    parent_item.appendRow(child_item)
+    model.appendRow(parent_item)
+
+    dialog = SelectionDialog(model)
+    dialog.exec()

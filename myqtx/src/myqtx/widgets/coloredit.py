@@ -9,7 +9,7 @@ from qtpy.QtCore import (
 from qtpy.QtWidgets import QHBoxLayout, QPushButton, QSizePolicy, QWidget, QDoubleSpinBox
 from qtpy.QtGui import QColor
 
-from myqtx.colorwheel import ColorWheel
+from .colorwheel import ColorWheel
 
 class ColorEdit(QWidget):
     colorChanged = Signal(QColor)

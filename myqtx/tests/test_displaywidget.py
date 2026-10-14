@@ -5,8 +5,8 @@ from qtpy.QtCore import QPoint, QPointF, Qt
 from qtpy.QtGui import QImage, QPixmap, QWheelEvent
 from qtpy.QtWidgets import QApplication, QLabel
 
-from myqtx.displaywidget import DisplayWidget
-from myqtx.imagecanvas import ImageCanvas
+from myqtx.widgets.displaywidget import DisplayWidget
+from myqtx.widgets.imagecanvas import ImageCanvas
 
 
 @pytest.fixture
@@ -129,7 +129,7 @@ def test_clear_resets_image_and_text(display: DisplayWidget) -> None:
     display.clear()
     assert canvas.item.pixmap().isNull()
     assert canvas.transform().isIdentity()
-    assert display.current_viewer is None
+    assert display._current_viewer is None
     assert not canvas.isVisible() and label.text() == ""
 
     display.display("hello")

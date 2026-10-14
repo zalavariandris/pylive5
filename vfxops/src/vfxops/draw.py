@@ -77,6 +77,16 @@ def gradient(size: Size, direction: Vec2 = (1, 0), color_start: Color = (0, 0, 0
 
     return img
 
+def noise(size: Size) -> ImageRGBA:
+    mean = 0
+    var = 0.0001
+    sigma = var**0.5
+    gauss = np.random.normal(mean,sigma,(size[0], size[1],3)).astype(np.float32)
+    # attach alpha
+    alpha = np.ones((size[0], size[1], 1), dtype=np.float32)
+    img = np.concatenate((gauss, alpha), axis=2)
+    return img
+
 import math
 import numpy as np
 from numba import njit
