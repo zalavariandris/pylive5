@@ -29,7 +29,7 @@ def test_restarted_watcher_tracks_rewired_dependencies(
     results: list[int] = []
 
     def on_change() -> None:
-        results.append(E.execute(output))
+        results.append(E.request(output))
 
     watcher = watch(graph, output, on_change)
     try:

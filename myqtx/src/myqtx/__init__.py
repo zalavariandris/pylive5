@@ -3,7 +3,7 @@ from importlib import import_module
 _EXPORTS = {
     "QPathEdit": "qpathedit",
     "DisplayWidget": "displaywidget",
-    "DisplayView": "displayviews",
+    "DisplayView": "displaywidget",
     "blockingSignals": "block_signals_context_manager",
     "FileBinding": "file_binding",
     "FormWidget": "formwidget",

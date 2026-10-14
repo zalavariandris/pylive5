@@ -31,7 +31,7 @@ def test_nodes_sharing_operators_are_unique():
 
     # check the execution results of the duplicated nodes
     assert [
-        executor.execute(node) 
+        executor.request(node) 
         for node in node_duplicates
     ] == [0, 1, 2]
 

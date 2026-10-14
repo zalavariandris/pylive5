@@ -31,13 +31,13 @@ def test_smoke_memorycache():
     executor = GraphExecutorRT(graph, cache)
 
     # Sanity check: Execute the graph to test the memory cache
-    execution = executor.execute(hello_world)
+    execution = executor.request(hello_world)
     assert isinstance(execution, ExecutionSuccess)
     assert execution.result == "Hey, Mása!"
     assert counter == 1  # Ensure the_name was called only once due to caching
 
     # Execute the graph again to ensure the result is retrieved from the cache
-    execution = executor.execute(hello_world)
+    execution = executor.request(hello_world)
     assert isinstance(execution, ExecutionSuccess)
     assert execution.result == "Hey, Mása!"
     assert counter == 1  # Ensure the_name was not called again due to caching

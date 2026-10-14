@@ -22,7 +22,7 @@ from qtpy.QtWidgets import (
     QWidget
 )
 
-from myqtx.lock_switch import LockSwitch
+from myqtx.widgets.lock_switch import LockSwitch
 
 
 class BaseDetailsView(QFrame):

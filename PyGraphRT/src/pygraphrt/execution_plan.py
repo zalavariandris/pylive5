@@ -38,7 +38,7 @@ def prepare(graph: GraphDefinitionRT, targets: Iterable[NodeRef], *, revision: i
     all_targets = list(targets)
     for target in all_targets:
         if target not in graph.nodes():
-            raise ValueError(f"Node {target.get_name()!r} is not in the graph.")
+            raise ValueError(f"Node {target} is not in the graph.")
 
     ordered_nodes = graph.topological_sort(graph.ancestors(*all_targets))
 

@@ -4,7 +4,7 @@ import av
 import numpy as np
 from tqdm import tqdm
 
-from kgb_workflows.utils import FileSequence, transform_colorspace
+from .file_sequence import FileSequence
 
 
 @contextmanager

@@ -11,6 +11,10 @@ from .graph_executor import (
     ExecutionFailure
 )
 
+from .graph_qtthreadpool_executor import (
+    GraphQtThreadPoolExecutorRT
+)
+
 from .graph_cache import (
     MemoryCache,
     HistoryMemoryCache,
@@ -46,6 +50,7 @@ __all__ = [
     "ImportModuleRT",
     "GraphExecutionError",
     "GraphExecutorRT",
+    "GraphQtThreadPoolExecutorRT",
     "ModuleRegistry",
     "GraphInvalidator",
     "GraphSerializer",

@@ -92,7 +92,7 @@ def test_executed_signal():
     def mult(a, b):
         return a*b
 
-    result = E.execute(mult, profile=True)
+    result = E.request(mult, profile=True)
     assert result == 6, "The result of executing the node should be correct"
 
     assert len(spy) == 1, "executed signal should have been emitted once"

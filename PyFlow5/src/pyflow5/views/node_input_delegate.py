@@ -232,6 +232,10 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
         # Route future value transfers to the provider that created the editor.
         for provider in self._providers:
             editor = provider.createEditor(parent, option, index)
+            try:
+                editor.setReadOnly(False)
+            except AttributeError:
+                pass
             if editor is not None:
                 self._editor_providers[editor] = provider
                 editor.destroyed.connect(lambda: self._forget_editor(editor))

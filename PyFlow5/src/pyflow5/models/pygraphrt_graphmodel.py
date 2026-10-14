@@ -40,13 +40,13 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         graph: rt.GraphDefinitionRT, 
         registry: rt.ModuleRegistry,
         invalidator: rt.GraphInvalidator,
-        # executor: rt.GraphExecutorRT
+        executor: rt.GraphExecutorRT|rt.GraphQtThreadPoolExecutorRT
     ):
         super().__init__()
         self._graph: rt.GraphDefinitionRT = graph
         self._registry: rt.ModuleRegistry = registry
         self._invalidator: rt.GraphInvalidator = invalidator
-        # self._executor: rt.GraphExecutorRT = executor
+        self._executor: rt.GraphExecutorRT|rt.GraphQtThreadPoolExecutorRT = executor
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
 
         self._executions: dict[NodeName, rt.NodeExecution] = {}
@@ -66,51 +66,31 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         @self._invalidator.nodes_invalidated.connect
         def on_nodes_invalidated(nodes: list[rt.NodeRef]):
-            for node_ref in nodes:
-                if node_ref.get_name() in self._executions:
-                    del self._executions[node_ref.get_name()]
+            # for node_ref in nodes:
+            #     if node_ref.get_name() in self._executions:
+            #         del self._executions[node_ref.get_name()]
+
+            # self.nodesDataChanged.emit(
+            #     tuple([self.mapFromSource(node_ref) for node_ref in nodes]), 
+            #     tuple([self.ExecutionRole])
+            # ) # list[NodeT], roles: list[int]
+
+            self._executor.request(*[node_ref for node_ref in nodes])
+
+
+        @self._executor.executed.connect
+        def on_executed(executions: dict[rt.NodeRef, rt.NodeExecution]):
+            print("Nodes executed: ", [node_ref.get_name() for node_ref in executions.keys()])
+            changed_nodenames: list[NodeName] = []
+            for node_ref, execution in executions.items():
+                if node_name := self.mapFromSource(node_ref):
+                    self._executions[node_name] = execution
+                    changed_nodenames.append(node_name)
 
             self.nodesDataChanged.emit(
-                tuple([self.mapFromSource(node_ref) for node_ref in nodes]), 
+                tuple(changed_nodenames), 
                 tuple([self.ExecutionRole])
-            ) # list[NodeT], roles: list[int]
-
-            # for node_ref in nodes:
-            try:
-                from pygraphrt import execution_plan
-                plan = execution_plan.prepare(self._graph, targets=[nodes], revision=0)
-                results:dict[str, Any] = execution_plan.execute(plan)
-
-                # find the node_ref result in the plan
-                node_results = {node_ref.get_name(): results.get(node_ref.get_name()) for node_ref in nodes}
-
-                node_executions = {
-                    node_name: ExecutionSuccess(node_ref, node_results[node_name]) 
-                    for node_name, node_ref in zip(node_results.keys(), nodes)
-                }
-                self._executions = node_executions
-                # self._executions[self.mapFromSource(node_ref)] = ExecutionSuccess(node_ref, node_results[i])
-                self.nodesDataChanged.emit(
-                    (self.mapFromSource(node_ref),),
-                    (self.ExecutionRole,)
-                )
-                self._executor.execute(node_ref)
-            except Exception as e:
-                print(f"Failed to execute node {node_ref.get_name()}: {e}")
-
-        # @self._executor.executed.connect
-        # def on_executed(executions: dict[rt.NodeRef, rt.NodeExecution]):
-        #     print("Nodes executed: ", [node_ref.get_name() for node_ref in executions.keys()])
-        #     changed_nodenames: list[NodeName] = []
-        #     for node_ref, execution in executions.items():
-        #         if node_name := self.mapFromSource(node_ref):
-        #             self._executions[node_name] = execution
-        #             changed_nodenames.append(node_name)
-
-        #     self.nodesDataChanged.emit(
-        #         tuple(changed_nodenames), 
-        #         tuple([self.ExecutionRole])
-        #     )
+            )
 
     def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
         if any(isinstance(msg, AddNodeMessage) for msg in self._message_queue):

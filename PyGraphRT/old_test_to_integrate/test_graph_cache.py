@@ -22,10 +22,10 @@ def test_if_cache_is_used(cache):
 
     node = G.node(1, 2)(add_op)
 
-    E.execute(node)
+    E.request(node)
     assert call_count == 1, "first execution should call the function"
 
-    E.execute(node)
+    E.request(node)
     assert call_count == 1, "second execution should use cache, not call the function again"
 
 def test_upstream_input_change_invalidates_doWwnstream_cache(cache):
@@ -42,11 +42,11 @@ def test_upstream_input_change_invalidates_doWwnstream_cache(cache):
     add_node = G.node(1, 2)(add_op)
     mult_node = G.node(add_node, 3)(mult_op)
 
-    result = E.execute(mult_node)
+    result = E.request(mult_node)
     assert result == 9, "should compute (1 + 2) * 3 = 9"
 
     add_node.set_inputs(4, 2)
-    result = E.execute(mult_node)
+    result = E.request(mult_node)
     assert result == 18, "should compute (4 + 2) * 3 = 18 after changing add_node input"
 
 # REVIEW OUTDATED / UPDATE: _update_operator() now takes a Python function,
@@ -61,7 +61,7 @@ def test_operator_function_change_invalidates_cache(cache):
 
     node = G.node(3, 4)(func)
 
-    result = E.execute(node)
+    result = E.request(node)
     assert result == 7, "should compute 3 + 4 = 7"
 
     def func(a: int, b: int) -> int:
@@ -69,7 +69,7 @@ def test_operator_function_change_invalidates_cache(cache):
 
     G._inline_module._update_operator(node.get_operator(), rt.FunctionOperator(func))
 
-    result = E.execute(node)
+    result = E.request(node)
     assert result == 12, "should compute 3 * 4 = 12 after swapping add to multiply"
 
 # REVIEW OUTDATED / UPDATE: pass a function to _update_operator() when migrating;
@@ -96,7 +96,7 @@ def test_upstream_operator_function_change_invalidates_downstream_cache(cache):
 
     G._inline_module._update_operator(add_node.get_operator(), rt.FunctionOperator(subtract))
 
-    result = E.execute(mult_node)
+    result = E.request(mult_node)
     assert result == -2, "should compute (3 - 4) * 2 = -2 after swapping add to subtract"
 
 
@@ -126,7 +126,7 @@ def test_reverting_inputs_respects_cache_history_policy(keyword_dependency, cach
 
     executions = 2 if isinstance(cache, rt.HistoryMemoryCache) else 3
     assert calls == ["source", "times_ten"] * executions
-    assert E.execute(downstream) == 10
+    assert E.request(downstream) == 10
     assert calls == ["source", "times_ten"] * executions
 
 
@@ -146,18 +146,18 @@ def test_cached_dependency_invalidates_other_execution_roots(cache):
     def tripled(value):
         return value * 3
 
-    assert E.execute(doubled) == 2
-    assert E.execute(tripled) == 3
+    assert E.request(doubled) == 2
+    assert E.request(tripled) == 3
 
     source.set_inputs(2)
-    assert E.execute(source) == 2
-    assert E.execute(doubled) == 4
-    assert E.execute(tripled) == 6
+    assert E.request(source) == 2
+    assert E.request(doubled) == 4
+    assert E.request(tripled) == 6
 
     source.set_inputs(1)
-    assert E.execute(source) == 1
-    assert E.execute(tripled) == 3
-    assert E.execute(doubled) == 2
+    assert E.request(source) == 1
+    assert E.request(tripled) == 3
+    assert E.request(doubled) == 2
 
 
 # REVIEW UNNECESSARY / DEFER: exact recomputation counts after partial eviction
@@ -179,8 +179,8 @@ def test_eviction_does_not_change_computation_fingerprints(cache_action, cache):
         calls.append("doubled")
         return value * 2
 
-    assert E.execute(doubled) == 6
-    assert E.execute(doubled) == 6
+    assert E.request(doubled) == 6
+    assert E.request(doubled) == 6
     assert calls == ["source", "doubled"]
 
     if cache_action == "clear":
@@ -188,7 +188,7 @@ def test_eviction_does_not_change_computation_fingerprints(cache_action, cache):
     else:
         E._cache.remove(source)
 
-    assert E.execute(doubled) == 6
+    assert E.request(doubled) == 6
     expected = ["source", "doubled"] * 2 if cache_action == "clear" else ["source", "doubled", "source"]
     assert calls == expected
 
@@ -208,8 +208,8 @@ def test_none_results_are_cached(cache):
         calls.append("is_none")
         return value is None
 
-    assert E.execute(is_none) is True
-    assert E.execute(is_none) is True
+    assert E.request(is_none) is True
+    assert E.request(is_none) is True
     assert calls == ["source", "is_none"]
 
 
@@ -227,7 +227,7 @@ def test_equal_literal_values_with_different_types_invalidate_cache(keyword_inpu
             input_type.set_inputs(value=value)
         else:
             input_type.set_inputs(value)
-        assert E.execute(input_type) is type(value)
+        assert E.request(input_type) is type(value)
 
 def test_removing_node_releases_its_cached_result(cache):
     G = rt.GraphDefinitionRT()
@@ -240,7 +240,7 @@ def test_removing_node_releases_its_cached_result(cache):
     def source():
         return Result()
 
-    result_ref = weakref.ref(E.execute(source))
+    result_ref = weakref.ref(E.request(source))
     assert result_ref() is not None
 
     G._delete_node(source)
@@ -277,8 +277,8 @@ def test_shared_dependencies_do_not_repeat_fingerprinting(cache):
     for _ in range(node_count - 1):
         root = G.node(root, root)(add_op)
 
-    assert E.execute(root) == 2 ** node_count
-    assert E.execute(root) == 2 ** node_count
+    assert E.request(root) == 2 ** node_count
+    assert E.request(root) == 2 ** node_count
     assert len(calls) == node_count
 
 
@@ -298,9 +298,9 @@ def test_failed_execution_is_retried_and_only_success_is_cached(cache):
         return 42
 
     with pytest.raises(RuntimeError, match="First attempt failed"):
-        E.execute(flaky)
-    assert E.execute(flaky) == 42
-    assert E.execute(flaky) == 42
+        E.request(flaky)
+    assert E.request(flaky) == 42
+    assert E.request(flaky) == 42
     assert call_count == 2
 
 
@@ -329,14 +329,14 @@ def test_rewiring_to_equivalent_node_recomputes_downstream(keyword_dependency, c
     # Keep the calling convention the same when changing the connection.
     if not keyword_dependency:
         doubled.set_inputs(first)
-    assert E.execute(doubled) == 6
+    assert E.request(doubled) == 6
     if keyword_dependency:
         doubled.set_inputs(value=second)
     else:
         doubled.set_inputs(second)
-    assert E.execute(doubled) == 6
+    assert E.request(doubled) == 6
     assert calls == ["source", "doubled", "source", "doubled"]
-    assert E.execute(doubled) == 6
+    assert E.request(doubled) == 6
     assert calls == ["source", "doubled", "source", "doubled"]
 
 
@@ -352,11 +352,11 @@ def test_changes_to_unrelated_branch_do_not_invalidate_cached_root(cache):
 
     first =  G.node(1)(source, name="first")
     second = G.node(2)(source, name="second")
-    assert E.execute(first) == 1
-    assert E.execute(second) == 2
+    assert E.request(first) == 1
+    assert E.request(second) == 2
     second.set_inputs(3)
-    assert E.execute(second) == 3
-    assert E.execute(first) == 1
+    assert E.request(second) == 3
+    assert E.request(first) == 1
     assert calls == [1, 2, 3]
 
 
@@ -379,17 +379,17 @@ def test_equivalent_nodes_have_separate_results_and_independent_eviction(cache):
 
     first =  G.node()(source, name="first")
     second = G.node()(source, name="second")
-    first_result =  weakref.ref(E.execute(first))
-    second_result = weakref.ref(E.execute(second))
+    first_result =  weakref.ref(E.request(first))
+    second_result = weakref.ref(E.request(second))
     assert first_result() is not second_result()
-    assert E.execute(first) is first_result()
-    assert E.execute(second) is second_result()
+    assert E.request(first) is first_result()
+    assert E.request(second) is second_result()
     assert calls == ["source", "source"]
 
     G._delete_node(first)
     gc.collect()
     assert first_result() is None
-    assert E.execute(second) is second_result()
+    assert E.request(second) is second_result()
     assert calls == ["source", "source"]
     G._delete_node(second)
     gc.collect()
@@ -415,11 +415,11 @@ def test_operator_replacement_respects_cache_history_policy(cache):
     node = G.node(1)(original)
     original_data = rt.FunctionOperator(original)
     G._inline_module._update_operator(node.get_operator(), original_data)
-    assert E.execute(node) == 2
+    assert E.request(node) == 2
     G._inline_module._update_operator(node.get_operator(), rt.FunctionOperator(replacement))
-    assert E.execute(node) == 3
+    assert E.request(node) == 3
     G._inline_module._update_operator(node.get_operator(), original_data)
-    assert E.execute(node) == 2
+    assert E.request(node) == 2
     expected = ["original", "replacement"]
     if isinstance(cache, rt.MemoryCache):
         expected.append("original")
@@ -434,15 +434,15 @@ def test_argument_positions_names_and_keyword_order_are_significant(cache):
     def arguments(*args, **kwargs):
         return args, tuple(kwargs.items())
 
-    assert E.execute(arguments) == ((1, 2), ())
+    assert E.request(arguments) == ((1, 2), ())
     arguments.set_inputs(2, 1)
-    assert E.execute(arguments) == ((2, 1), ())
+    assert E.request(arguments) == ((2, 1), ())
     arguments.set_inputs(a=1, b=2)
-    assert E.execute(arguments) == ((), (("a", 1), ("b", 2)))
+    assert E.request(arguments) == ((), (("a", 1), ("b", 2)))
     arguments.set_inputs(b=2, a=1)
-    assert E.execute(arguments) == ((), (("b", 2), ("a", 1)))
+    assert E.request(arguments) == ((), (("b", 2), ("a", 1)))
     arguments.set_inputs(c=2, a=1)
-    assert E.execute(arguments) == ((), (("c", 2), ("a", 1)))
+    assert E.request(arguments) == ((), (("c", 2), ("a", 1)))
 
 
 # REVIEW UNNECESSARY / DEFER: requiring a hit for equal, separately allocated
@@ -462,9 +462,9 @@ def test_equal_container_literals_reuse_same_node_result(first, second, cache):
         calls.append("identity")
         return value
 
-    E.execute(identity)
+    E.request(identity)
     identity.set_inputs(second)
-    assert E.execute(identity) == second
+    assert E.request(identity) == second
     assert calls == ["identity"]
 
 
@@ -485,9 +485,9 @@ def test_observable_literal_differences_get_distinct_keys(first, second, cache):
         calls.append("describe")
         return repr(value)
 
-    assert E.execute(describe) == repr(first)
+    assert E.request(describe) == repr(first)
     describe.set_inputs(second)
-    assert E.execute(describe) == repr(second)
+    assert E.request(describe) == repr(second)
     assert calls == ["describe", "describe"]
 
 
@@ -507,11 +507,11 @@ def test_custom_literal_objects_use_identity_without_requiring_hashability(cache
     def identity(value):
         return value
 
-    assert E.execute(identity) is first
+    assert E.request(identity) is first
     identity.set_inputs(second)
-    assert E.execute(identity) is second
+    assert E.request(identity) is second
     identity.set_inputs(first)
-    assert E.execute(identity) is first
+    assert E.request(identity) is first
 
 
 # REVIEW SIMPLIFY: verify DummyCache explicitly; requiring it to remain the
@@ -526,8 +526,8 @@ def test_default_dummy_cache_still_executes_every_time():
         calls.append("source")
         return 1
 
-    assert E.execute(source) == 1
-    assert E.execute(source) == 1
+    assert E.request(source) == 1
+    assert E.request(source) == 1
     assert calls == ["source", "source"]
 
 
@@ -545,8 +545,8 @@ def test_large_integer_literals_do_not_require_decimal_conversion(value, cache):
         calls.append("identity")
         return value
 
-    assert E.execute(identity) == value
-    assert E.execute(identity) == value
+    assert E.request(identity) == value
+    assert E.request(identity) == value
     assert calls == ["identity"]
 
 
@@ -565,9 +565,9 @@ def test_custom_operator_behavior_contributes_to_identity(cache):
             return super().__call__(value) * 2
 
     node = G.node(3)(original)
-    assert E.execute(node) == 3
+    assert E.request(node) == 3
     G._inline_module._update_operator(node.get_operator(), DoubledOperator(original))
-    assert E.execute(node) == 6
+    assert E.request(node) == 6
 
 
 # REVIEW OUTDATED / REMOVE: both node()(source) calls now return equal node
@@ -588,12 +588,12 @@ def test_equivalent_nodes_do_not_share_results_in_one_execution(cache):
     def pair(left, right):
         return left, right
 
-    left, right = E.execute(pair)
+    left, right = E.request(pair)
     assert left is not right
     left.append("first only")
     assert right == []
-    assert E.execute(first) is left
-    assert E.execute(second) is right
+    assert E.request(first) is left
+    assert E.request(second) is right
 
 
 @pytest.mark.parametrize("eviction", ["remove", "clear"])
@@ -643,9 +643,9 @@ def test_cache_policy_controls_retention_of_previous_results(cache):
     def source(value):
         return Result()
 
-    first = weakref.ref(E.execute(source))
+    first = weakref.ref(E.request(source))
     source.set_inputs(2)
-    latest = weakref.ref(E.execute(source))
+    latest = weakref.ref(E.request(source))
     gc.collect()
     assert (first() is not None) is isinstance(cache, rt.HistoryMemoryCache)
     assert latest() is not None
@@ -670,9 +670,9 @@ def test_cache_collisions_with_minus_1(cache):
         return value
 
     node = G.node()(source)
-    assert E.execute(node) == -1
+    assert E.request(node) == -1
     source.set_inputs(-2)
-    assert E.execute(node) == -2
+    assert E.request(node) == -2
 
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"]) 

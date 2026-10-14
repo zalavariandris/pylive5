@@ -1,9 +1,12 @@
 # TODO
+- [ ] cleanup myqtx file structure and class names.
 
-
+- [ ] Consider using AnyIO for async tasks, like
+      graph execution. it support cancelling jobs.
+      
 - [ ] Form view does not update when data changes.
       added a todo in the on_datachanged hook.
-- [ ] Rename embedded modules!
+- [ ] Rename the ScriptModule to embedded modules!
 - [ ] find a better name for graph modules, o distinguishe from standard pythno modules
 - [ ] ImportModule should support importing from a file without specifying a name
 - [ ] factor out the session and probably settings from the current Window.

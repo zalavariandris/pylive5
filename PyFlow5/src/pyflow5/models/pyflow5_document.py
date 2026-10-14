@@ -31,7 +31,7 @@ class PyFlowDocument(QObject):
         self._module_registry = registry or rt.ModuleRegistry()
         self._graph_rt = graph or rt.GraphDefinitionRT()
 
-        # self._executor = rt.GraphExecutorRT(self._graph_rt)
+        self._executor = rt.GraphQtThreadPoolExecutorRT(self._graph_rt)
         self._invalidator = rt.GraphInvalidator(self._graph_rt, self._module_registry)
 
         # Models
@@ -40,7 +40,7 @@ class PyFlowDocument(QObject):
             self._graph_rt, 
             self._module_registry, 
             self._invalidator,
-            # self._executor
+            self._executor
         )
         self.graphselection_model = GraphSelectionModel(self.graph_model)
 
@@ -60,9 +60,9 @@ class PyFlowDocument(QObject):
         self.nodes_list_selection_adapter = NodesListSelectionModelAdapter(self.nodes_list_adapter)
         self.nodes_list_selection_adapter.setSourceSelection(self.graphselection_model)
         
-        # # Initial execution
-        # for node_ref in self._graph_rt.nodes():
-        #     self._executor.execute(node_ref)
+        # Initial execution
+        self._executor.request(*[node_ref for node_ref in self._graph_rt.nodes()])
+
 
     def getNodeOperator(self, node_name: NodeName) -> QModelIndex:
         node_ref = self.graph_model.mapToSource(node_name)

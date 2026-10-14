@@ -8,10 +8,12 @@ class ImageCanvas(QGraphicsView):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.scene_ = QGraphicsScene(self)
-        self.setScene(self.scene_)
+        self._scene = QGraphicsScene(self)
+        # infinite
+        self._scene.setSceneRect(-1e6, -1e6, 2e6, 2e6)  # infinite
+        self.setScene(self._scene)
         self.item = QGraphicsPixmapItem()
-        self.scene_.addItem(self.item)
+        self._scene.addItem(self.item)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -20,7 +22,6 @@ class ImageCanvas(QGraphicsView):
     def set_image(self, image: QImage) -> None:
         first_image = self.item.pixmap().isNull()
         self.item.setPixmap(QPixmap.fromImage(image))
-        self.scene_.setSceneRect(self.item.boundingRect())
         if first_image:
             self.fit_image()
 
@@ -46,7 +47,7 @@ class ImageCanvas(QGraphicsView):
 
     def clear(self) -> None:
         self.item.setPixmap(QPixmap())
-        self.scene_.setSceneRect(self.item.boundingRect())
+        self._scene.setSceneRect(self.item.boundingRect())
         self.resetTransform()
         self._fit_pending = False
 

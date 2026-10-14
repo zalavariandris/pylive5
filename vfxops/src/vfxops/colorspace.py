@@ -3,7 +3,7 @@ from os import PathLike, fspath
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import PyOpenColorIO as ocio
-from .vfxops import ImageRGBA, validate_image_data
+from .core import ImageRGBA, validate_image_data
 
 def transform_colorspace(
         image_data: ImageRGBA, 

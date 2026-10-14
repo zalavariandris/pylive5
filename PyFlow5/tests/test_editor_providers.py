@@ -7,7 +7,7 @@ from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QDoubleSpinBox, QLineEdit, QSpinBox, QStyleOptionViewItem
 
 from myqtx import EditorContext, EditorRegistry
-from myqtx.color_editor_widget import ColorEdit
+from myqtx.widgets.color_editor_widget import ColorEdit
 from pyflow5.editors import NumericTupleEdit, numeric_tuple_editor
 from pyflow5.views.formview import FormView
 from pyflow5.core.nodert_input_roles import NodeRTInputRole

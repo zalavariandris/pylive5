@@ -39,4 +39,5 @@ class GraphInvalidator(QObject):
                 descendants = self._graph.descendants(node)
                 invalidate_nodes.extend(descendants)
 
-        self.nodes_invalidated.emit(invalidate_nodes)
+        if invalidate_nodes:
+            self.nodes_invalidated.emit(invalidate_nodes)

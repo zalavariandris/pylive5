@@ -14,7 +14,7 @@ def test_executing_node_without_an_operator():
     node = G._create_node()
 
 
-    execution:NodeExecution = E.execute(node)
+    execution:NodeExecution = E.request(node)
     assert isinstance(execution, ExecutionFailure)
 
 def test_executing_node_with_a_valid_operator():

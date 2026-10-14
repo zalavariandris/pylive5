@@ -74,7 +74,7 @@ def test_strictly_the_hello_world_graph_serialization() -> None:
     loaded_data = loaded_graph.todict()
     import json
     assert loaded_data == data, f"Loaded data does not match original data: {json.dumps(loaded_data, indent=2)} != {json.dumps(data, indent=2)}"
-    assert GraphExecutorRT(loaded_graph).execute(loaded_graph.nodes()[-1]) == GraphExecutorRT(G).execute(hello_world) == "Hey Masa!"
+    assert GraphExecutorRT(loaded_graph).request(loaded_graph.nodes()[-1]) == GraphExecutorRT(G).request(hello_world) == "Hey Masa!"
 
 
 # REVIEW OUTDATED SETUP / SIMPLIFY: ImportModuleRT currently accepts str/None,
@@ -143,7 +143,7 @@ def test_strictly_the_hello_world_graph_serialization_with_imports(tmp_path: Pat
     assert loaded.local().get_source() == ""
     assert all(node.get_operator().module is loaded.imports()[0] for node in loaded.nodes())
     loaded_nodes = {node.get_name(): node for node in loaded.nodes()}
-    assert GraphExecutorRT(loaded).execute(loaded_nodes["hello_world"]) == GraphExecutorRT(graph).execute(hello_world) == "Hey Masa!"
+    assert GraphExecutorRT(loaded).request(loaded_nodes["hello_world"]) == GraphExecutorRT(graph).request(hello_world) == "Hey Masa!"
 
 
 @pytest.mark.parametrize("explicit", [False, True])
@@ -186,7 +186,7 @@ def test_runtime_round_trip_preserves_values_and_forward_references(graph):
     assert [type(value) for value in args[1:]] == [str, int, str, bool, type(None), float]
     assert kwargs["nested"] == {"type": "node", "name": "source", (1, 2): [3, (4, 5)]}
     assert kwargs["path"] == Path("images/test.png")
-    assert GraphExecutorRT(loaded).execute(nodes["target"]) == GraphExecutorRT(graph).execute(graph.nodes()[1])
+    assert GraphExecutorRT(loaded).request(nodes["target"]) == GraphExecutorRT(graph).request(graph.nodes()[1])
     assert loaded.todict() == data
 
 
@@ -219,7 +219,7 @@ def test_imports_and_local_disambiguate_operator_names(tmp_path):
     assert records["source"]["operator"] == {"module": str(path), "name": "op"}
     assert records["target"]["operator"] == "op"
     loaded = GraphDefinitionRT.fromdict(graph.todict())
-    assert GraphExecutorRT(loaded).execute(loaded.nodes()[1]) == 84
+    assert GraphExecutorRT(loaded).request(loaded.nodes()[1]) == 84
     assert loaded.nodes()[0].get_operator().module is loaded.imports()[0]
     assert loaded.nodes()[1].get_operator().module is loaded.local()
 
@@ -247,7 +247,7 @@ def test_same_basename_imports_round_trip(tmp_path: Path, explicit: bool) -> Non
         }
     loaded = GraphDefinitionRT.fromdict(json.loads(json.dumps(data)))
     assert loaded.todict(explicit=explicit) == data
-    assert [GraphExecutorRT(loaded).execute(node) for node in loaded.nodes()] == [0, 1]
+    assert [GraphExecutorRT(loaded).request(node) for node in loaded.nodes()] == [0, 1]
 
 
 @pytest.mark.parametrize("imports", [
@@ -328,7 +328,7 @@ def test_invalid_source_and_missing_operator_stay_editable():
     loaded = GraphDefinitionRT.fromdict(graph.todict())
     assert loaded.local().get_source() == "def op(:"
     loaded.local().set_script("def op(): return 7")
-    assert GraphExecutorRT(loaded).execute(loaded.nodes()[0]) == 7
+    assert GraphExecutorRT(loaded).request(loaded.nodes()[0]) == 7
 
 
 def test_opaque_values_and_inline_functions_fail_explicitly(graph):

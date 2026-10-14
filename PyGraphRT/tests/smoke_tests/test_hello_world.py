@@ -41,19 +41,19 @@ def test_smoke_hello_world(subtests, tmp_path)->None:
     # - Add empty 'hello' node with the op
     hello_op = im.get_operator_by_name("hello")
     hello_node = graph._create_node(hello_op)
-    assert executor.execute(hello_node).result == 'Hello!', "The 'hello' node should execute successfully."
+    assert executor.request(hello_node).result == 'Hello!', "The 'hello' node should execute successfully."
 
     # with subtests.test("Break the 'hello' operator"):
     im.set_script("def hello( ")
     assert 'hello' not in [op.get_name() for op in im.operators()], "The broken 'hello' operator should not exist yet."
-    assert isinstance(executor.execute(hello_node), ExecutionFailure)
+    assert isinstance(executor.request(hello_node), ExecutionFailure)
     assert hello_node in nodes_invalidated_tracker[-1], "The 'hello' node should be tracked as invalidated after the operator is broken."
 
     # with subtests.test("fix the hello op"):
     im.set_script("def hello(): return 'Hello!'") 
     assert 'hello' in [op.get_name() for op in im.operators()], "The 'hello' operator should exist after being fixed."
     assert hello_node in nodes_invalidated_tracker[-1], "The 'hello' node should be tracked as invalidated after the operator is fixed."
-    assert executor.execute(hello_node).result == 'Hello!', "The 'hello' node should execute successfully after the operator is fixed."
+    assert executor.request(hello_node).result == 'Hello!', "The 'hello' node should execute successfully after the operator is fixed."
 
     # with subtests.test("add the_name, and the_greeting operators"):
     im.set_script(dedent("""\
@@ -85,21 +85,21 @@ def test_smoke_hello_world(subtests, tmp_path)->None:
     """))
 
     assert hello_node in nodes_invalidated_tracker[-1], "The 'hello' node should be tracked as invalidated after the operator is updated."
-    assert isinstance(executor.execute(hello_node), ExecutionFailure)
+    assert isinstance(executor.request(hello_node), ExecutionFailure)
 
     # with subtests.test("connect the_name node to hello name input"):
     graph._update_node(hello_node, hello_op, kwargs={"name": the_name_node})
 
     # Execute the hello node after connecting the_name
     assert hello_node in nodes_invalidated_tracker[-1], "The 'hello' node should be tracked as invalidated after the operator is updated."
-    assert executor.execute(hello_node).result == 'Hello Mása!', "The 'hello' node should execute successfully with the_name connected."
+    assert executor.request(hello_node).result == 'Hello Mása!', "The 'hello' node should execute successfully with the_name connected."
 
     # with subtests.test("connect the_greeting node to hello greeting input"):
     graph._update_node(hello_node, hello_op, kwargs={"name": the_name_node, "greeting": the_greeting_node})
     
     # Execute the hello node after connecting the_greeting
     assert hello_node in nodes_invalidated_tracker[-1], "The 'hello' node should be tracked as invalidated after the operator is updated."
-    assert executor.execute(hello_node).result == 'Hey Mása!', "The 'hello' node should execute successfully with both the_name and the_greeting connected."
+    assert executor.request(hello_node).result == 'Hey Mása!', "The 'hello' node should execute successfully with both the_name and the_greeting connected."
 
     # with subtests.test("add another module from file"):
     # create the file in pytest temporary directory
@@ -213,7 +213,7 @@ def test_smoke_with_module_from_file_using_numpy( tmp_path)->None:
     constant_op = imagi.get_operator_by_name("constant")
     constant_node = graph._create_node(constant_op, [512, 512])
 
-    execution = executor.execute(constant_node)
+    execution = executor.request(constant_node)
     assert isinstance(execution, ExecutionSuccess)
     # assert isinstance(execution.result, ImageRGBA), "Execution result is not an ImageRGBA, got {}".format(type(execution.result))
     assert execution.result.data.shape == (512, 512, 4)
@@ -227,7 +227,7 @@ def test_smoke_with_module_from_file_using_numpy( tmp_path)->None:
     assert constant_node in tracker[-1], "Constant node was not tracked as invalidated"
     assert np.allclose(execution.result.data[0, 0], [0.5, 0.5, 0.5, 1.0]), "No change occured before execution"
 
-    execution = executor.execute(constant_node)
+    execution = executor.request(constant_node)
     assert isinstance(execution, ExecutionSuccess)
     assert np.allclose(execution.result.data[0, 0], [0.7, 0.7, 0.7, 1.0]), "Constant color did not update after execution"
 
@@ -258,7 +258,7 @@ def test_graph_using_functions_direclty()->None:
     def hello_world(name:str, greeting:str="Hello"):
         return f"{greeting}, {name}!"
 
-    execution = executor.execute(hello_world)
+    execution = executor.request(hello_world)
     assert isinstance(execution, ExecutionSuccess)
     assert execution.result == "Hey, Mása!"
 
@@ -269,7 +269,7 @@ def test_graph_using_functions_direclty()->None:
     
     graph._update_node(the_greeting, FunctionOperator(the_new_greeting))
     assert the_greeting in tracker[-1], "Greeting node was not tracked as invalidated"
-    execution = executor.execute(hello_world)
+    execution = executor.request(hello_world)
     assert isinstance(execution, ExecutionSuccess)
     assert execution.result == "What's up, Mása!"
 

@@ -57,7 +57,7 @@ class Test_NodeDecorator_Rebind_Behaviour():
             return value + extra
 
         saved_ref = result
-        assert E.execute(saved_ref) == 4
+        assert E.request(saved_ref) == 4
 
         @graph.node()
         def result() -> int:
@@ -67,7 +67,7 @@ class Test_NodeDecorator_Rebind_Behaviour():
         assert saved_ref.get_inputs() == ((), {})
         assert graph.ancestors(saved_ref) == {saved_ref}
         assert set(graph.nodes()) == {source, saved_ref}
-        assert E.execute(saved_ref) == 42
+        assert E.request(saved_ref) == 42
 
 
     def test_existing_dependents_follow_a_redefined_node(self, graph: rt.GraphDefinitionRT) -> None:
@@ -81,7 +81,7 @@ class Test_NodeDecorator_Rebind_Behaviour():
             return left + right
 
         previous_inputs = result.get_inputs()
-        assert E.execute(result) == 4
+        assert E.request(result) == 4
 
         @graph.node()
         def source() -> int:
@@ -90,7 +90,7 @@ class Test_NodeDecorator_Rebind_Behaviour():
         assert result.get_inputs() == previous_inputs
         assert graph.ancestors(result) == {source, result}
         assert set(graph.nodes()) == {source, result}
-        assert E.execute(result) == 10
+        assert E.request(result) == 10
 
     def test_operator_ref_node_rebinds_by_name(self, graph: rt.GraphDefinitionRT) -> None:
         E = rt.GraphExecutorRT(graph)
@@ -99,7 +99,7 @@ class Test_NodeDecorator_Rebind_Behaviour():
             return value * 2
 
         first_node = graph.node(value=3)(double)
-        assert E.execute(first_node) == 6
+        assert E.request(first_node) == 6
 
         second_node = graph.node(value=10)(double)
 
@@ -109,8 +109,8 @@ class Test_NodeDecorator_Rebind_Behaviour():
         assert graph.operators() == [double]
         assert first_node.get_operator() == double
         assert first_node.get_inputs() == ((), {"value": 10})
-        assert E.execute(first_node) == 20
-        assert E.execute(second_node) == 20
+        assert E.request(first_node) == 20
+        assert E.request(second_node) == 20
 
 
 class Test_NodeDecorator_Creates_Behaviour():

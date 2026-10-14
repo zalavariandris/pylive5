@@ -13,7 +13,7 @@ from pytestqt.qtbot import QtBot
 from myqtx.cmdstage import HTML, Image, ImageCompare, Markdown, Stage
 from myqtx.cmdstage.transport import decode_payload, encode_payload
 from myqtx.cmdstage.viewer import ViewerServer
-from myqtx.displayviews import ImageCompareView
+from myqtx.displaywidgets import ImageCompareView
 from myqtx.cmdstage_old.stage import SharedImageViewer
 
 

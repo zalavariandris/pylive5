@@ -78,6 +78,8 @@ NodeExecution = (
 #     nodes: dict[NodeRef, NodeExecution]
 
 
+from . import execution_plan
+
 class GraphExecutorRT(QObject):
     executed = Signal(dict) # dict[NodeRef, NodeExecution]
     
@@ -87,24 +89,26 @@ class GraphExecutorRT(QObject):
         self._profiler = Profiler()
         self._cache = cache if cache is not None else DummyCache()
         
-    def execute(self, root:NodeRef, profile: bool = True)->NodeExecution:
-        print(f"Executing node: {root}")
+    def request(self, *roots:NodeRef)->None:
+        profile = True
+        print(f"Executing nodes: {roots}")
         """Evaluate pure operators with immutable inputs and operator data.
 
         Upstream signatures are reduced to Python hashes, so dependency hash
         collisions are possible. Cache lookups compare full local signatures.
         """
-        assert isinstance(root, NodeRef), f"root must be an instance of NodeRef, got: {root}"
-        if root is None:
-            raise ValueError("No output node specified.")
+        assert all(isinstance(root, NodeRef) for root in roots), f"all roots must be instances of NodeRef, got: {roots}"
+        if not roots:
+            return
 
-        if root not in self._graph._nodes:
-            raise ValueError(f"Node {root} does not exist in the engine.")
+        for root in roots:
+            if root not in self._graph._nodes:
+                raise ValueError(f"Node {root} does not exist in the engine.")
         
         if profile:
             self._profiler.clear()
 
-        ancestors = self._graph.ancestors(root)
+        ancestors = self._graph.ancestors(*roots)
         sorted_ancestors = self._graph.topological_sort(ancestors)
 
         # execute nodes
@@ -166,5 +170,3 @@ class GraphExecutorRT(QObject):
         executions.update(blocked)
 
         self.executed.emit(executions)
-        return executions[root]
-

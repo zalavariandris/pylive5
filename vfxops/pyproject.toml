@@ -15,6 +15,7 @@ dependencies = [
     "opencv-python",
     "numba",
     "opencolorio>=2.6.0",
+    "av>=19.0.1",
 ]
 
 [tool.setuptools.packages.find]

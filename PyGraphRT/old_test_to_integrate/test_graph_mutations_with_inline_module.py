@@ -13,11 +13,11 @@ def test_set_node_inputs_to_raw_values():
     def n1(a:int, b:int) -> int:
         return a + b
 
-    result = E.execute(n1)
+    result = E.request(n1)
     assert result == 5, "Node should compute 2 + 3 = 5"
 
     n1.set_inputs(5, 3)
-    result = E.execute(n1)
+    result = E.request(n1)
     assert result == 8, "Node should compute 5 + 3 = 8 after changing input a to 5"
 
 def test_set_node_inputs_to_nodes():
@@ -34,7 +34,7 @@ def test_set_node_inputs_to_nodes():
 
     n1.set_inputs(a=two, b=5) # linking node two to input a of n1
 
-    result = E.execute(n1)
+    result = E.request(n1)
     assert result == 10, "Node should compute 2 * 5 = 10"
 
 # REVIEW OUTDATED / UPDATE: execute() wraps the missing-argument TypeError in
@@ -55,14 +55,14 @@ def test_remove_node_from_graph():
     def mult(a:int, b:int) -> int:
         return a * b
 
-    result = E.execute(mult)
+    result = E.request(mult)
     assert result == 9, "Node should compute (1 + 2) * 3 = 9"
 
     # now remove the node
     G._delete_node(add)
     assert mult.get_inputs() == ((), {"b": 3})
     with pytest.raises(TypeError):
-        result = E.execute(mult)
+        result = E.request(mult)
 
 def test_removing_nodes_cleanup_dependent_inputs():
     G = rt.GraphDefinitionRT()
@@ -83,7 +83,7 @@ def test_removing_nodes_cleanup_dependent_inputs():
     G._delete_node(source)
 
     assert collect.get_inputs() == ((10, other), {"kept": other, "literal": 4})
-    assert E.execute(collect) == ((10, 3), {"kept": 3, "literal": 4})
+    assert E.request(collect) == ((10, 3), {"kept": 3, "literal": 4})
 
 
 # REVIEW SIMPLIFY: keep removal, dependent notifications, and fresh results
@@ -109,7 +109,7 @@ def test_removing_node_updates_dependents_and_their_cached_results(cache_type):
     def downstream(a, b):
         return a + b
 
-    assert E.execute(downstream) == 4
+    assert E.request(downstream) == 4
     changes = []
     removals = []
     G.nodes_changed.connect(changes.extend)
@@ -123,7 +123,7 @@ def test_removing_node_updates_dependents_and_their_cached_results(cache_type):
     assert changes == [first, second]
     assert removals == [source]
     assert source not in G.nodes()
-    assert E.execute(downstream) == 16
+    assert E.request(downstream) == 16
 
 
 def test_remove_operator_from_graph_throws_missing_operator_error():
@@ -144,13 +144,13 @@ def test_remove_operator_from_graph_throws_missing_operator_error():
     def mult(a:int, b:int) -> int:
         return a * b
 
-    result = E.execute(mult)
+    result = E.request(mult)
     assert result == 9, "Node should compute (1 + 2) * 3 = 9"
 
     # now remove the node
     G._inline_module.delete_operator(add_op)
     with pytest.raises(GraphExecutionError):
-        result = E.execute(mult)
+        result = E.request(mult)
 
 # REVIEW OUTDATED / REMOVE: GraphRT has no output property contract; this adds
 # an unused attribute. execute(add) selects the root explicitly and the result
@@ -168,7 +168,7 @@ def test_setting_output():
         return a + b
 
     G.output = add
-    result = E.execute(add)
+    result = E.request(add)
     assert result == 5, "Node should compute 2 + 3 = 5"
 
 class TestUpdatingNodesOperator:
@@ -180,7 +180,7 @@ class TestUpdatingNodesOperator:
         def the_node(a:int, b:int) -> int:
             return a + b
 
-        result = E.execute(the_node)
+        result = E.request(the_node)
         assert result == 3, "Node should compute 1 + 2 = 3"
 
         # now update the body of the add operator
@@ -189,7 +189,7 @@ class TestUpdatingNodesOperator:
 
         G._inline_module._update_operator(the_node.get_operator(), add)
 
-        result = E.execute(the_node)
+        result = E.request(the_node)
         assert result == 4, "Node should compute 1 + 2 + 1 = 4 after updating operator body"
 
     # REVIEW OUTDATED / UPDATE: operator argument errors are wrapped in
@@ -202,7 +202,7 @@ class TestUpdatingNodesOperator:
         def the_node(a:int, b:int) -> int:
             return a + b
 
-        result = E.execute(the_node)
+        result = E.request(the_node)
         assert result == 3, "Node should compute 1 + 2 = 3"
 
         # now change the function of the add operator to a function with a different signature
@@ -212,7 +212,7 @@ class TestUpdatingNodesOperator:
         G._inline_module._update_operator(the_node.get_operator(), add_three)
 
         with pytest.raises(TypeError):
-            result = E.execute(the_node)
+            result = E.request(the_node)
 
     def test_set_operator_function_with_same_signature(self):
         G = rt.GraphDefinitionRT()
@@ -229,7 +229,7 @@ class TestUpdatingNodesOperator:
         add_node = G.node(1, 2)(add_op)
         mult_node = G.node(add_node, 3)(mult_op)
 
-        result = E.execute(mult_node)
+        result = E.request(mult_node)
         assert result == 9, "Node should compute (1 + 2) * 3 = 9"
 
         # now change the function of the add operator to multiply
