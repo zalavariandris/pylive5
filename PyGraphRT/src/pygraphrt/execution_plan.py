@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Callable
 from copy import deepcopy
@@ -26,18 +27,20 @@ class ExecutionPlan:
     """Captured nodes required to evaluate the requested outputs. In order."""
 
     revision: int
-    target: str
+    targets: tuple[str, ...]
     nodes: tuple[NodeSnapshot, ...]                      
 
-def prepare(graph: GraphDefinitionRT, target: NodeRef, *, revision: int) -> ExecutionPlan:
+def prepare(graph: GraphDefinitionRT, targets: Iterable[NodeRef], *, revision: int) -> ExecutionPlan:
     """
     return an execution plan for the specified target node.
     """
     # validate targets
-    if target not in graph.nodes():
-        raise ValueError(f"Node {target.get_name()!r} is not in the graph.")
+    all_targets = list(targets)
+    for target in all_targets:
+        if target not in graph.nodes():
+            raise ValueError(f"Node {target.get_name()!r} is not in the graph.")
 
-    ordered_nodes = graph.topological_sort(graph.ancestors(target))
+    ordered_nodes = graph.topological_sort(graph.ancestors(*all_targets))
 
     # Preserve shared inputs within this snapshot while copying them.
     memo: dict[int, Any] = {}
@@ -75,11 +78,14 @@ def prepare(graph: GraphDefinitionRT, target: NodeRef, *, revision: int) -> Exec
 
     return ExecutionPlan(
         revision=revision,
-        target=target.get_name(),
+        targets=tuple(t.get_name() for t in all_targets),
         nodes=tuple(snapshots),
     )
 
-def execute(plan: ExecutionPlan) -> Any:
+def execute(plan: ExecutionPlan) -> dict[str, Any]:
+    """Execute the given execution plan
+      returns a dictionary of node outputs.
+    """
     outputs: dict[str, Any] = {}
 
     def resolve_input(value: Any) -> Any:
@@ -106,4 +112,4 @@ def execute(plan: ExecutionPlan) -> Any:
                 f"Execution failed at node {node.name!r}."
             ) from error
 
-    return outputs[plan.target]
+    return outputs

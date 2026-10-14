@@ -22,6 +22,8 @@ from .abstract_module_rt import (
     AbstractOperator
 )
 
+from . import execution_plan
+
 from .function_operator import FunctionOperator
 from .script_module import ScriptModuleRT, ScriptOperatorRef
 from .import_module import ImportModuleRT
@@ -48,5 +50,6 @@ __all__ = [
     "GraphInvalidator",
     "GraphSerializer",
     "GraphDeserializer",
-    "ParameterData"
+    "ParameterData",
+    "execution_plan"
 ]

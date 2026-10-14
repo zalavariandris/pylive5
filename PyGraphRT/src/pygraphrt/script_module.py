@@ -3,7 +3,7 @@
 
 import sys
 from types import FunctionType, MappingProxyType, ModuleType
-from typing import Iterable, Literal, Any, Mapping
+from typing import Callable, Iterable, Literal, Any, Mapping
 import inspect
 from pathlib import Path
 from annotationlib import Format
@@ -131,6 +131,10 @@ class ScriptOperatorRef(AbstractOperator):
 
     def __str__(self) -> str:
         return f"Op({self._module.get_display_name()}.{self._name})"
+
+    def get_callable(self) -> Callable[..., Any]:
+        #todo: consider making all operators selfcontained objects. 
+        return self._module._functions_cache[self._name]
 
     def fingerprint(self) -> int:
         # todo: review if this is sufficient for fingerprinting functions

@@ -288,9 +288,9 @@ class GraphDefinitionRT(QObject):
     def nodes(self) -> list[NodeRef]:
         return list(self._nodes.keys())
 
-    def ancestors(self, root: NodeRef) -> set[NodeRef]:
-        visited: set[NodeRef] = {root}
-        stack = [root]
+    def ancestors(self, *root: NodeRef) -> set[NodeRef]:
+        visited: set[NodeRef] = set(root)
+        stack = list(root)
         while stack:
             node_ref = stack.pop()
             node_data = self._nodes[node_ref]
