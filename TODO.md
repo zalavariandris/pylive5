@@ -1,14 +1,7 @@
 # TODO
-- [x] cleanup myqtx file structure and class names.
+- [ ] Implement flags for Graphmodel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
+      fésüld össze és gondold át, a GraphModel és a Az adapterek Roles-ait
 
-- [ ] Consider using AnyIO for async tasks, like
-      graph execution. it support cancelling jobs.
-      
-- [ ] Form view does not update when data changes.
-      added a todo in the on_datachanged hook.
-- [ ] Rename the ScriptModule to embedded modules!
-- [ ] find a better name for graph modules, o distinguishe from standard pythno modules
-- [ ] ImportModule should support importing from a file without specifying a name
 - [ ] factor out the session and probably settings from the current Window.
        window should be a document window. this will allow testing empty GUI (without loading the last session)
        as well as opening multiple documents. The problem is, that the Window acstions are controlled by the document window for now.
@@ -16,25 +9,46 @@
        I like it when projectfiles open in another instance of the whole application, but also the session, and recent files in the menu
        has a wider responsibility than a single document. So... maybe we could have tabs as well as opening document in multiple window, 
        but in a single app.
-- [x] BUG: when deleting a node with no inputs, the FormView raise an exception, and the app crash
+- [ ] We also Need a NodeInletTree(+selection?)ModelAdapter for the inspector to work with standard qt models
+
+
+- [ ] Consider using AnyIO for async tasks, like
+      graph execution. it support cancelling jobs.
+
 - [ ] create a method that compiles the graph into a native python script so its runnable without the app.
       also think about if we could compile it to a python app without using the PyGraphRT module.
       in case the graph processing library brakes, the graph will be still runnable.
-- [x] The `Viewer` should connect to the standard NodesList(+Selection)Model instead of the GraphModel.
-- [x] Now use the NodeList(+selection)Model adapters to drive the UI instead of directly connecting to the GraphModel.
-      if necessary introduce NodeRoles, for roles apply generally, and PyGraphRT Roles to acces data from the specialized PyGraphRT graph model.
-- [ ] We also Need a NodeInletTree(+selection?)ModelAdapter for the inspector to work with standard qt models
+
+- [x] cleanup myqtx file structure and class names.
+
+
+      
+- [?] FormView does not update when data changes.
+      added a todo in the on_datachanged hook.
+
+- [ ] Rename the ScriptModule to embedded modules!
 - [ ] Names become pretty problematic. 
       - `PyGraphRtDagModel`
       - `NodesListModelAdapter`
       - `NodesListModelSelecitonAdapter`
       - etc...
-      i think PyGraphRt could become PyGraphEngine
+      I think PyGraphRt could become PyGraphEngine
+
+- [ ] find a better name for graph modules, o distinguishe from standard python modules
+
+
+- [ ] ImportModule should support importing from a file without specifying a name
+
+- [x] BUG: when deleting a node with no inputs, the FormView raise an exception, and the app crash
+
+- [x] The `Viewer` should connect to the standard NodesList(+Selection)Model instead of the GraphModel.
+- [x] Now use the NodeList(+selection)Model adapters to drive the UI instead of directly connecting to the GraphModel.
+      if necessary introduce NodeRoles, for roles apply generally, and PyGraphRT Roles to acces data from the specialized PyGraphRT graph model.
 - [x] BUG: The current NodeInputDelegate wil update the model on everry stroke, that triggers to update the widget, wich resets its state. For example QLineEdit cursor jumps, ant this will potentially raise other issues with other InputEditors as well.
 
 - [x] Implement NodeListmodel Adapter and NodeListSelectionAdapter, to convert a Graphmodel (and its selection model)
       to standard QItemModels that standard QT view understand.
-- [ ] Implement flags for Graphmodel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
+
 - [x] distinguishe the current and selected nodes in the graphivew. 
 - [x] indicate cursor linenumber on the code editor even when its not active.
       for example highlight the numbers on the left. the cursor is not visible, when the code editor is not active.
@@ -66,7 +80,7 @@
 
 ## Restore Session
 
-- [ ] Two details in your current code also need fixing for restoration: fromfile() ignores saved node positions, and _connectDocument() always rearranges the nodes. Imported modules with relative paths also need a stable base directory when the snapshot lives in AppData.  
+- [x] Two details in the current code also need fixing for restoration: fromfile() ignores saved node positions, and _connectDocument() always rearranges the nodes. Imported modules with relative paths also need a stable base directory when the snapshot lives in AppData.  
 
 
 ## fix open and save
@@ -78,12 +92,15 @@
 
 ## GraphView
 
-- a delegate, to draw custom nodes. with potentially custom roles in a custom GraphModel.
+- [ ] a delegate, to draw custom nodes. with potentially custom roles in a custom GraphModel.
 
 
 ## Inspector
 
-- register InspectorInputs
+- [x] register InspectorInputs eidtors
+      -> Now node_inspector_view uses Delegates to
+         create a formview with appropriate editors
+         implemented a data editor plugin system
 
 
 ## Execution lifecycle and future async support

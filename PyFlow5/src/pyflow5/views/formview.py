@@ -8,6 +8,7 @@ from qtpy.QtCore import (
 from qtpy.QtWidgets import (
     QApplication,
     QLabel,
+    QVBoxLayout,
     QWidget,
     QFormLayout,
     QDataWidgetMapper,
@@ -23,6 +24,22 @@ class FormViewRole(IntEnum):
     LabelRole = Qt.ItemDataRole.UserRole + 1
     FieldRole = Qt.ItemDataRole.UserRole + 2
 
+class _FormFieldDelegate(QStyledItemDelegate):
+    """Create editors whose size is controlled by the form layout.
+    note: Use a plain QLineEdit for strings to avoid Qt's default string editor
+          resizing itself when its text changes. 
+    """
+    def createEditor(
+        self,
+        parent: QWidget | None,
+        option: QStyleOptionViewItem,
+        index: QModelIndex,
+    ) -> QWidget | None:
+        if isinstance(index.data(Qt.ItemDataRole.EditRole), str):
+            return QLineEdit(parent)
+
+        return super().createEditor(parent, option, index)
+
 class FormView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,7 +53,7 @@ class FormView(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
 
-        self._field_delegate = QStyledItemDelegate(self)
+        self._field_delegate = _FormFieldDelegate(self)
         self._label_delegate = None
         self._mapper = QDataWidgetMapper(self)
         self._mapper.setOrientation(Qt.Orientation.Vertical)
@@ -252,28 +269,11 @@ class FormView(QWidget):
                             prop = label_widget.metaObject().userProperty()
                             prop.write(label_widget, label_text)
                     case 1:
-                        # QDataWidgetMapper updates the value editors.
                         pass
-                        # # update value
-                        # value_index = self._model.index(row, 1, self.rootIndex())
-                        # value = value_index.data(Qt.ItemDataRole.DisplayRole)
 
-                        # editor = self._editors[row]
-                        # if editor is not None:
-                        #     prop = editor.metaObject().userProperty()
-                        #     prop.write(editor, value)
                     case _:
                         # ignore other columns
                         pass
-
-
-
-                
-
-                
-                    
-
-        
 
     def _shows(self, parent: QModelIndex) -> bool:
         # An invalid root is ambiguous: top level, or a root that was deleted.
@@ -392,11 +392,17 @@ if __name__ == "__main__":
 
     model = ExampleModel()
 
-    form = FormView()
-    form.setModel(model)
+    form1 = FormView()
+    form1.setModel(model)
+    form2 = FormView()
+    form2.setModel(model)
 
-    form.setWindowTitle("Model Form")
-    form.resize(360, 240)
-    form.show()
+    window = QWidget()
+    layout = QVBoxLayout(window)
+    layout.addWidget(form1)
+    layout.addWidget(form2)
+    window.setWindowTitle("Model Form")
+    window.resize(360, 480)
+    window.show()
 
     app.exec()
