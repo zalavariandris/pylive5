@@ -1,14 +1,6 @@
+from enum import IntEnum
 from qtpy.QtCore import Qt
 
-
-
-
-from enum import Enum, auto, IntEnum
-class ShapeData(Enum):
-    Circle = auto()
-    Square = auto()
-    Diamond = auto()
-    Bar = auto()
 
 class NodeDataRole(IntEnum):
     SocketAlignmentRole = Qt.ItemDataRole.UserRole+11

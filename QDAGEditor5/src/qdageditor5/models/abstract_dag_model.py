@@ -6,7 +6,6 @@ from typing import (
     Iterable
 )
 
-from qdageditor5.models.graph_model_index import GraphModelIndex
 from qtpy.QtCore import (
     QObject, 
     Qt,
@@ -242,7 +241,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         pass
 
     @abstractmethod
-    def inletData(self, node: NodeName, inlet: InletName, role:int) -> Any:
+    def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
         pass
 
     def setInletData(self, node: NodeName, inlet: InletName, value: Any, role:int) -> bool:

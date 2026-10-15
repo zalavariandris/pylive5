@@ -98,14 +98,15 @@ class GraphSerializer:
         # inputs
         args, kwargs = node.get_inputs()
         args_data = [
-            {'type': 'node', 'name': value.get_name()} if isinstance(value, NodeRef) else {'type': 'literal', 'value': value}
+            {'type': 'node', 
+             'name': value.get_name()} if isinstance(value, NodeRef) else {'type': 'literal', 'value': _encode_value(value)}
             for value in args
         ]
         if args_data or explicit:
             node_data["args"] = args_data
 
         kwargs_data = {
-            inlet: {'type': 'node', 'name': value.get_name()} if isinstance(value, NodeRef) else {'type': 'literal', 'value': value}
+            inlet: {'type': 'node', 'name': value.get_name()} if isinstance(value, NodeRef) else {'type': 'literal', 'value': _encode_value(value)}
             for inlet, value in kwargs.items()
         }
         if kwargs_data or explicit:
@@ -268,7 +269,7 @@ class GraphDeserializer:
                     case 'node':
                         args.append(_nodes_by_name[value['name']])
                     case 'literal':
-                        args.append(value['value'])
+                        args.append(_decode_value(value['value']))
 
             kwargs = dict()
             for inlet, value in node_data.get('kwargs', dict()).items():
@@ -276,7 +277,7 @@ class GraphDeserializer:
                     case 'node':
                         kwargs[inlet] = _nodes_by_name[value['name']]
                     case 'literal':
-                        kwargs[inlet] = value['value']
+                        kwargs[inlet] = _decode_value(value['value'])
 
             _inputs_by_node[node_name] = args, kwargs
 

@@ -14,11 +14,8 @@ from qtpy.QtCore import (
     QPointF
 )
 
-from qdageditor5.core.item_data_roles import (
-    NodeDataRole, 
-    ShapeData
-)
-
+from qdageditor5.core.item_data_roles import NodeDataRole
+from qdageditor5.core.shape_data_enum import ShapeData
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel,
     NodeName,

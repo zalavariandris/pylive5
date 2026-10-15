@@ -85,11 +85,11 @@ class InputLabelWidget(QWidget):
         self._layout.addWidget(self._clearbtn)
         self._clearbtn.pressed.connect(self.clearRequested.emit)
 
-    def paintEvent(self, event: QPaintEvent) -> None:
-        # paint bg
-        painter = QPainter(self)
-        painter.drawRect(self.rect())
-        super().paintEvent(event)
+    # def paintEvent(self, event: QPaintEvent) -> None:
+    #     # paint bg
+    #     painter = QPainter(self)
+    #     painter.drawRect(self.rect())
+    #     super().paintEvent(event)
 
     # define text as qt user prop
     def setText(self, text: str) -> None:

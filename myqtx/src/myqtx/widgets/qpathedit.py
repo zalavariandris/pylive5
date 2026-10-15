@@ -1,5 +1,5 @@
 from typing import *
-from qtpy.QtCore import Signal
+from qtpy.QtCore import Signal, Property
 from qtpy.QtWidgets import QStyle, QLineEdit, QHBoxLayout, QWidget, QFileDialog
 
 import pathlib
@@ -26,18 +26,22 @@ class QPathEdit(QWidget):
 
         layout.addWidget(self._lineedit)
 
-        self._lineedit.textChanged.connect(lambda text: self.pathChanged.emit(pathlib.Path(text)))
+        self._lineedit.textChanged.connect(
+            lambda text: self.pathChanged.emit(pathlib.Path(text))
+        )
         
     def open(self):
         filename, _ = QFileDialog.getOpenFileName(self)
         if filename:
             self._lineedit.setText(filename)
         
-    def path(self) -> pathlib.Path:
+    def getPath(self) -> pathlib.Path:
         return pathlib.Path(self._lineedit.text())
         
     def setPath(self, path:pathlib.Path|str):
         self._lineedit.setText(str(path))
+
+    path = Property(pathlib.Path, getPath, setPath, notify=pathChanged, user=True)
 
 
 if __name__ == "__main__":

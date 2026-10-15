@@ -15,14 +15,14 @@ from ..core.item_data_roles import NodeDataRole
 
 class _Graphics(abc.ABC):
     @abc.abstractmethod
-    def boundingRect(self) -> QRectF:
+    def boundingRect(self, option: QStyleOptionViewItem) -> QRectF:
         pass
 
     @abc.abstractmethod
     def paint(self, painter: QPainter, option: QStyleOptionViewItem):
         pass
 
-class _Label:
+class _Label(_Graphics):
     def __init__(self, text: str, pos: QPointF, alignment: Qt.AlignmentFlag, pen: QPen, padding: tuple[float, float] = (4.0, 2.0)) -> None:
         self.text = text
         self.pos = pos
@@ -107,6 +107,7 @@ def _bounding_rect(rects: list[QRectF]) -> QRectF:
         united_rect = united_rect.united(rect)
     return united_rect
 
+
 class StyledNodeDelegate(QObject):
     def __init__(self, parent=None) -> None:
         super().__init__(parent=parent)
@@ -138,7 +139,6 @@ class StyledNodeDelegate(QObject):
         return [title_label, leading_label, trailing_label]
 
     def rect(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QRectF:
-        # assert isinstance(model, AbstractDAGModel)
         assert isinstance(option, QStyleOptionViewItem)
 
         scene_rect = _bounding_rect([
@@ -146,18 +146,6 @@ class StyledNodeDelegate(QObject):
             for item in self.__labels(option, model, node)
         ])
   
-        # text = model.nodeData(node, Qt.ItemDataRole.DisplayRole)
-        # fm = option.fontMetrics
-        # text_rect = fm.boundingRect(QRect(), Qt.AlignmentFlag.AlignCenter, f"{text}")
-
-        # padding = 4.0, 1.0
-        # scene_rect = QRectF(
-        #     0.0,
-        #     0.0,
-        #     max(65.0, text_rect.width() + 2 * padding[0]),
-        #     max(16.0, text_rect.height() + 2 * padding[1]),
-        # )
-        # scene_rect.moveCenter(model.nodePosition(node))
         return scene_rect
 
     def shape(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QPainterPath:
@@ -169,31 +157,8 @@ class StyledNodeDelegate(QObject):
         return path
     
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName):
-        # # paint shape
-        # palette:QPalette = option.palette
-
-
-        # if option.state & QStyle.StateFlag.State_Selected:
-        #     brush = QBrush(QColor(0, 120, 215))
-        # elif option.state & QStyle.StateFlag.State_MouseOver:
-        #     brush = QBrush(palette.highlight())
-        # else:
-        #     brush = QBrush(palette.base())
-
-        # if model and model.nodeData(node, Qt.ItemDataRole.BackgroundRole) is not None:
-        #     brush = model.nodeData(node, Qt.ItemDataRole.BackgroundRole)
-        # path = self.shape(option, model, node)
-        # painter.setPen(QPen(palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
-        # painter.setBrush(brush)
-        # painter.drawPath(path)
-        # painter.restore()
-
-        # # paint labels
         style:QStyle = option.widget.style() if option.widget else QApplication.style()
 
-        # # option.rect = self.rect(option, model, node).toRect()
-        # print(option.widget, option.rect)
-        
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setClipPath(self.shape(option, model, node), Qt.ClipOperation.IntersectClip)
@@ -220,39 +185,3 @@ class StyledNodeDelegate(QObject):
             painter.setPen(pen)
             painter.drawRoundedRect(inner_rect, 3,3)
         painter.restore()
-
-        # # debug
-        # painter.save()
-        # painter.setPen(QPen(Qt.GlobalColor.darkMagenta, 0))
-        # _AnchorPoint(
-        #     pos=model.nodePosition(node),
-        #     radius=3.0,
-        # ).paint(painter, option)
-        # painter.setPen(QPen(Qt.GlobalColor.darkMagenta, 0, Qt.PenStyle.DashLine))
-        # painter.drawRect(self.rect(option, model, node))
-        
-        # painter.restore()
-        
-        # palette:QPalette = option.palette
-        # if option.state & QStyle.StateFlag.State_Selected:
-        #     brush = QBrush(QColor(0, 120, 215))
-        # elif option.state & QStyle.StateFlag.State_MouseOver:
-        #     brush = QBrush(palette.highlight())
-        # else:
-        #     brush = QBrush(palette.base())
-
-        # scene_rect = self.rect(option, model, node_name)
-
-        # if model and model.nodeData(node_name, Qt.ItemDataRole.BackgroundRole) is not None:
-        #     brush = model.nodeData(node_name, Qt.ItemDataRole.BackgroundRole)
-
-        # # paint background
-        # painter.setPen(QPen(palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
-        # painter.setBrush(brush)
-        # painter.drawRoundedRect(scene_rect, 5, 5)
-
-        # # paint text
-        # painter.setPen(palette.text().color())
-        # painter.setFont(option.font)
-        # text = model.nodeData(node_name, Qt.ItemDataRole.DisplayRole)
-        # painter.drawText(scene_rect, Qt.AlignmentFlag.AlignCenter, f"{text}")

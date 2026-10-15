@@ -55,7 +55,7 @@ class ExecutionFailure:
     """Represents node execution state that has failed
     due to an error."""
     node: NodeRef
-    reason: str|Exception
+    reason: str | BaseException
     duration_seconds: float | None = None
 
 @dataclass(frozen=True)
@@ -88,6 +88,9 @@ class GraphExecutorRT(QObject):
         self._graph: GraphDefinitionRT = graph
         self._profiler = Profiler()
         self._cache = cache if cache is not None else DummyCache()
+
+    def graph(self) -> GraphDefinitionRT:
+        return self._graph
         
     def request(self, *roots:NodeRef)->None:
         profile = True

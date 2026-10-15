@@ -231,11 +231,35 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         return ['out']
 
     @override
-    def inletData(self, node: NodeName, inlet: InletName, role:int) -> Any:
-        return None
+    def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
+        match role:
+            case Qt.ItemDataRole.DisplayRole:
+                node_rt = self.mapToSource(node)
+                if node_rt is not None:
+                    operator_rt = node_rt.get_operator()
+                    if operator_rt is not  None:
+                        if param := operator_rt.get_parameters().get(str(inlet)):
+                            return f"{param.name}: {param.annotation}"
+                # fallback
+                return f"{inlet}"
+            
+            case Qt.ItemDataRole.ToolTipRole: 
+                node_rt = self.mapToSource(node)
+                if node_rt is not None:
+                    operator_rt = node_rt.get_operator()
+                    if operator_rt is not  None:
+                        if param := operator_rt.get_parameters().get(str(inlet)):
+                            return f"{param.name}: {param.annotation}"
+                # fallback
+                return f"{inlet}"
+            
+            case Qt.ItemDataRole.EditRole:
+                return f"{inlet}"
+            case _:
+                return None
 
     @override
-    def outletData(self, node:NodeName, outlet:OutletName, role:int) -> Any:
+    def outletData(self, node:NodeName, outlet:OutletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
         return None
 
     # cells

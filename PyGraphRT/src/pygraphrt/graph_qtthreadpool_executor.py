@@ -1,17 +1,20 @@
 """Execute captured graph plans on Qt's thread pool without polling."""
 
-from typing import Any
-
 from qtpy.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot
 
 from . import execution_plan
-from .execution_plan import ExecutionPlan
+from .execution_plan import ExecutionPlan, ExecutionResults
 from .graph_definition_rt import GraphDefinitionRT, NodeRef
-from .graph_executor import ExecutionSuccess, NodeExecution
-from rich.status import Status
+from .graph_executor import (
+    ExecutionBlocked,
+    ExecutionFailure,
+    ExecutionSuccess,
+    NodeExecution,
+)
+
 
 class _JobSignals(QObject):
-    finished = Signal(object, object, object)  # plan, outputs, error
+    finished = Signal(object, object)  # plan, results
 
 
 class _ExecutionJob(QRunnable):
@@ -26,14 +29,14 @@ class _ExecutionJob(QRunnable):
     def run(self) -> None:
         # print("Executing plan")
         print("Executing Plan...")
-        outputs: dict[str, Any] | None = None
-        error: BaseException | None = None
         try:
-            outputs = execution_plan.execute(self.plan)
-        except BaseException as caught:
-            # Script-level SystemExit must also become a completion notification.
-            error = caught
-        self.signals.finished.emit(self.plan, outputs, error)
+            results = execution_plan.execute(self.plan)
+        except BaseException as error:
+            # Even an unexpected plan-level failure must release the running job.
+            results = ExecutionResults(
+                failures={node.name: error for node in self.plan.nodes}
+            )
+        self.signals.finished.emit(self.plan, results)
         print("Finished executing plan.")
 
 
@@ -46,11 +49,11 @@ class GraphQtThreadPoolExecutorRT(QObject):
 
     Create and use this object on the graph's GUI thread. Results map NodeRef
     objects to NodeExecution objects, matching GraphExecutorRT.executed.
-    Worker outputs are converted on the GUI thread. No cache is added here.
+    Worker outcomes are converted on the GUI thread. Preparation failures are
+    reported as ExecutionFailure for each requested target. No cache is added here.
     """
 
     executed = Signal(dict)  # dict[NodeRef, NodeExecution]
-    failed = Signal(object)  # BaseException
     _start_requested = Signal()
 
     def __init__(
@@ -119,7 +122,9 @@ class GraphQtThreadPoolExecutorRT(QObject):
             )
         except Exception as error:
             self._dirty.clear()
-            self.failed.emit(error)
+            self.executed.emit({
+                node: ExecutionFailure(node, error) for node in targets
+            })
             return
 
         job = _ExecutionJob(plan)
@@ -129,12 +134,11 @@ class GraphQtThreadPoolExecutorRT(QObject):
         self._job = job
         self._pool.start(job)
 
-    @Slot(object, object, object)
+    @Slot(object, object)
     def _on_finished(
         self,
         plan: ExecutionPlan,
-        outputs: dict[str, Any] | None,
-        error: BaseException | None,
+        results: ExecutionResults,
     ) -> None:
         self._job = None
         if self._closed:
@@ -143,19 +147,28 @@ class GraphQtThreadPoolExecutorRT(QObject):
         if plan.revision == self._revision:
             # Keep dirty nodes across obsolete jobs, including other branches.
             self._dirty.difference_update(plan.targets)
-            if error is not None:
-                self.failed.emit(error)
-            else:
-                assert outputs is not None
-                nodes_by_name = {
-                    node.get_name(): node for node in self._graph.nodes()
-                }
-                executions: dict[NodeRef, NodeExecution] = {}
-                for name, output in outputs.items():
-                    node = nodes_by_name.get(name)
-                    if node is not None:
-                        executions[node] = ExecutionSuccess(node, output)
-                self.executed.emit(executions)
+            nodes_by_name = {
+                node.get_name(): node for node in self._graph.nodes()
+            }
+            executions: dict[NodeRef, NodeExecution] = {}
+            for name, output in results.outputs.items():
+                node = nodes_by_name.get(name)
+                if node is not None:
+                    executions[node] = ExecutionSuccess(node, output)
+            for name, error in results.failures.items():
+                node = nodes_by_name.get(name)
+                if node is not None:
+                    executions[node] = ExecutionFailure(node, error)
+            for name, dependencies in results.blocked.items():
+                node = nodes_by_name.get(name)
+                if node is not None:
+                    executions[node] = ExecutionBlocked(
+                        node,
+                        frozenset(
+                            nodes_by_name[dependency] for dependency in dependencies
+                        ),
+                    )
+            self.executed.emit(executions)
 
         self._schedule()
 

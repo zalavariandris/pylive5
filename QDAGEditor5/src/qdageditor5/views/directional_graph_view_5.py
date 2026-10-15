@@ -1,13 +1,8 @@
 
 from __future__ import annotations
-from argparse import Action
-from re import match
-from re import match
-import warnings
-from collections import defaultdict
+
 from functools import reduce
-from typing import *
-from enum import Enum
+from typing import NamedTuple, Literal
 from dataclasses import dataclass
 
 from qdageditor5.utils.graph_layouts.graph_layout_with_grandalf import layout_graph_model_with_grandalf
@@ -59,7 +54,7 @@ from qtpy.QtWidgets import (
     QAction
 )
 
-from .graph_view_delegate import StyledNodeDelegate
+from .styled_node_delegate import StyledNodeDelegate
 
 from qdageditor5.utils import geo
 
@@ -114,7 +109,7 @@ class DirectionalGraphView5(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        scroll_area_frame_style = QFrame.StyledPanel | QFrame.Sunken # default scrollarea frame style
+        scroll_area_frame_style = QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken # default scrollarea frame style
         self.setFrameStyle(scroll_area_frame_style)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._model: AbstractDAGModel | None = None
@@ -227,7 +222,8 @@ class DirectionalGraphView5(QFrame):
         self._selection_model = selection_model
         self.update()
 
-    def _createStyleOption(self, node: NodeName) -> QStyleOptionViewItem:
+    def _createNodeStyleOption(self, node: NodeName) -> QStyleOptionViewItem:
+        assert self._model is not None, "Model must be set before creating style option"
         option = QStyleOptionViewItem()
         option.initFrom(self)
         option.state = QStyle.StateFlag.State_Active
@@ -261,15 +257,17 @@ class DirectionalGraphView5(QFrame):
         return self._nodes_delegate.rect(option, self._model, node)
 
     def _nodeShape(self, option: QStyleOptionViewItem, node: NodeName) -> QPainterPath:
+        assert self._model is not None
         return self._nodes_delegate.shape(option, self._model, node)
 
     def _paintNode(self, painter: QPainter, option: QStyleOptionViewItem, node: NodeName|None):
+        assert self._model is not None
         self._nodes_delegate.paint(painter, option, self._model, node)
 
     # inlets delegate
     def _inletPos(self, node: NodeName, inlet: InletName) -> QPointF:
         assert self._model is not None
-        option = self._createStyleOption(node)
+        option = self._createNodeStyleOption(node)
         node_rect = self._nodeShape(option, node).boundingRect()
         
         # outlet may be stale for a frame if the model just changed
@@ -290,18 +288,20 @@ class DirectionalGraphView5(QFrame):
         path.addEllipse(scene_rect)
         return path
         
-    def _inletRect(self, node: NodeName, inlet: InletName):
+    def _inletRect(self, node: NodeName, inlet: InletName) -> QRectF:
+        assert self._model is not None
         scene_pos = self._inletPos(node, inlet)
         w, h = 7, 7
         scene_rect = QRectF(scene_pos.x() - w/2, scene_pos.y() - h/2, w, h)
 
         fm = QFontMetrics(self.font())
-        text_box = QRectF(fm.boundingRect(f"{inlet}"))
+        text_box = QRectF(fm.boundingRect(self._model.inletData(node, inlet, Qt.ItemDataRole.DisplayRole)))
         text_box.moveBottomLeft(scene_rect.topRight())
         scene_rect = scene_rect.united(text_box)
         return scene_rect
 
     def _paintInlet(self, painter: QPainter, option: QStyleOptionViewItem, node, inlet):
+        assert self._model is not None
         scene_pos = self._inletPos(node, inlet)
         w, h = 7, 7
         scene_rect = QRectF(scene_pos.x() - w/2, scene_pos.y() - h/2, w, h)
@@ -318,11 +318,12 @@ class DirectionalGraphView5(QFrame):
         painter.drawRoundedRect(scene_rect, 5, 5)
         if option.state & QStyle.StateFlag.State_MouseOver:
             painter.setPen(QPen(palette.highlight().color()))
-            painter.drawText(scene_rect.topRight(), f"{inlet}")
+            painter.drawText(scene_rect.topRight(), f"{self._model.inletData(node, inlet, Qt.ItemDataRole.DisplayRole)}")
 
     # outlets delegate
     def _outletPos(self, node: NodeName, outlet: OutletName) -> QPointF:
-        option = self._createStyleOption(node)
+        assert self._model is not None, "Model must be set before creating style option"
+        option = self._createNodeStyleOption(node)
         node_scene_rect = self._nodeShape(option, node).boundingRect()
         
         # outlet may be stale for a frame if the model just changed
@@ -412,14 +413,18 @@ class DirectionalGraphView5(QFrame):
 
     def _paintDraftLink(self, painter: QPainter):
         if draft_link_shape := self._draftLinkShape():
-            palette = self.style().standardPalette()
+            style = self.style()
+            assert style is not None
+            palette = style.standardPalette()
             painter.setPen(QPen(palette.text().color(), 1))
-            painter.setBrush(Qt.NoBrush)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(draft_link_shape)
 
     def __draft_link_line(self)->QLineF:
         if not isinstance(self._tool, LinkingToolData):
             raise ValueError("Invalid tool for drafting link line")
+
+        assert self._model is not None
 
         start_pos = None
         match self._tool._source:
@@ -469,8 +474,9 @@ class DirectionalGraphView5(QFrame):
 
     # methods
     def _get_affected_rect(self, node: NodeName) -> QRectF:
+        assert self._model is not None
         # get the node rectangle
-        option = self._createStyleOption(node)
+        option = self._createNodeStyleOption(node)
         node_rect = self._nodeRect(option, node).adjusted(-2, -2, 2, 2)
 
         # get the ports rectangle
@@ -497,6 +503,7 @@ class DirectionalGraphView5(QFrame):
 
     def itemAt(self, viewpos: QPoint) -> _GraphItemId | None:
         """Return the graph item at the given view position, or None if no item is found."""
+        assert self._model is not None
         # rects returned by _nodeRect/_inletRect/_outletRect are already in view coordinates
         scene_pos = self.mapToScene(QPointF(viewpos))
         for node in self._model.nodes():
@@ -510,7 +517,7 @@ class DirectionalGraphView5(QFrame):
                     if self._outletShape(node, outlet).contains(scene_pos):
                         return _GraphItemId('outlet', (node, outlet))
 
-            option = self._createStyleOption(node)
+            option = self._createNodeStyleOption(node)
             if self._nodeRect(option, node).contains(scene_pos):
                 if self._nodeShape(option, node).contains(scene_pos):
                     return _GraphItemId('node', node)
@@ -572,11 +579,11 @@ class DirectionalGraphView5(QFrame):
         return QSize(800, 800)
 
     # events
-    def mouseDoubleClickEvent(self, event: QMouseEvent):
+    def mouseDoubleClickEvent(self, event: QMouseEvent, /):
         scene_pos = self.mapToScene(event.pos())
         self.requestNode.emit(scene_pos, None)
 
-    def paintEvent(self, event:QPaintEvent):
+    def paintEvent(self, event:QPaintEvent, /):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.save()
@@ -601,9 +608,9 @@ class DirectionalGraphView5(QFrame):
 
         # draw nodes and ports
         for node in self._model.nodes():
-            node_rect = self._nodeRect(self._createStyleOption(node), node)
+            node_rect = self._nodeRect(self._createNodeStyleOption(node), node)
             if dirty_scene_rect.intersects(node_rect):
-                node_option = self._createStyleOption(node)
+                node_option = self._createNodeStyleOption(node)
 
                 painter.save()
                 self._paintNode(painter, option=node_option, node=node)
@@ -652,7 +659,7 @@ class DirectionalGraphView5(QFrame):
             case RectSelectionToolData():
                 selection_rect = QRectF(self._tool._start_pos, self._tool._end_pos).normalized()
                 painter.save()
-                painter.setPen(QPen(Qt.DashLine))
+                painter.setPen(QPen(Qt.PenStyle.DashLine))
                 painter.drawRect(selection_rect)
                 painter.restore()
 
@@ -665,7 +672,7 @@ class DirectionalGraphView5(QFrame):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         # handle mouseClick events
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self._press_pos = event.pos()
             self._pressed = True
 
@@ -736,7 +743,7 @@ class DirectionalGraphView5(QFrame):
 
         nodes_intersecting = [
             node for node in self._model.nodes()
-            if self._nodeRect(self._createStyleOption(node), node).intersects(scene_rect)
+            if self._nodeRect(self._createNodeStyleOption(node), node).intersects(scene_rect)
         ]
         self._selection_model.selectNodes(nodes_intersecting)
 
@@ -822,7 +829,7 @@ class DirectionalGraphView5(QFrame):
                 if self._hovered_item is not None:
                     match self._hovered_item:
                         case ('node', _):
-                            new_rect = self._nodeRect(self._createStyleOption(self._hovered_item[1]), self._hovered_item[1]).adjusted(-2, -2, 2, 2)
+                            new_rect = self._nodeRect(self._createNodeStyleOption(self._hovered_item[1]), self._hovered_item[1]).adjusted(-2, -2, 2, 2)
                             prev_rect = new_rect
                         case ('inlet', _):
                             node, inlet = self._hovered_item[1]
@@ -850,7 +857,7 @@ class DirectionalGraphView5(QFrame):
 
                     case ('node', _):
                         node_under_mouse:NodeName = item_under_mouse[1]
-                        new_rect = self._nodeRect(self._createStyleOption(node_under_mouse), node_under_mouse).adjusted(-2, -2, 2, 2)
+                        new_rect = self._nodeRect(self._createNodeStyleOption(node_under_mouse), node_under_mouse).adjusted(-2, -2, 2, 2)
                         self._hovered_item = ('node', node_under_mouse)
 
                     case ('head', _):
@@ -887,7 +894,7 @@ class DirectionalGraphView5(QFrame):
                     self._selection_model.clearSelection()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if event.button() == Qt.LeftButton and self._pressed:
+        if event.button() == Qt.MouseButton.LeftButton and self._pressed:
             # Check that release is still inside the widget
             # and that the mouse didn't move too far
             threshold = 5  # pixels
@@ -1015,7 +1022,7 @@ class DirectionalGraphView5(QFrame):
         if self._hovered_item is not None:
             match self._hovered_item:
                 case ('node', _):
-                    self.updateScene(self._nodeRect(self._createStyleOption(self._hovered_item[1]), self._hovered_item[1]).adjusted(-2, -2, 2, 2))
+                    self.updateScene(self._nodeRect(self._createNodeStyleOption(self._hovered_item[1]), self._hovered_item[1]).adjusted(-2, -2, 2, 2))
                 case ('inlet', _):
                     node, inlet = self._hovered_item[1]
                     self.updateScene(self._inletRect(node, inlet).adjusted(-2, -2, 2, 2))
@@ -1047,7 +1054,7 @@ class DirectionalGraphView5(QFrame):
             nodes = self._model.nodes()
 
         scene_rect = _bounding_rect([
-            self._nodeRect(self._createStyleOption(node), node)
+            self._nodeRect(self._createNodeStyleOption(node), node)
             for node in nodes
         ])
         if scene_rect.isEmpty():
@@ -1068,7 +1075,7 @@ class DirectionalGraphView5(QFrame):
         print("Centering nodes in view")
         if self._model is None:
             return
-        bounding_rect = reduce(lambda r, n: r.united(self._nodeRect(self._createStyleOption(n), n)), self._model.nodes(), QRectF())
+        bounding_rect = reduce(lambda r, n: r.united(self._nodeRect(self._createNodeStyleOption(n), n)), self._model.nodes(), QRectF())
         if bounding_rect.isNull():
             return
         view_rect = self.rect()
@@ -1081,6 +1088,7 @@ class DirectionalGraphView5(QFrame):
 
     def layout_nodes(self):
         # dot honors inlet ordering (ordering="in"); grandalf only nudges it, so prefer dot when available
+        assert self._model is not None
         positions = layout_graph_model_with_grandalf(self._model)
         for node_name, (x, y) in positions.items():
             self._model.setNodePosition(node_name, QPointF(x, y))
@@ -1149,6 +1157,4 @@ if __name__ == "__main__":
         layout.addWidget(view)
 
     window.show()
-    sys.exit(app.exec_())
-
-
+    sys.exit(app.exec())

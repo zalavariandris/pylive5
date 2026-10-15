@@ -257,6 +257,6 @@ def test_current_only_change_repaints_and_moves_the_focus_indicator(
 
     selection.setCurrentNode("second")
     qtbot.waitUntil(lambda: view.paint_count > previous_paints)
-    assert not view._createStyleOption("first").state & QStyle.StateFlag.State_HasFocus
-    assert view._createStyleOption("second").state & QStyle.StateFlag.State_HasFocus
+    assert not view._createNodeStyleOption("first").state & QStyle.StateFlag.State_HasFocus
+    assert view._createNodeStyleOption("second").state & QStyle.StateFlag.State_HasFocus
     assert set(selection.selectedNodes()) == {"first", "second"}

@@ -9,7 +9,7 @@ import numpy as np
 
 from vfxops.core import ImageRGBA
 
-def read_image(path: Union[str, Path]) -> ImageRGBA:
+def read_image(path: Path) -> ImageRGBA:
     """Read image as RGBA float32.
     Preserve HDR values for EXR."""
     path = Path(path)

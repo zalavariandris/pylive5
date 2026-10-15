@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 from copy import deepcopy
 from .graph_definition_rt import GraphDefinitionRT, NodeRef
@@ -29,6 +29,16 @@ class ExecutionPlan:
     revision: int
     targets: tuple[str, ...]
     nodes: tuple[NodeSnapshot, ...]                      
+
+
+@dataclass
+class ExecutionResults:
+    """Worker results keyed by node name, without live graph references."""
+
+    outputs: dict[str, Any] = field(default_factory=dict)
+    failures: dict[str, BaseException] = field(default_factory=dict)
+    blocked: dict[str, frozenset[str]] = field(default_factory=dict)
+
 
 def prepare(graph: GraphDefinitionRT, targets: Iterable[NodeRef], *, revision: int) -> ExecutionPlan:
     """
@@ -82,18 +92,26 @@ def prepare(graph: GraphDefinitionRT, targets: Iterable[NodeRef], *, revision: i
         nodes=tuple(snapshots),
     )
 
-def execute(plan: ExecutionPlan) -> dict[str, Any]:
-    """Execute the given execution plan
-      returns a dictionary of node outputs.
-    """
-    outputs: dict[str, Any] = {}
+def execute(plan: ExecutionPlan) -> ExecutionResults:
+    """Collect each node's outcome, skipping nodes with unavailable inputs."""
+    results = ExecutionResults()
 
     def resolve_input(value: Any) -> Any:
         if isinstance(value, NodeOutput):
-            return outputs[value.node_name]
+            return results.outputs[value.node_name]
         return value
 
     for node in plan.nodes:
+        inputs = (*node.args, *(value for _, value in node.kwargs))
+        unavailable = frozenset(
+            value.node_name
+            for value in inputs
+            if isinstance(value, NodeOutput) and value.node_name not in results.outputs
+        )
+        if unavailable:
+            results.blocked[node.name] = unavailable
+            continue
+
         try:
             operator = node.operator
             if operator is None:
@@ -105,11 +123,10 @@ def execute(plan: ExecutionPlan) -> dict[str, Any]:
                 for name, value in node.kwargs
             }
 
-            outputs[node.name] = operator.function(*args, **kwargs)
+            results.outputs[node.name] = operator.function(*args, **kwargs)
 
-        except Exception as error:
-            raise RuntimeError(
-                f"Execution failed at node {node.name!r}."
-            ) from error
+        except BaseException as error:
+            # Script-level SystemExit must also produce a node outcome.
+            results.failures[node.name] = error
 
-    return outputs
+    return results

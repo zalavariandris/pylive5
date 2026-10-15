@@ -1,5 +1,8 @@
 # TODO
-- [ ] Implement flags for Graphmodel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
+- [ ] checkout https://pypi.org/project/Fileseq/ for file sequences instead inventing the wheel, as we do it now in vfxops
+- [ ] graph cache revision
+
+- [ ] Implement flags for GraphModel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
       fésüld össze és gondold át, a GraphModel és a Az adapterek Roles-ait
 
 - [ ] factor out the session and probably settings from the current Window.

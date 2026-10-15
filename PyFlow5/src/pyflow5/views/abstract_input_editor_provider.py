@@ -41,7 +41,7 @@ class AbstractInputEditorProvider(QObject, metaclass=_AbstractQObjectMeta):
         """Display a Python value; accept None for an input without a value."""
         value_property = editor.metaObject().userProperty()
         if not value_property.isValid() or not value_property.write(editor, value):
-            raise TypeError(f"Cannot write the user property of {type(editor).__name__}")
+            raise TypeError(f"Failed to set value '{value}' on the user property of {type(editor).__name__}")
 
     def editorValue(self, editor: QWidget) -> Any:
         """Return the Python value to store in the computation's input."""
