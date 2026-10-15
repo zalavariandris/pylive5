@@ -257,13 +257,22 @@ class GraphEvaluator(QObject):
         executions: dict[NodeRef, NodeExecution] = {}
 
         for name, output in plan.initial_outputs.items():
-            executions[nodes_by_name[name]] = ExecutionSuccess(
-                nodes_by_name[name], output
+            node = nodes_by_name[name]
+            executions[node] = ExecutionSuccess(
+                node,
+                output,
+                duration_seconds=self._cache.duration_seconds(node),
+                cached=True,
             )
         for name, output in results.outputs.items():
             node = nodes_by_name[name]
-            self._cache.save(node, output)
-            executions[node] = ExecutionSuccess(node, output)
+            duration_seconds = results.durations_seconds.get(name)
+            self._cache.save(node, output, duration_seconds=duration_seconds)
+            executions[node] = ExecutionSuccess(
+                node,
+                output,
+                duration_seconds=duration_seconds,
+            )
         for name, error in results.failures.items():
             node = nodes_by_name[name]
             executions[node] = ExecutionFailure(node, error)

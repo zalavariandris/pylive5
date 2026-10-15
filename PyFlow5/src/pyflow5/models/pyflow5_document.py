@@ -9,6 +9,10 @@ from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
 
 import pygraphrt as rt
+from pygraphrt.graph_executor_3_draft import (
+    GraphEvaluator,
+    QtThreadPoolExecutionBackend,
+)
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
@@ -31,8 +35,13 @@ class PyFlowDocument(QObject):
         self._module_registry = registry or rt.ModuleRegistry()
         self._graph_rt = graph or rt.GraphDefinitionRT()
 
-        self._executor = rt.GraphQtThreadPoolExecutorRT(self._graph_rt)
         self._invalidator = rt.GraphInvalidator(self._graph_rt, self._module_registry)
+        self._evaluator = GraphEvaluator(
+            self._graph_rt,
+            QtThreadPoolExecutionBackend(),
+            parent=self,
+            invalidator=self._invalidator,
+        )
 
         # Models
         ## Graph Model
@@ -40,7 +49,7 @@ class PyFlowDocument(QObject):
             self._graph_rt, 
             self._module_registry, 
             self._invalidator,
-            self._executor
+            self._evaluator
         )
         self.graphselection_model = GraphSelectionModel(self.graph_model)
 
@@ -60,9 +69,13 @@ class PyFlowDocument(QObject):
         self.nodes_list_selection_adapter = NodesListSelectionModelAdapter(self.nodes_list_adapter)
         self.nodes_list_selection_adapter.setSourceSelection(self.graphselection_model)
         
-        # Initial execution
-        self._executor.request(*[node_ref for node_ref in self._graph_rt.nodes()])
+        # Initial evaluation
+        self._evaluator.request(*self._graph_rt.nodes())
 
+    def close(self) -> None:
+        """Stop evaluation and disconnect requests from the graph model."""
+        self.graph_model.close()
+        self._evaluator.close()
 
     def getNodeOperator(self, node_name: NodeName) -> QModelIndex:
         node_ref = self.graph_model.mapToSource(node_name)

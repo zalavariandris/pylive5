@@ -160,8 +160,7 @@ class StyledNodeDelegate(QObject):
         style:QStyle = option.widget.style() if option.widget else QApplication.style()
 
         painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setClipPath(self.shape(option, model, node), Qt.ClipOperation.IntersectClip)
+
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, option.widget)
         for graphic in list(self.__labels(option, model, node))[1:]:
             # skip the first element, because it is painted using the drawControl method above
@@ -170,6 +169,8 @@ class StyledNodeDelegate(QObject):
 
         # paint ouside
         painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setClipPath(self.shape(option, model, node), Qt.ClipOperation.IntersectClip)
         title_label = list(self.__labels(option, model, node))[0]
         painter.setPen(QPen(option.palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
         painter.drawRoundedRect(title_label.boundingRect(option), 5, 5)

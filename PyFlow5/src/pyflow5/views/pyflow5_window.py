@@ -207,7 +207,7 @@ class PyFlow5Window(QMainWindow):
         # Load the last session if it exists
         if self._use_session and self._session_path.exists():
             try:
-                new_document = PyFlowDocument().fromfile(str(self._session_path))
+                new_document = PyFlowDocument.fromfile(str(self._session_path))
             except Exception as e:
                 print(f"Failed to load session: {e}")
                 new_document = PyFlowDocument()
@@ -243,8 +243,11 @@ class PyFlow5Window(QMainWindow):
         # Execute the local menu (blocks until closed, then gets garbage collected)
         menu.exec(global_pos)
 
-    def _connectDocument(self, document: PyFlowDocument):
+    def _connectDocument(self, document: PyFlowDocument) -> None:
+        if document is self._document:
+            return
         # Keep the old document alive until its views have disconnected.
+        old_document = self._document
         if document:
             self._modules_listview.setModel(document.modules_model)
             self._modules_listview.setSelectionModel(document.modulesselection_model)
@@ -276,6 +279,8 @@ class PyFlow5Window(QMainWindow):
 
             # set the new document
             self._document = document
+            if old_document is not None:
+                old_document.close()
 
             # def _refresh_node_tree_view_on_selectionchange() -> None:
             #     assert self._document is not None
@@ -513,7 +518,7 @@ class PyFlow5Window(QMainWindow):
         finally:
             dialog.deleteLater()
 
-    def closeEvent(self, event):
+    def closeEvent(self, event: QCloseEvent) -> None:
         # Save session path before closing
         if self._use_session:
             try:
@@ -533,6 +538,8 @@ class PyFlow5Window(QMainWindow):
                     event.ignore()
                     return
 
+        if self._document is not None:
+            self._document.close()
         event.accept()
 
     def saveDocument(self) -> None:

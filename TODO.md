@@ -1,6 +1,8 @@
-# TODO
+# TOD
+- [ ] add execute duration and show it in the graphview
 - [ ] checkout https://pypi.org/project/Fileseq/ for file sequences instead inventing the wheel, as we do it now in vfxops
 - [ ] graph cache revision
+      -> added a new graph evaluator suite. it should be reviewed.
 
 - [ ] Implement flags for GraphModel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
       fésüld össze és gondold át, a GraphModel és a Az adapterek Roles-ait

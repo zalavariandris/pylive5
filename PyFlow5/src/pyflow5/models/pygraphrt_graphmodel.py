@@ -1,10 +1,10 @@
 from collections import defaultdict
 from logging import warning
-from textwrap import dedent
 from typing import Iterable, override, Any
 import warnings
 
 from pygraphrt.graph_executor import ExecutionSuccess
+from pygraphrt.graph_executor_3_draft import GraphEvaluator
 from pytools import UniqueNameGenerator
 
 from qtpy.QtCore import (
@@ -40,13 +40,14 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         graph: rt.GraphDefinitionRT, 
         registry: rt.ModuleRegistry,
         invalidator: rt.GraphInvalidator,
-        executor: rt.GraphExecutorRT|rt.GraphQtThreadPoolExecutorRT
-    ):
+        evaluator: GraphEvaluator
+    ) -> None:
         super().__init__()
         self._graph: rt.GraphDefinitionRT = graph
         self._registry: rt.ModuleRegistry = registry
         self._invalidator: rt.GraphInvalidator = invalidator
-        self._executor: rt.GraphExecutorRT|rt.GraphQtThreadPoolExecutorRT = executor
+        self._evaluator: GraphEvaluator = evaluator
+        self._closed = False
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
 
         self._executions: dict[NodeName, rt.NodeExecution] = {}
@@ -64,33 +65,37 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         ):
             signal.connect(self._on_registry_changed)
 
-        @self._invalidator.nodes_invalidated.connect
-        def on_nodes_invalidated(nodes: list[rt.NodeRef]):
-            # for node_ref in nodes:
-            #     if node_ref.get_name() in self._executions:
-            #         del self._executions[node_ref.get_name()]
+        self._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
+        self._evaluator.evaluated.connect(self._on_evaluated)
 
-            # self.nodesDataChanged.emit(
-            #     tuple([self.mapFromSource(node_ref) for node_ref in nodes]), 
-            #     tuple([self.ExecutionRole])
-            # ) # list[NodeT], roles: list[int]
+    @Slot(list)
+    def _on_nodes_invalidated(self, nodes: list[rt.NodeRef]) -> None:
+        if not self._closed:
+            self._evaluator.request(*nodes)
 
-            self._executor.request(*[node_ref for node_ref in nodes])
+    @Slot(dict)
+    def _on_evaluated(self, executions: dict[rt.NodeRef, rt.NodeExecution]) -> None:
+        if self._closed:
+            return
 
+        changed_nodenames: list[NodeName] = []
+        for node_ref, execution in executions.items():
+            if node_name := self.mapFromSource(node_ref):
+                self._executions[node_name] = execution
+                changed_nodenames.append(node_name)
 
-        @self._executor.executed.connect
-        def on_executed(executions: dict[rt.NodeRef, rt.NodeExecution]):
-            print("Nodes executed: ", [node_ref.get_name() for node_ref in executions.keys()])
-            changed_nodenames: list[NodeName] = []
-            for node_ref, execution in executions.items():
-                if node_name := self.mapFromSource(node_ref):
-                    self._executions[node_name] = execution
-                    changed_nodenames.append(node_name)
+        self.nodesDataChanged.emit(
+            tuple(changed_nodenames),
+            (self.ExecutionRole, NodeDataRole.TrailingRole),
+        )
 
-            self.nodesDataChanged.emit(
-                tuple(changed_nodenames), 
-                tuple([self.ExecutionRole])
-            )
+    def close(self) -> None:
+        """Disconnect evaluation callbacks when the document is closed."""
+        if self._closed:
+            return
+        self._closed = True
+        self._invalidator.nodes_invalidated.disconnect(self._on_nodes_invalidated)
+        self._evaluator.evaluated.disconnect(self._on_evaluated)
 
     def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
         if any(isinstance(msg, AddNodeMessage) for msg in self._message_queue):
@@ -181,9 +186,13 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 return f"{node_ref.get_name()}"
 
             case NodeDataRole.TrailingRole:
-                return dedent("""\
-                    computed
-                    cached""")
+                execution = self._executions.get(node_name)
+                if isinstance(execution, rt.ExecutionSuccess):
+                    duration_ms = execution.duration_ms
+                    if duration_ms is not None:
+                        text = f"{duration_ms:.2f} ms"
+                        return f"({text})" if execution.cached else text
+                return None
 
             case self.ExecutionRole:
                 if node_name in self._executions:

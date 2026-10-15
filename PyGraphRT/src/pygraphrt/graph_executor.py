@@ -45,10 +45,18 @@ class ExecutionRunning:
 
 @dataclass(frozen=True)
 class ExecutionSuccess:
-    """Represents node execution state that has succeeded."""
+    """A successful result, retaining the timing of its original computation."""
     node: NodeRef
     result: Any
     duration_seconds: float | None = None
+    cached: bool = False
+
+    @property
+    def duration_ms(self) -> float | None:
+        """Original execution time in milliseconds, or None when unmeasured."""
+        if self.duration_seconds is None:
+            return None
+        return self.duration_seconds * 1000.0
 
 @dataclass(frozen=True)
 class ExecutionFailure:

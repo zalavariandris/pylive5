@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
+from myutils.profiler import Profiler
+
 from ..abstract_operator import AbstractOperator
 from ..function_operator import FunctionOperator
 from ..graph_definition_rt import GraphDefinitionRT, NodeRef
@@ -59,11 +61,13 @@ class ExecutionResults:
 
     Cached inputs are deliberately absent from ``outputs``. Consumers combine
     it with ``plan.initial_outputs`` when delivering requested results.
+    Durations measure successful operator calls, excluding input preparation.
     """
 
     outputs: dict[str, Any] = field(default_factory=dict)
     failures: dict[str, BaseException] = field(default_factory=dict)
     blocked: dict[str, frozenset[str]] = field(default_factory=dict)
+    durations_seconds: dict[str, float] = field(default_factory=dict)
 
 
 def _capture_operator(operator: AbstractOperator | None) -> OperatorSnapshot | None:
@@ -166,6 +170,7 @@ def prepare(
 def execute(plan: ExecutionPlan) -> ExecutionResults:
     """Run the captured computations, reusing supplied outputs as dependencies."""
     results = ExecutionResults()
+    profiler = Profiler()
     available = dict(plan.initial_outputs)
 
     def resolve_input(value: Any) -> Any:
@@ -189,7 +194,11 @@ def execute(plan: ExecutionPlan) -> ExecutionResults:
                 raise ValueError("Operator is unavailable.")
             args = tuple(resolve_input(value) for value in node.args)
             kwargs = {name: resolve_input(value) for name, value in node.kwargs}
-            output = node.operator.function(*args, **kwargs)
+            with profiler.profile(node.name):
+                output = node.operator.function(*args, **kwargs)
+            duration_seconds = profiler[node.name]
+            if duration_seconds is not None:
+                results.durations_seconds[node.name] = duration_seconds
             available[node.name] = output
             results.outputs[node.name] = output
         except BaseException as error:

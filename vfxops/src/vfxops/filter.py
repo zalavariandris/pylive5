@@ -1,3 +1,4 @@
+import numba
 import numpy as np
 import cv2
 
@@ -26,7 +27,8 @@ def add_grain(img: ImageRGBA, variance:float):
     gauss = gauss.reshape(row,col,ch)
     noisy = img + gauss
     return noisy
-    
+
+
 def noisy(img: ImageRGBA, noise_typ):
     """
     Parameters
@@ -91,24 +93,28 @@ def gaussian_blur(img: np.ndarray, size: float) -> np.ndarray:
     img : float32 RGBA or RGB image in range [0, 1]
     size : blur radius in pixels
     """
+
     if size <= 0:
         return img
 
-    # Kernel size must be odd and positive
-    ksize = int(size * 2) | 1          # make sure it's odd
-    ksize = max(3, ksize)              # minimum useful size
+    ksize = max(3, int(size * 2) | 1)
+    sigma = size / 3.0
 
-    # OpenCV works directly on float32
-    # We blur only the RGB channels and keep alpha unchanged
-    blurred = img.copy()
-    blurred[..., :3] = cv2.GaussianBlur(
-        img[..., :3],
-        ksize=(ksize, ksize),
-        sigmaX=size / 3.0,             # AE-like falloff
+    result = img.copy()
+
+    rgb = np.ascontiguousarray(img[..., :3])
+
+    cv2.GaussianBlur(
+        rgb,
+        (ksize, ksize),
+        sigmaX=sigma,
+        dst=rgb,
         borderType=cv2.BORDER_REFLECT
     )
 
-    return blurred
+    result[..., :3] = rgb
+
+    return result
 
 def clip(img: np.ndarray, min_val: float = 0.0, max_val: float = 1.0) -> np.ndarray:
     """

@@ -1,0 +1,49 @@
+{
+    "version": 3,
+    "modules": {
+        "_local_": {
+            "type": "embedded",
+            "source": "from vfxops.io import read_image\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.color import grade\n\ndef myread(path:str):\n    print(\"read image\")\n    return read_image(path)\n\n__all__ = [\n    \"myread\",\n    \"grade\",\n    \"read_image\",\n    \"gaussian_blur\"\n]"
+        }
+    },
+    "graph": {
+        "nodes": {
+            "myread": {
+                "operator": {
+                    "module": "_local_",
+                    "name": "myread"
+                },
+                "kwargs": {
+                    "path": {
+                        "type": "literal",
+                        "value": "C:\\Users\\and\\Documents\\GitHub\\pylive5\\assets\\IMG_0885.JPG"
+                    }
+                },
+                "position": [
+                    0.0,
+                    -60.0
+                ]
+            },
+            "gaussian_blur": {
+                "operator": {
+                    "module": "_local_",
+                    "name": "gaussian_blur"
+                },
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "myread"
+                    },
+                    "size": {
+                        "type": "literal",
+                        "value": 10.0
+                    }
+                },
+                "position": [
+                    0.0,
+                    60.0
+                ]
+            }
+        }
+    }
+}

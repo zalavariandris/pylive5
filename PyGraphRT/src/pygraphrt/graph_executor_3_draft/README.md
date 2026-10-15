@@ -5,7 +5,8 @@ executors, execution plan, cache, and top-level exports are unchanged.
 
 ## Responsibilities
 
-- `GraphCache` stores the latest valid outputs without fingerprints or signals.
+- `GraphCache` stores the latest valid outputs and their original execution
+  durations without fingerprints or signals.
 - `prepare()` stops traversal at cached nodes and copies required cached values
   into `ExecutionPlan.initial_outputs`. Only missing computations go in `nodes`.
 - `execute()` runs a plan without the live graph or persistent cache. Its results
@@ -81,6 +82,14 @@ results without submitting to the backend. `evaluated` contains accepted
 outcomes, including cached successes; it does not imply every reported operator
 ran. The evaluator still uses Qt signals and requires a Qt event loop even with
 the inline backend. The backend protocol itself has no Qt signal requirement.
+
+Successful operator calls are measured with `myutils.profiler.Profiler`.
+`ExecutionSuccess.duration_seconds` stores the elapsed time and `duration_ms`
+exposes it in milliseconds. Cached successes retain the duration of the
+computation that produced the cached value and set `cached=True`. Fresh results
+set `cached=False` and replace the saved value and duration together. Unmeasured
+results have no duration. Timing excludes plan preparation, input resolution,
+and time waiting for a worker. PyFlow5 displays cached durations in parentheses.
 
 `evaluator.invalidate(*roots)` evicts roots and their descendants and advances
 the revision even without a new request. `evaluator.clear_cache()` evicts all

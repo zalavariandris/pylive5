@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from contextlib import contextmanager
 import time
 from typing import Hashable
@@ -17,11 +18,10 @@ class Profiler:
             self._execution_times.pop(key, None)
 
     @contextmanager
-    def profile(self, key: Hashable):
-        start_time = time.time()
-        current_node = key
+    def profile(self, key: Hashable) -> Iterator[None]:
+        start_time = time.perf_counter()
         try:
             yield
         finally:
-            elapsed_time = time.time() - start_time
-            self._execution_times[current_node] = elapsed_time
+            elapsed_time = time.perf_counter() - start_time
+            self._execution_times[key] = elapsed_time
