@@ -2,8 +2,10 @@ from typing import Callable, Mapping, Any
 from types import MappingProxyType
 import sys
 import inspect
-from annotationlib import Format
 from pathlib import Path
+
+if sys.version_info >= (3, 14):
+    from annotationlib import Format
 
 from .abstract_operator import AbstractOperator, ParameterData
 
@@ -25,7 +27,14 @@ class FunctionOperator(AbstractOperator):
         filename = self._func.__code__.co_filename
         return None if filename.startswith("<") else Path(filename).resolve()
 
-    def _signature(self):
+    def _signature(self) -> inspect.Signature:
+        # Resolve postponed annotations without stripping Annotated metadata or
+        # recursively resolving type-only names inside aliases such as ImageRGBA.
+        try:
+            return inspect.signature(self._func, eval_str=True)
+        except (NameError, SyntaxError, TypeError):
+            pass
+
         # Live edits can leave annotation names unfinished (e.g. s instead of str).
         if sys.version_info >= (3, 14):
             return inspect.signature(self._func, annotation_format=Format.FORWARDREF)

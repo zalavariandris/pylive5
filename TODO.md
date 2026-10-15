@@ -1,5 +1,6 @@
 # TOD
-- [ ] add execute duration and show it in the graphview
+- [ ] review how string and non string annotation is received by the editors.py. also vfxops forexample uses `from __future__ import annotations` that might turn annotations into strings.
+- [x] add execute duration and show it in the graphview
 - [ ] checkout https://pypi.org/project/Fileseq/ for file sequences instead inventing the wheel, as we do it now in vfxops
 - [ ] graph cache revision
       -> added a new graph evaluator suite. it should be reviewed.

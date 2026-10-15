@@ -246,7 +246,26 @@ class DirectionalGraphView5(QFrame):
         option.features |= QStyleOptionViewItem.ViewItemFeature.HasDisplay
         option.displayAlignment = Qt.AlignmentFlag.AlignCenter
         option.rect = self._nodeShape(option, node).boundingRect().toAlignedRect()
-        option.backgroundBrush = option.palette.base()
+        foreground: QColor | QBrush | None = self._model.nodeData(
+            node, Qt.ItemDataRole.ForegroundRole
+        )
+        if foreground is not None:
+            foreground_brush = QBrush(foreground)
+            for color_role in (
+                QPalette.ColorRole.Text,
+                QPalette.ColorRole.PlaceholderText,
+                QPalette.ColorRole.HighlightedText,
+            ):
+                option.palette.setBrush(color_role, foreground_brush)
+
+        background: QColor | QBrush | None = self._model.nodeData(
+            node, Qt.ItemDataRole.BackgroundRole
+        )
+        option.backgroundBrush = (
+            QBrush(background)
+            if background is not None
+            else option.palette.base()
+        )
         return option
 
     # nodes delegate

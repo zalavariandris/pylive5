@@ -1,6 +1,6 @@
-"""Tuple editors following vfxops' color, vector, size, and rectangle conventions."""
+"""Editors for vfxops' ranges, colors, vectors, sizes, and rectangles."""
 
-from typing import Any, get_args, get_origin
+from typing import Annotated, Any, get_args, get_origin
 
 from qtpy.QtCore import QModelIndex, Property, QSignalBlocker, QSize, Signal
 from qtpy.QtGui import QColor
@@ -18,6 +18,8 @@ from qtpy.QtWidgets import (
 
 from myqtx.widgets.coloredit import ColorEdit
 from myqtx.widgets.numeric_tuple_edit import NumericTupleEdit
+from myqtx.widgets.qfloatslider import QFloatSlider
+from vfxops import Range
 
 from pyflow5.core.nodert_input_roles import NodeRTInputRole
 from pyflow5.views.abstract_input_editor_provider import AbstractInputEditorProvider
@@ -32,6 +34,21 @@ class VFXInputEditorProvider(AbstractInputEditorProvider):
         index: QModelIndex,
     ) -> QWidget | None:
         annotation = index.data(NodeRTInputRole.AnnotationRole)
+        if get_origin(annotation) is Annotated:
+            annotation, *metadata = get_args(annotation)
+            value_range = next(
+                (item for item in metadata if isinstance(item, Range)), None,
+            )
+            if annotation is float and value_range is not None:
+                slider = QFloatSlider(
+                    parent=parent,
+                    minimum=value_range.minimum,
+                    maximum=value_range.maximum,
+                    step=value_range.step,
+                )
+                slider.valueChanged.connect(lambda: self.commitData.emit(slider))
+                return slider
+
         if get_origin(annotation) is not tuple:
             return None
 
@@ -58,7 +75,9 @@ class VFXInputEditorProvider(AbstractInputEditorProvider):
         return editor
 
     def setEditorValue(self, editor: QWidget, value: Any) -> None:
-        if isinstance(editor, ColorEdit):
+        if isinstance(editor, QFloatSlider):
+            editor.setValue(editor.minimum() if value is None else float(value))
+        elif isinstance(editor, ColorEdit):
             rgba = (0.0, 0.0, 0.0, 1.0) if value is None else value
             editor.setColor(QColor.fromRgbF(*rgba))
         elif isinstance(editor, NumericTupleEdit):

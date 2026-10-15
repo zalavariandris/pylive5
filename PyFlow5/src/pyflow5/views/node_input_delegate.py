@@ -151,7 +151,12 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
     def _discover_providers(self) -> None:
         """Load shipped sidecars in a stable order during startup only."""
         plugin_directory = Path(__file__).parent.parent / "editor_plugins"
-        for path in sorted(plugin_directory.glob("*.editors.py")):
+        # Specialized providers see metadata before the built-in type fallback.
+        plugin_paths = sorted(
+            plugin_directory.glob("*.editors.py"),
+            key=lambda path: (path.name == "builtins.editors.py", path.name),
+        )
+        for path in plugin_paths:
             if not path.is_file():
                 continue
 
@@ -270,19 +275,6 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
         self._updating_editors.add(editor)
         try:
             value = index.data(Qt.ItemDataRole.EditRole)
-            
-            provider = self._editor_providers.get(editor)
-            if provider is None:
-                super().setEditorData(editor, index)
-            else:
-                try:
-                    provider.setEditorValue(editor, value)
-                except Exception as e:
-                    print(f"Error setting editor value: {e}")
-
-            # todo: review handling displaying defaults in widgets.
-            #.      - we need to show when inputs are not provided neither from the node input nor from the function definitions.
-            #.     - also widget should be at least optionally show a default value, if default is set in the function definition.
             is_using_default = bool(index.data(NodeRTInputRole.IsUsingDefaultRole))
             default_value = index.data(NodeRTInputRole.DefaultValueRole)
             if is_using_default and default_value is not ParameterData.EMPTY:
@@ -294,6 +286,15 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
                 editor.setPlaceholderText(placeholder)
                 if is_using_default:
                     value = None
+
+            provider = self._editor_providers.get(editor)
+            if provider is None:
+                super().setEditorData(editor, index)
+            else:
+                try:
+                    provider.setEditorValue(editor, value)
+                except Exception as e:
+                    print(f"Error setting editor value: {e}")
         finally:
             self._updating_editors.remove(editor)
 

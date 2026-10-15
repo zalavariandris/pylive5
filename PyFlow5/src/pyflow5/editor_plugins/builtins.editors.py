@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Annotated, Any, get_args, get_origin
 from pathlib import Path
 
 from qtpy.QtCore import QModelIndex
@@ -18,6 +18,8 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
         index: QModelIndex,
     ) -> QWidget | None:
         datatype = index.data(NodeRTInputRole.AnnotationRole)
+        if get_origin(datatype) is Annotated:
+            datatype = get_args(datatype)[0]
         editor: QWidget | None = None
         if datatype == str|Path:
             editor = QLineEdit(parent)
@@ -43,6 +45,6 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
         #     editor = QPathEdit(parent=parent)
         #     editor.pathChanged.connect(lambda: self.commitData.emit(editor))
 
-        # return editor
+        return editor
 
 NodeInputFieldDelegate.register_input_editor_provider(BuiltinInputEditorProvider)

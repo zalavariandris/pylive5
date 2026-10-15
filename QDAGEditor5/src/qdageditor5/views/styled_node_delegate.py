@@ -174,6 +174,7 @@ class StyledNodeDelegate(QObject):
         title_label = list(self.__labels(option, model, node))[0]
         painter.setPen(QPen(option.palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
         painter.drawRoundedRect(title_label.boundingRect(option), 5, 5)
+        
         if option.state & QStyle.StateFlag.State_HasFocus:
             # draw a horizontal line at the top of the title label
             painter.setPen(QPen(option.palette.text().color(), 0))

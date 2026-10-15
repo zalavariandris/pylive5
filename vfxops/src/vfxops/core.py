@@ -1,4 +1,18 @@
+from dataclasses import dataclass
 from typing import TypeAlias, Tuple, TYPE_CHECKING
+
+
+@dataclass(frozen=True)
+class Range:
+    """Suggested inspector bounds, not validation of function arguments.
+
+    Step is the largest spacing between adjacent slider positions. Editors may
+    use a slightly smaller spacing so both endpoints are reachable.
+    """
+
+    minimum: float
+    maximum: float
+    step: float = 0.01
 
 
 # Type aliases

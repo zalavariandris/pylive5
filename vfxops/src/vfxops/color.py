@@ -1,29 +1,29 @@
 from __future__ import annotations
 from os import PathLike, fspath
-from typing import TYPE_CHECKING
+from typing import Annotated, TYPE_CHECKING
 import numpy as np
 if TYPE_CHECKING:
     import PyOpenColorIO as ocio
-from .core import ImageRGBA, validate_image_data
+from .core import ImageRGBA, Range, validate_image_data
 
 
 def grade(
     img: np.ndarray,
-    blackpoint=0.0,
-    whitepoint=1.0,
-    lift=0.0,
-    gain=1.0,
-    multiply=1.0,
-    offset=0.0,
-    gamma=1.0,
-    reverse=False,
-    black_clamp=True,
-    white_clamp=False,
-    channels="rgb",
-    mask=None,
-    invert_mask=False,
-    unpremult=False,
-    mix=1.0,
+    blackpoint: Annotated[float, Range(-1.0, 1.0)] = 0.0,
+    whitepoint: Annotated[float, Range(0.0, 2.0)] = 1.0,
+    lift: Annotated[float, Range(-1.0, 1.0)] = 0.0,
+    gain: Annotated[float, Range(0.0, 4.0)] = 1.0,
+    multiply: Annotated[float, Range(0.0, 4.0)] = 1.0,
+    offset: Annotated[float, Range(-1.0, 1.0)] = 0.0,
+    gamma: Annotated[float, Range(0.01, 5.0)] = 1.0,
+    reverse:bool=False,
+    black_clamp:bool=True,
+    white_clamp:bool=False,
+    channels:str="rgb",
+    mask:ImageRGBA|None=None,
+    invert_mask:bool=False,
+    unpremult:bool=False,
+    mix: Annotated[float, Range(0.0, 1.0)] = 1.0,
 ):
     """
     Nuke-style Grade.
@@ -32,6 +32,9 @@ def grade(
 
     Color parameters accept a scalar or
     per-channel RGB/RGBA values.
+
+    Range annotations suggest slider bounds for scalar editing; they do not
+    restrict values supplied by callers.
 
     Returns a new float32 array.
     """

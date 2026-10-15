@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, get_args, get_origin
+from typing import Annotated, Any, get_args, get_origin
 
 import pygraphrt as rt
 from pyflow5.editorregistry import EditorContext
@@ -29,12 +29,19 @@ class _InputDetails:
     default: object
 
     @property
+    def base_annotation(self) -> object:
+        if get_origin(self.annotation) is Annotated:
+            return get_args(self.annotation)[0]
+        return self.annotation
+
+    @property
     def editable_type(self) -> type | None:
         if isinstance(self.value, rt.NodeRef):
             return None
-        if isinstance(self.annotation, type) and self.annotation is not Any:
-            return self.annotation
-        if get_origin(self.annotation) is tuple:
+        annotation = self.base_annotation
+        if isinstance(annotation, type) and annotation is not Any:
+            return annotation
+        if get_origin(annotation) is tuple:
             return tuple
         return None
 
@@ -223,8 +230,8 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                         return False
                     value = text == "true"
 
-                elif value_type is tuple and get_origin(details.annotation) is tuple:
-                    component_types = get_args(details.annotation)
+                elif value_type is tuple and get_origin(details.base_annotation) is tuple:
+                    component_types = get_args(details.base_annotation)
                     if not isinstance(value, tuple):
                         return False
                     if component_types and all(t in (int, float) for t in component_types):

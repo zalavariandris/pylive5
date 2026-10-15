@@ -31,6 +31,7 @@ import pygraphrt as rt
 from qdageditor5.core.item_data_roles import (
     NodeDataRole
 )
+import inspect
 
 class PyGraphRTGraphModel(AbstractDAGModel):
     ExecutionRole = Qt.ItemDataRole.UserRole+1
@@ -86,7 +87,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         self.nodesDataChanged.emit(
             tuple(changed_nodenames),
-            (self.ExecutionRole, NodeDataRole.TrailingRole),
+            (self.ExecutionRole, NodeDataRole.TrailingRole, Qt.ItemDataRole.ForegroundRole),
         )
 
     def close(self) -> None:
@@ -182,11 +183,20 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 else:
                     return QColor(200,20,20)
 
+            case Qt.ItemDataRole.ForegroundRole:
+                execution = self._executions.get(node_name)
+                if isinstance(execution, rt.ExecutionFailure):
+                    return QColor("red")
+                return None
+
             case NodeDataRole.LeadingRole:
                 return f"{node_ref.get_name()}"
 
             case NodeDataRole.TrailingRole:
                 execution = self._executions.get(node_name)
+                if isinstance(execution, rt.ExecutionFailure):
+                    return str(execution.reason)
+
                 if isinstance(execution, rt.ExecutionSuccess):
                     duration_ms = execution.duration_ms
                     if duration_ms is not None:
@@ -248,7 +258,13 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                     operator_rt = node_rt.get_operator()
                     if operator_rt is not  None:
                         if param := operator_rt.get_parameters().get(str(inlet)):
-                            return f"{param.name}: {param.annotation}"
+                            if param.annotation != inspect._empty:
+                                if isinstance(param.annotation, type):
+                                    return f"{param.name}: {param.annotation.__name__}"
+                                else:
+                                    return f"{param.name}: {param.annotation}"
+                            else:
+                                return f"{param.name}"
                 # fallback
                 return f"{inlet}"
             

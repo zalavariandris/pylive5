@@ -1,3 +1,5 @@
+from .core import Range
+
 # Type aliases
 # from .core import (
 #     Vec3,
