@@ -1,5 +1,4 @@
 from turtle import color
-from dataclasses import dataclass
 
 from qtpy.QtCore import QObject, QPointF, QRect, QRectF, Qt
 from qtpy.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPalette, QPen, QPen
@@ -109,23 +108,6 @@ def _bounding_rect(rects: list[QRectF]) -> QRectF:
     return united_rect
 
 
-@dataclass(frozen=True)
-class _LabelGeometry:
-    text: str
-    rect: QRectF
-    alignment: Qt.AlignmentFlag
-    padding: tuple[float, float]
-
-
-@dataclass(frozen=True)
-class NodeLocalGeometry:
-    """Measured node layout relative to its origin, owned by the view."""
-
-    labels: tuple[_LabelGeometry, ...]
-    bounding_rect: QRectF
-    shape: QPainterPath
-
-
 class StyledNodeDelegate(QObject):
     def __init__(self, parent=None) -> None:
         super().__init__(parent=parent)
@@ -157,41 +139,29 @@ class StyledNodeDelegate(QObject):
 
         return title_label, leading_label, trailing_label
 
-    def createNodeLocalGeometry(
-        self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName,
-    ) -> NodeLocalGeometry:
-        """Measure once in node-local coordinates; do not retain paint state."""
-        labels = tuple(
-            _LabelGeometry(
-                label.text, label.boundingRect(option), label.alignment, label.padding,
-            )
-            for label in self.__labels(option, model, node)
-        )
-        shape = QPainterPath()
-        shape.addRoundedRect(labels[0].rect, 5, 5)
-        return NodeLocalGeometry(labels, _bounding_rect([label.rect for label in labels]), shape)
-
     def _nodeLocalRect(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QRectF:
         """Measure bounds relative to the node origin; do not apply its position."""
         assert isinstance(option, QStyleOptionViewItem)
-
-        geometry = self.createNodeLocalGeometry(option, model, node)
-        return QRectF(geometry.bounding_rect)
+        labels = self.__labels(option, model, node)
+        return _bounding_rect([label.boundingRect(option) for label in labels])
 
     def _nodeLocalShape(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QPainterPath:
         """Measure the body shape relative to the node origin."""
-        geometry = self.createNodeLocalGeometry(option, model, node)
-        return QPainterPath(geometry.shape)
+        title_label, _, _ = self.__labels(option, model, node)
+        shape = QPainterPath()
+        shape.addRoundedRect(title_label.boundingRect(option), 5, 5)
+        return shape
     
     def paint(
         self, painter: QPainter, option: QStyleOptionViewItem,
-        model: AbstractDAGModel, node: NodeName, geometry: NodeLocalGeometry | None = None,
+        model: AbstractDAGModel, node: NodeName,
     ) -> None:
         """Paint node-local geometry; the view positions the painter in the scene."""
-        if geometry is None:
-            geometry = self.createNodeLocalGeometry(option, model, node)
+        labels = self.__labels(option, model, node)
         style:QStyle = option.widget.style() if option.widget else QApplication.style()
-        title_rect = geometry.labels[0].rect
+        title_rect = labels[0].boundingRect(option)
+        shape = QPainterPath()
+        shape.addRoundedRect(title_rect, 5, 5)
 
         # Style options and measured geometry both use node-local coordinates.
         option = QStyleOptionViewItem(option)
@@ -200,18 +170,14 @@ class StyledNodeDelegate(QObject):
         painter.save()
 
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, option.widget)
-        painter.setFont(option.font)
-        painter.setPen(QPen(option.palette.placeholderText().color(), 0))
-        for label in geometry.labels[1:]:
-            padding_x, padding_y = label.padding
-            rect = label.rect.adjusted(padding_x, padding_y, -padding_x, -padding_y)
-            painter.drawText(rect, int(label.alignment), label.text)
+        for label in labels[1:]:
+            label.paint(painter, option)
         painter.restore()
 
         # paint ouside
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setClipPath(geometry.shape, Qt.ClipOperation.IntersectClip)
+        painter.setClipPath(shape, Qt.ClipOperation.IntersectClip)
         painter.setPen(QPen(option.palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
         painter.drawRoundedRect(title_rect, 5, 5)
         

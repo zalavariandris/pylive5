@@ -275,6 +275,8 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 if node_rt is None:
                     return None
 
+                # todo: this needs to be refactored. wi probably need a consolidate args, kwargs and the operator.
+                # figure out if an input locator is int or str, and how it maps onto the operator parameters.
                 # determine if the inlet has default
                 HasDefaultValue = False
                 operator_rt = node_rt.get_operator()
@@ -289,11 +291,21 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 # determine if the inlet has a value
                 args, kwargs = node_rt.get_inputs()
                 HasLiteralValue = False
-                if inlet in kwargs:
+                try:
                     value = kwargs[inlet]
                     if not isinstance(value, NodeRef):
                         HasLiteralValue = True
-                # todo: missing implementation to determine if the inlet represents a positional arg
+                except KeyError:
+                    pass
+                try:
+                    inlet_pos = list(self.inlets(node)).index(inlet)
+                    if inlet_pos < len(args):
+                        value = args[inlet_pos]
+                        if not isinstance(value, NodeRef):
+                            HasLiteralValue = True
+                except ValueError:
+                    # todo: this should not happenr right?
+                    pass
 
                 if HasLiteralValue or HasDefaultValue:
                     return True

@@ -1,5 +1,15 @@
-# TOD
- - [ ] When linking, dropping an inlet right onto a node, should create a popup where all the possible inlets (invisibles especially) can be selected to link to.
+# TODO
+- [ ] consider *@vfxops* ImageRGBA using _Planar(CHW)_ channels layout instead of _Interleaved (HWC)_ layout
+     interleaved: RGBA RGBA RGBA …
+     Planar: RRR… GGG… BBB… AAA…
+     it is possible a lot faster.
+- [ ] we have to solve the mutability problem in the graph processing
+- [x] When linking, dropping an inlet right onto a node, should create a popup where all the possible inlets (invisibles especially) can be selected to link to.
+
+- [ ] I think we need a single helper function to consolidate node args, kwargs and the operator parameters.
+      figure out if an input locator is int or str, and how it maps onto the operator parameters.
+      
+
 - [x] add visibility Role(orFlag) to inlets.
       in pyflow hide an inlet if it has no Literal Input or has a default value.
       # todo: missing implementation to determine if the inlet represents a positional arg

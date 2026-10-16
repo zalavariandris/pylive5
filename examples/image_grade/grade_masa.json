@@ -3,7 +3,7 @@
     "modules": {
         "_local_": {
             "type": "embedded",
-            "source": "from vfxops.io import read_image\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.color import grade, exposure\n\ndef myread(path:str):\n    print(\"read image\")\n    return read_image(path)\n\n__all__ = [\n    \"myread\",\n    \"grade\",\n    \"exposure\",\n    \"read_image\",\n    \"gaussian_blur\"\n]"
+            "source": "from vfxops.io import read_image\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.color import grade, exposure\nfrom vfxops.core import ImageRGBA, Range\nfrom typing import Annotated\n\ndef myread(path:str):\n    print(\"read image\")\n    return read_image(path)\n    \ndef myexp(img: ImageRGBA, ev:Annotated[float, Range(-10.0, 10.0)]=0.0):\n    factor = 2.0 ** ev\n    return img * (factor, factor, factor, 1.0)\n\n__all__ = [\n    \"myread\",\n    \"grade\",\n    \"exposure\",\n    \"myexp\",\n    \"read_image\",\n    \"gaussian_blur\"\n]"
         }
     },
     "graph": {
@@ -21,7 +21,7 @@
                 },
                 "position": [
                     0.0,
-                    -60.0
+                    -120.0
                 ]
             },
             "gaussian_blur": {
@@ -32,16 +32,76 @@
                 "kwargs": {
                     "img": {
                         "type": "node",
-                        "name": "myread"
+                        "name": "myexp"
                     },
                     "size": {
                         "type": "literal",
-                        "value": 10.0
+                        "value": 0.0
                     }
                 },
                 "position": [
-                    0.0,
-                    60.0
+                    60.0,
+                    120.0
+                ]
+            },
+            "exposure": {
+                "operator": {
+                    "module": "_local_",
+                    "name": "exposure"
+                },
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "myread"
+                    }
+                },
+                "position": [
+                    60.0,
+                    0.0
+                ]
+            },
+            "grade": {
+                "operator": {
+                    "module": "_local_",
+                    "name": "grade"
+                },
+                "kwargs": {
+                    "reverse": {
+                        "type": "literal",
+                        "value": false
+                    },
+                    "black_clamp": {
+                        "type": "literal",
+                        "value": true
+                    },
+                    "img": {
+                        "type": "node",
+                        "name": "myread"
+                    }
+                },
+                "position": [
+                    -60.0,
+                    0.0
+                ]
+            },
+            "myexp": {
+                "operator": {
+                    "module": "_local_",
+                    "name": "myexp"
+                },
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "myread"
+                    },
+                    "ev": {
+                        "type": "literal",
+                        "value": 0.5299999999999994
+                    }
+                },
+                "position": [
+                    6.5,
+                    62.5
                 ]
             }
         }

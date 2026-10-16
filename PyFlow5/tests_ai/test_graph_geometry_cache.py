@@ -4,14 +4,18 @@ from collections.abc import Iterator
 
 import pytest
 from pytestqt.qtbot import QtBot
-from qtpy.QtCore import QEvent, QPoint, QPointF, Qt
-from qtpy.QtGui import QColor, QImage, QMouseEvent, QPainter, QPalette
+from qtpy.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
+from qtpy.QtGui import QColor, QImage, QMouseEvent, QPainter, QPainterPath, QPalette
+from qtpy.QtWidgets import QStyleOptionViewItem
 
 import pygraphrt as rt
 from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
 from pygraphrt.graph_executor_3_draft import GraphEvaluator, InlineExecutionBackend
+from qdageditor5.core.item_data_roles import NodeDataRole
+from qdageditor5.models.abstract_dag_model import AbstractDAGModel, NodeName
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
+from qdageditor5.views.styled_node_delegate import StyledNodeDelegate
 
 
 def make_model() -> PyGraphRTGraphModel:
@@ -115,9 +119,10 @@ def test_group_drag_reuses_geometry_for_bounds_hit_testing_and_paint(
     link_before = view._linkShape(link)
 
     def unexpected_measurement(*args: object, **kwargs: object) -> None:
-        pytest.fail("Moving and painting cached nodes must not measure their labels again")
+        pytest.fail("Moving and painting cached nodes must reuse their bounds and shape")
 
-    monkeypatch.setattr(view._nodes_delegate, "createNodeLocalGeometry", unexpected_measurement)
+    monkeypatch.setattr(view._nodes_delegate, "_nodeLocalRect", unexpected_measurement)
+    monkeypatch.setattr(view._nodes_delegate, "_nodeLocalShape", unexpected_measurement)
     start = view.mapFromScene(model.nodePosition("second")).toPoint()
     qtbot.mousePress(view, Qt.MouseButton.LeftButton, pos=start)
     delta = QPointF(80, 40)
@@ -143,16 +148,16 @@ def test_result_label_change_remeasures_only_the_changed_node(
 ) -> None:
     view, model = graph_view
     render(view)
-    old_geometry = dict(view._node_local_geometry)
+    old_cache = dict(view._node_item_cache)
     node = model.mapToSource("second")
     model._on_evaluated({node: rt.ExecutionFailure(node, ValueError("A much longer error label"))})
 
     rect = view._nodeSceneRect(view._createNodeStyleOption("second"), "second")
-    assert rect.width() > old_geometry["second"].bounding_rect.width()
-    assert view._node_local_geometry["first"] is old_geometry["first"]
-    assert view._node_local_geometry["third"] is old_geometry["third"]
+    assert rect.width() > old_cache["second"].bounding_rect.width()
+    assert view._node_item_cache["first"] is old_cache["first"]
+    assert view._node_item_cache["third"] is old_cache["third"]
     cached_image = render(view)
-    view._node_local_geometry.clear()
+    view._node_item_cache.clear()
     assert render(view) == cached_image
 
 
@@ -166,7 +171,8 @@ def test_palette_and_selection_stay_live_without_remeasuring(
     def unexpected_measurement(*args: object, **kwargs: object) -> None:
         pytest.fail("Palette and selection changes must reuse node layout")
 
-    monkeypatch.setattr(view._nodes_delegate, "createNodeLocalGeometry", unexpected_measurement)
+    monkeypatch.setattr(view._nodes_delegate, "_nodeLocalRect", unexpected_measurement)
+    monkeypatch.setattr(view._nodes_delegate, "_nodeLocalShape", unexpected_measurement)
     palette = view.palette()
     palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("magenta"))
     view.setPalette(palette)
@@ -195,7 +201,7 @@ def test_model_lifecycle_discards_cached_nodes(
 ) -> None:
     view, model = graph_view
     view._createNodeStyleOption("first")
-    assert "first" in view._node_local_geometry
+    assert "first" in view._node_item_cache
     if change == "reset":
         model._beginResetModel()
         model._endResetModel()
@@ -206,7 +212,76 @@ def test_model_lifecycle_discards_cached_nodes(
         replacement._evaluator.close()
     else:
         model.removeNodes(["first"])
-    assert "first" not in view._node_local_geometry
+    assert "first" not in view._node_item_cache
+
+
+def test_view_owns_geometry_returned_by_a_custom_delegate(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+) -> None:
+    view, model = graph_view
+    local_rect = QRectF(-60, -20, 120, 40)
+    local_shape = QPainterPath()
+    local_shape.addEllipse(QRectF(-40, -15, 80, 30))
+    painted_nodes: list[NodeName] = []
+
+    class CustomDelegate(StyledNodeDelegate):
+        def _nodeLocalRect(
+            self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName,
+        ) -> QRectF:
+            return local_rect
+
+        def _nodeLocalShape(
+            self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName,
+        ) -> QPainterPath:
+            return local_shape
+
+        def paint(
+            self, painter: QPainter, option: QStyleOptionViewItem,
+            model: AbstractDAGModel, node: NodeName,
+        ) -> None:
+            painted_nodes.append(node)
+            painter.fillRect(option.rect, QColor("cyan"))
+
+    view._nodes_delegate = CustomDelegate()
+    option = view._createNodeStyleOption("first")
+    expected_rect = QRectF(local_rect)
+    expected_shape = QPainterPath(local_shape)
+    assert view._nodeLocalRect(option, "first") == expected_rect
+    assert view._nodeLocalShape(option, "first") == expected_shape
+    assert option.rect == expected_shape.boundingRect().toAlignedRect()
+    render(view)
+    assert set(painted_nodes) == set(model.nodes())
+
+    # The delegate may retain mutable Qt objects; the view owns its copies.
+    local_rect.translate(100, 100)
+    local_shape.translate(100, 100)
+    assert view._nodeLocalRect(option, "first") == expected_rect
+    assert view._nodeLocalShape(option, "first") == expected_shape
+
+
+@pytest.mark.parametrize("role", [NodeDataRole.LeadingRole, NodeDataRole.TrailingRole])
+def test_paint_reads_current_labels_without_rebuilding_the_cache(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+    monkeypatch: pytest.MonkeyPatch,
+    role: int,
+) -> None:
+    view, model = graph_view
+    original_node_data = model.nodeData
+    label = "123"
+
+    def node_data(node: NodeName, requested_role: int = Qt.ItemDataRole.DisplayRole) -> object:
+        if node == "second" and requested_role == role:
+            return label
+        return original_node_data(node, requested_role)
+
+    monkeypatch.setattr(model, "nodeData", node_data)
+    before = render(view)
+    cached = view._node_item_cache["second"]
+
+    # Deliberately skip a data-change signal to check that paint owns its labels.
+    label = "456"
+    assert render(view) != before
+    assert view._node_item_cache["second"] is cached
 
 
 def test_changed_ports_reposition_without_stale_node_bounds(

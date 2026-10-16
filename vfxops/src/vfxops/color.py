@@ -6,11 +6,13 @@ if TYPE_CHECKING:
 from .core import ImageRGBA, Range, validate_image_data
 
 
-def exposure(img, ev:Annotated[float, Range(-10.0, 10.0)]=0.0):
-    return img * (2.0 ** ev)
+def exposure(img: ImageRGBA, ev:Annotated[float, Range(-10.0, 10.0)]=0.0):
+    factor = 2.0 ** ev
+    scale = np.asarray((factor, factor, factor, 1.0), dtype=img.dtype) # keep it float32
+    return img * scale
 
 
-def grade(
+def grade( 
     img: ImageRGBA,
     blackpoint: Annotated[float, Range(-1.0, 1.0)] = 0.0,
     whitepoint: Annotated[float, Range(0.0, 2.0)] = 1.0,

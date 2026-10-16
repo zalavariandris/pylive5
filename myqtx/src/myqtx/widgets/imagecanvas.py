@@ -73,7 +73,7 @@ class NumpyImageItem(QGraphicsItem):
                 np.copyto(self._byte_buffer, data)
                 pixels = self._byte_buffer
             else:
-                raise TypeError('Expected float32 or uint8 RGBA NumPy array')
+                raise TypeError(f'Expected float32 or uint8 RGBA NumPy array, got {data.dtype}')
 
             height, width = pixels.shape[:2]
             owner = pixels

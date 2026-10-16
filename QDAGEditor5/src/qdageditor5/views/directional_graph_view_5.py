@@ -4,7 +4,7 @@ from __future__ import annotations
 from functools import reduce
 from collections.abc import Iterable, Sequence
 from typing import NamedTuple, Literal
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from qdageditor5.core.item_data_roles import SocketDataRole
 from qdageditor5.utils.graph_layouts.graph_layout_with_grandalf import layout_graph_model_with_grandalf
@@ -49,6 +49,7 @@ from qtpy.QtGui import (
 from qtpy.QtWidgets import (
     QFrame,
     QHBoxLayout,
+    QMenu,
     QStyle,
     QStyleOptionViewItem,
     QVBoxLayout,
@@ -56,7 +57,7 @@ from qtpy.QtWidgets import (
     QAction
 )
 
-from .styled_node_delegate import NodeLocalGeometry, StyledNodeDelegate
+from .styled_node_delegate import StyledNodeDelegate
 
 from qdageditor5.utils import geo
 
@@ -70,7 +71,22 @@ class _GraphItemId(NamedTuple):
     item: NodeId | InletId | OutletId | DirectionalLinkId
 
 
-from dataclasses import dataclass
+@dataclass
+class _NodeItemCache:
+    """View-owned node state in local coordinates; labels stay in the delegate."""
+
+    bounding_rect: QRectF
+    shape: QPainterPath
+
+
+@dataclass
+class _InletItemCache:
+    """Resolved visibility and node-local geometry; hidden inlets have empty geometry."""
+
+    hidden: bool
+    position: QPointF = field(default_factory=QPointF)
+    bounding_rect: QRectF = field(default_factory=QRectF)
+    shape: QPainterPath = field(default_factory=QPainterPath)
 
 
 @dataclass
@@ -119,7 +135,8 @@ class DirectionalGraphView5(QFrame):
         self._selection_model: GraphSelectionModel | None = None
         self._selection_model_connections = []
         self._nodes_delegate = StyledNodeDelegate()
-        self._node_local_geometry: dict[NodeName, NodeLocalGeometry] = {}
+        self._node_item_cache: dict[NodeName, _NodeItemCache] = {}
+        self._inlet_item_cache: dict[NodeName, dict[InletName, _InletItemCache]] = {}
         # Bounds of the body, ports and port labels, relative to the node origin.
         self._node_local_painted_rects: dict[NodeName, QRectF] = {}
         self._geometry_metrics: QFontMetrics | None = None
@@ -155,7 +172,8 @@ class DirectionalGraphView5(QFrame):
                 signal.disconnect(slot)
             self._model_connections.clear()
 
-        self._node_local_geometry.clear()
+        self._node_item_cache.clear()
+        self._inlet_item_cache.clear()
         self._node_local_painted_rects.clear()
         self._geometry_metrics = None
         if model is not None:
@@ -187,14 +205,13 @@ class DirectionalGraphView5(QFrame):
                         _bounding_rect([self._get_affected_rect(node) 
                                    for node in nodes]))),
 
-                (model.linksAdded, 
-                    lambda links: [self.updateScene(
-                        _bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
-                                   for link in links]))]),
+                (model.linksAdded, self._on_links_changed),
+                (model.linksRemoved, self._on_links_changed),
+                (model.linksReset, self._on_links_reset),
 
                 (model.linksAboutToBeRemoved, 
                     lambda links: [self.updateScene(
-                        _bounding_rect([self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2) 
+                        _bounding_rect([self._linkRect(link).adjusted(-2, -2, 2, 2)
                                    for link in links]))]),
             ]
             outlet_data_changed = getattr(model, "outletDataChanged", None)
@@ -211,7 +228,8 @@ class DirectionalGraphView5(QFrame):
         self, nodes: Iterable[NodeName], roles: Sequence[int] = (),
     ) -> None:
         for node in nodes:
-            self._node_local_geometry.pop(node, None)
+            self._node_item_cache.pop(node, None)
+            self._inlet_item_cache.pop(node, None)
             self._node_local_painted_rects.pop(node, None)
         # Port changes move links and can shrink old painted bounds. Invalidate
         # the whole view so both old and new geometry are repainted.
@@ -233,9 +251,19 @@ class DirectionalGraphView5(QFrame):
     def _on_nodes_removed(self, nodes: Iterable[NodeName]) -> None:
         self._on_node_presentation_changed(nodes)
 
+    def _on_links_changed(self, links: Sequence[DirectionalLinkId]) -> None:
+        # Connections reveal hidden inlets and can move every port on a node.
+        targets = {target for _, _, target, _ in links}
+        self._on_node_presentation_changed(targets)
+
+    def _on_links_reset(self) -> None:
+        if self._model is not None:
+            self._on_node_presentation_changed(self._model.nodes())
+
     def _on_model_reset(self) -> None:
         """Discard interactions whose node/link references may be stale."""
-        self._node_local_geometry.clear()
+        self._node_item_cache.clear()
+        self._inlet_item_cache.clear()
         self._node_local_painted_rects.clear()
         self._tool = None
         self._hovered_item = None
@@ -308,30 +336,37 @@ class DirectionalGraphView5(QFrame):
         )
         return option
 
-    # nodes delegate
-    def _nodeLocalGeometry(self, option: QStyleOptionViewItem, node: NodeName) -> NodeLocalGeometry:
-        """Cache node-local layout; position, pan, zoom and palette stay live."""
-        assert self._model is not None
-        if self._geometry_metrics != option.fontMetrics:
-            self._geometry_metrics = QFontMetrics(option.fontMetrics)
-            self._node_local_geometry.clear()
+    def _updateGeometryMetrics(self, metrics: QFontMetrics) -> None:
+        """Invalidate local geometry when the font or paint-device metrics change."""
+        if self._geometry_metrics != metrics:
+            self._geometry_metrics = QFontMetrics(metrics)
+            self._node_item_cache.clear()
+            self._inlet_item_cache.clear()
             self._node_local_painted_rects.clear()
 
-        geometry = self._node_local_geometry.get(node)
-        if geometry is None:
-            geometry = self._nodes_delegate.createNodeLocalGeometry(option, self._model, node)
-            self._node_local_geometry[node] = geometry
-        return geometry
+    # nodes delegate
+    def _nodeItemCache(self, option: QStyleOptionViewItem, node: NodeName) -> _NodeItemCache:
+        """Measure and cache local geometry; position and paint state stay live."""
+        assert self._model is not None
+        self._updateGeometryMetrics(option.fontMetrics)
+        cache = self._node_item_cache.get(node)
+        if cache is None:
+            cache = _NodeItemCache(
+                bounding_rect=QRectF(self._nodes_delegate._nodeLocalRect(option, self._model, node)),
+                shape=QPainterPath(self._nodes_delegate._nodeLocalShape(option, self._model, node)),
+            )
+            self._node_item_cache[node] = cache
+        return cache
 
     def _nodeLocalRect(self, option: QStyleOptionViewItem, node: NodeName) -> QRectF:
         """Return bounds relative to the node origin, independent of its position."""
         if self._model is None:
             return QRectF()
-        return QRectF(self._nodeLocalGeometry(option, node).bounding_rect)
+        return QRectF(self._nodeItemCache(option, node).bounding_rect)
 
     def _nodeLocalShape(self, option: QStyleOptionViewItem, node: NodeName) -> QPainterPath:
         """Return the node body shape relative to the node origin."""
-        return QPainterPath(self._nodeLocalGeometry(option, node).shape)
+        return QPainterPath(self._nodeItemCache(option, node).shape)
 
     def _nodeSceneRect(self, option: QStyleOptionViewItem, node: NodeName) -> QRectF:
         """Translate local bounds to scene coordinates, before view pan and zoom."""
@@ -346,55 +381,137 @@ class DirectionalGraphView5(QFrame):
 
     def _paintNode(self, painter: QPainter, option: QStyleOptionViewItem, node: NodeName) -> None:
         assert self._model is not None
-        geometry = self._nodeLocalGeometry(option, node)
         painter.save()
         try:
             painter.translate(self._model.nodePosition(node))
-            self._nodes_delegate.paint(painter, option, self._model, node, geometry)
+            self._nodes_delegate.paint(painter, option, self._model, node)
         finally:
             painter.restore()
 
+    def _choose_inlet_link(
+        self,
+        source: NodeName,
+        outlet: OutletName,
+        target: NodeName,
+        global_pos: QPoint,
+    ) -> DirectionalLinkId | None:
+        """Choose from all inlets only when the node has undrawn inlets."""
+        model = self._model
+        if model is None:
+            return None
+
+        inlet_caches = self._inletItemCaches(target)
+        if not any(cache.hidden for cache in inlet_caches.values()):
+            return None
+
+        menu = QMenu(self)
+        choices: dict[QAction, DirectionalLinkId] = {}
+        for inlet in inlet_caches:
+            label = model.inletData(target, inlet, Qt.ItemDataRole.DisplayRole)
+            text = str(inlet) if label is None else str(label)
+            link = (source, outlet, target, inlet)
+            action = menu.addAction(text.replace("&", "&&"))
+            action.setEnabled(model.canCompleteLink(*link))
+            choices[action] = link
+
+        try:
+            selected = menu.exec(global_pos)
+            link = choices.get(selected)
+        finally:
+            menu.deleteLater()
+
+        # A menu runs an event loop: the model or its ports may have changed.
+        if link is None or self._model is not model:
+            return None
+        source, outlet, target, inlet = link
+        if (
+            not model.hasNode(source)
+            or not model.hasNode(target)
+            or outlet not in model.outlets(source)
+            or inlet not in model.inlets(target)
+        ):
+            return None
+        return link if model.canCompleteLink(*link) else None
+
     # inlets delegate
-    def _inletPos(self, node: NodeName, inlet: InletName) -> QPointF:
+    def _inletItemCaches(self, node: NodeName) -> dict[InletName, _InletItemCache]:
+        """Build all inlet entries together so visibility and spacing agree."""
         assert self._model is not None
+        self._updateGeometryMetrics(QFontMetrics(self.font(), self))
+        inlet_caches = self._inlet_item_cache.get(node)
+        if inlet_caches is not None:
+            return inlet_caches
+
+        inlet_caches = {}
+        visible_inlets: list[InletName] = []
+        for inlet in self._model.inlets(node):
+            hidden = (
+                self._model.inletData(node, inlet, SocketDataRole.HiddenRole) is True
+                and not any(self._model.inLinks(node, inlet))
+            )
+            inlet_caches[inlet] = _InletItemCache(hidden=hidden)
+            if not hidden:
+                visible_inlets.append(inlet)
+
+        if not visible_inlets:
+            self._inlet_item_cache[node] = inlet_caches
+            return inlet_caches
+
         option = self._createNodeStyleOption(node)
-        node_rect = self._nodeSceneShape(option, node).boundingRect()
-        
-        # outlet may be stale for a frame if the model just changed
-        ports = [inlet for inlet in self._model.inlets(node) if self._model.inletData(node, inlet, SocketDataRole.HiddenRole) is not True]
-        idx = ports.index(inlet) if inlet in ports else 0
-        w, h = 7, 7
+        node_rect = self._nodeLocalShape(option, node).boundingRect()
+        width, height = 7, 7
         spacing = 10
-        count = max(len(ports), 1)
-        node_scene_rect = node_rect
-        port_scene_pos = QPointF(node_scene_rect.x() + (node_scene_rect.width() - (count - 1) * spacing) / 2 + idx * spacing, node_scene_rect.y()-h/2)
-        return port_scene_pos
+        first_x = node_rect.center().x() - (len(visible_inlets) - 1) * spacing / 2
+        for index, inlet in enumerate(visible_inlets):
+            cache = inlet_caches[inlet]
+            cache.position = QPointF(first_x + index * spacing, node_rect.top() - height / 2)
+            body_rect = QRectF(
+                cache.position.x() - width / 2, cache.position.y() - height / 2, width, height,
+            )
+            cache.shape.addEllipse(body_rect)
+
+            text = str(self._model.inletData(node, inlet, Qt.ItemDataRole.DisplayRole))
+            text_rect = QRectF(option.fontMetrics.boundingRect(text))
+            text_rect.moveBottomLeft(body_rect.topRight())
+            cache.bounding_rect = body_rect.united(text_rect)
+
+        self._inlet_item_cache[node] = inlet_caches
+        return inlet_caches
+
+    def _inletItemCache(self, node: NodeName, inlet: InletName) -> _InletItemCache:
+        cache = self._inletItemCaches(node).get(inlet)
+        # A hovered inlet may have been removed since the last mouse event.
+        return cache if cache is not None else _InletItemCache(hidden=True)
+
+    def _inletPos(self, node: NodeName, inlet: InletName) -> QPointF:
+        """Return the inlet anchor in scene coordinates."""
+        assert self._model is not None
+        return self._inletItemCache(node, inlet).position + self._model.nodePosition(node)
 
     def _inletShape(self, node: NodeName, inlet: InletName) -> QPainterPath:
-        scene_pos = self._inletPos(node, inlet)
-        w, h = 7, 7
-        scene_rect = QRectF(scene_pos.x() - w/2, scene_pos.y() - h/2, w, h)
-        path = QPainterPath()
-        path.addEllipse(scene_rect)
-        return path
+        """Return the scene shape, or an empty path for a hidden inlet."""
+        assert self._model is not None
+        cache = self._inletItemCache(node, inlet)
+        if cache.hidden:
+            return QPainterPath()
+        return cache.shape.translated(self._model.nodePosition(node))
         
-    def _inletRect(self, node: NodeName, inlet: InletName) -> QRectF:
+    def _inletRect(self, node: NodeName, inlet: InletName) -> QRectF | None:
+        """Return scene bounds including hover text, or None for a hidden inlet."""
         assert self._model is not None
-        scene_pos = self._inletPos(node, inlet)
-        w, h = 7, 7
-        scene_rect = QRectF(scene_pos.x() - w/2, scene_pos.y() - h/2, w, h)
+        cache = self._inletItemCache(node, inlet)
+        if cache.hidden:
+            return None
+        return cache.bounding_rect.translated(self._model.nodePosition(node))
 
-        fm = QFontMetrics(self.font())
-        text_box = QRectF(fm.boundingRect(self._model.inletData(node, inlet, Qt.ItemDataRole.DisplayRole)))
-        text_box.moveBottomLeft(scene_rect.topRight())
-        scene_rect = scene_rect.united(text_box)
-        return scene_rect
-
-    def _paintInlet(self, painter: QPainter, option: QStyleOptionViewItem, node, inlet):
+    def _paintInlet(
+        self, painter: QPainter, option: QStyleOptionViewItem, node: NodeName, inlet: InletName,
+    ) -> None:
         assert self._model is not None
-        scene_pos = self._inletPos(node, inlet)
-        w, h = 7, 7
-        scene_rect = QRectF(scene_pos.x() - w/2, scene_pos.y() - h/2, w, h)
+        cache = self._inletItemCache(node, inlet)
+        if cache.hidden:
+            return
+        scene_rect = cache.shape.boundingRect().translated(self._model.nodePosition(node))
         palette = option.palette
 
         painter.setPen(Qt.PenStyle.NoPen)
@@ -480,6 +597,10 @@ class DirectionalGraphView5(QFrame):
         end_view_pos = target_view_pos
         link_path = geo.makeVerticalRoundedPath(QLineF(start_view_pos, end_view_pos), 1)
         return link_path
+
+    def _linkRect(self, link: DirectionalLinkId) -> QRectF:
+        """Measure current link bounds in scene coordinates without caching."""
+        return self._linkShape(link).boundingRect()
 
     def _draftLinkShape(self) -> QPainterPath|None:
         if isinstance(self._tool, LinkingToolData):
@@ -567,7 +688,7 @@ class DirectionalGraphView5(QFrame):
         """Cached node-local bounds covering body, ports and their hover labels.
 
         Moving a node only translates these bounds; presentation/port changes
-        invalidate them alongside the existing NodeLocalGeometry cache.
+        invalidate them alongside the node and inlet item caches.
         """
         assert self._model is not None
         option = self._createNodeStyleOption(node)
@@ -580,8 +701,9 @@ class DirectionalGraphView5(QFrame):
         position = self._model.nodePosition(node)
         bounds = [self._nodeLocalRect(option, node)]
         bounds.extend(
-            self._inletRect(node, inlet).translated(-position)
-            for inlet in [inlet for inlet in self._model.inlets(node) if self._model.inletData(node, inlet, SocketDataRole.HiddenRole) is not True]
+            cache.bounding_rect
+            for cache in self._inletItemCaches(node).values()
+            if not cache.hidden
         )
         bounds.extend(
             self._outletRect(node, outlet).translated(-position)
@@ -599,12 +721,13 @@ class DirectionalGraphView5(QFrame):
 
         # A self-link can be listed on both sides; inspect it only once.
         links = set()
-        for inlet in [inlet for inlet in self._model.inlets(node) if self._model.inletData(node, inlet, SocketDataRole.HiddenRole) is not True]:
-            links.update(model.inLinks(node, inlet))
+        for inlet, cache in self._inletItemCaches(node).items():
+            if not cache.hidden:
+                links.update(model.inLinks(node, inlet))
         for outlet in model.outlets(node):
             links.update(model.outLinks(node, outlet))
         for link in links:
-            rect = rect.united(self._linkShape(link).boundingRect())
+            rect = rect.united(self._linkRect(link))
 
         return rect.adjusted(-4, -4, 4, 4)
 
@@ -618,8 +741,9 @@ class DirectionalGraphView5(QFrame):
         # Node and port hit-test rectangles are in scene coordinates.
         scene_pos = self.mapToScene(QPointF(viewpos))
         for node in self._model.nodes():
-            for inlet in [inlet for inlet in self._model.inlets(node) if self._model.inletData(node, inlet, SocketDataRole.HiddenRole) is not True]:
-                if self._inletRect(node, inlet).contains(scene_pos):
+            for inlet in self._inletItemCaches(node):
+                inlet_rect = self._inletRect(node, inlet)
+                if inlet_rect is not None and inlet_rect.contains(scene_pos):
                     if self._inletShape(node, inlet).contains(scene_pos):
                         return _GraphItemId('inlet', (node, inlet))
                 
@@ -634,21 +758,24 @@ class DirectionalGraphView5(QFrame):
                     return _GraphItemId('node', node)
             
         for link in self._model.links():
-            source, outlet = self._model.linkSource(link)
-            source_pos = self._outletRect(source, outlet).center()
-            target, inlet = self._model.linkTarget(link)
-            target_pos = self._inletRect(target, inlet).center()
-            
-            if self._linkShape(link).contains(scene_pos):
-                # find out if the mouse is closer to the start or end of the link
-                dist_to_start = (scene_pos - source_pos).manhattanLength()
-                dist_to_end = (scene_pos - target_pos).manhattanLength()
-                if dist_to_start < dist_to_end:
-                    # closer to the start
-                    return _GraphItemId('tail', link)
-                else:
-                    # closer to the end
-                    return _GraphItemId('head', link)
+            if self._linkRect(link).contains(scene_pos):
+                if self._linkShape(link).contains(scene_pos):
+                    source, outlet = self._model.linkSource(link)
+                    source_pos = self._outletRect(source, outlet).center()
+                    target, inlet = self._model.linkTarget(link)
+                    target_rect = self._inletRect(target, inlet)
+                    if target_rect is None:
+                        continue
+                    target_pos = target_rect.center()
+                    # find out if the mouse is closer to the start or end of the link
+                    dist_to_start = (scene_pos - source_pos).manhattanLength()
+                    dist_to_end = (scene_pos - target_pos).manhattanLength()
+                    if dist_to_start < dist_to_end:
+                        # closer to the start
+                        return _GraphItemId('tail', link)
+                    else:
+                        # closer to the end
+                        return _GraphItemId('head', link)
                     
         return None
 
@@ -727,9 +854,9 @@ class DirectionalGraphView5(QFrame):
                 self._paintNode(painter, option=node_option, node=node)
                 painter.restore()
 
-            for inlet in [inlet for inlet in self._model.inlets(node) if self._model.inletData(node, inlet, SocketDataRole.HiddenRole) is not True]:
+            for inlet in self._inletItemCaches(node):
                 inlet_rect = self._inletRect(node, inlet)
-                if dirty_scene_rect.intersects(inlet_rect):                
+                if inlet_rect is not None and dirty_scene_rect.intersects(inlet_rect):
                     inlet_option = QStyleOptionViewItem()
                     inlet_option.initFrom(self)
                     inlet_option.state = QStyle.StateFlag.State_Enabled
@@ -828,13 +955,13 @@ class DirectionalGraphView5(QFrame):
                 _, current_link = item
                 assert isinstance(current_link, tuple) and len(current_link) == 4, f"Expected a 4-tuple for current_link, got {current_link}"
                 self._tool = LinkingToolData(item, mouse_pos)
-                self.updateScene(self._linkShape(current_link).boundingRect().adjusted(-2, -2, 2, 2))
+                self.updateScene(self._linkRect(current_link).adjusted(-2, -2, 2, 2))
 
             case ('tail', _):
                 _, current_link = item
                 assert isinstance(current_link, tuple) and len(current_link) == 4, f"Expected a 4-tuple for current_link, got {current_link}"              
                 self._tool = LinkingToolData(item, mouse_pos)
-                self.updateScene(self._linkShape(current_link).boundingRect().adjusted(-2, -2, 2, 2))
+                self.updateScene(self._linkRect(current_link).adjusted(-2, -2, 2, 2))
 
             case _:
                 match event.button():
@@ -944,13 +1071,15 @@ class DirectionalGraphView5(QFrame):
                             prev_rect = new_rect
                         case ('inlet', _):
                             node, inlet = self._hovered_item[1]
-                            prev_rect = self._inletRect(node, inlet).adjusted(-2, -2, 2, 2)
+                            inlet_rect = self._inletRect(node, inlet)
+                            if inlet_rect is not None:
+                                prev_rect = inlet_rect.adjusted(-2, -2, 2, 2)
                         case ('outlet', _):
                             node, outlet = self._hovered_item[1]
                             prev_rect = self._outletRect(node, outlet).adjusted(-2, -2, 2, 2)
                         case ('tail', _) | ('head', _):
                             link = self._hovered_item[1]
-                            prev_rect = self._linkShape(link).boundingRect().adjusted(-2, -2, 2, 2)
+                            prev_rect = self._linkRect(link).adjusted(-2, -2, 2, 2)
                     self._hovered_item = None
 
                 new_rect:QRectF|None = None
@@ -958,7 +1087,8 @@ class DirectionalGraphView5(QFrame):
                 match item_under_mouse:
                     case ('inlet', _):
                         inlet_under_mouse:tuple[NodeName, InletName] = item_under_mouse[1]
-                        new_rect = self._inletRect(*inlet_under_mouse).adjusted(-2, -2, 2, 2)
+                        inlet_rect = self._inletRect(*inlet_under_mouse)
+                        new_rect = inlet_rect.adjusted(-2, -2, 2, 2) if inlet_rect is not None else None
                         self._hovered_item = ('inlet', inlet_under_mouse)
 
                     case ('outlet', _):
@@ -973,12 +1103,12 @@ class DirectionalGraphView5(QFrame):
 
                     case ('head', _):
                         link_under_mouse:DirectionalLinkId = item_under_mouse[1]
-                        new_rect = self._linkShape(link_under_mouse).boundingRect().adjusted(-2, -2, 2, 2)
+                        new_rect = self._linkRect(link_under_mouse).adjusted(-2, -2, 2, 2)
                         self._hovered_item = ('head', link_under_mouse)
 
                     case ('tail', _):
                         link_under_mouse:DirectionalLinkId = item_under_mouse[1]
-                        new_rect = self._linkShape(link_under_mouse).boundingRect().adjusted(-2, -2, 2, 2)
+                        new_rect = self._linkRect(link_under_mouse).adjusted(-2, -2, 2, 2)
                         self._hovered_item = ('tail', link_under_mouse)
 
                     case None:
@@ -1037,6 +1167,30 @@ class DirectionalGraphView5(QFrame):
 
                 item_under_mouse = self.itemAt(event.pos())
                 match self._tool._source, item_under_mouse:
+                    case ('outlet' | 'head', _), ('node', target):
+                        model = self._model
+                        start = self._tool._source
+                        current_link: DirectionalLinkId | None = None
+                        if start.kind == 'head':
+                            current_link = start.item
+                            source, outlet = model.linkSource(current_link)
+                        else:
+                            source, outlet = start.item
+
+                        self._tool = None
+                        self._hovered_item = None
+                        self.update()
+                        link = self._choose_inlet_link(
+                            source, outlet, target, self.mapToGlobal(event.pos()),
+                        )
+                        if link is not None:
+                            if current_link is not None:
+                                if current_link == link or current_link not in model.links():
+                                    return
+                                if not model.removeLinks((current_link,)):
+                                    return
+                            self.requestLink.emit(*link)
+
                     case ('outlet', _), ('inlet', _):
                         target, inlet = item_under_mouse[1]
                         source, outlet = self._tool._source[1]
@@ -1136,7 +1290,9 @@ class DirectionalGraphView5(QFrame):
                     self.updateScene(self._nodeSceneRect(self._createNodeStyleOption(self._hovered_item[1]), self._hovered_item[1]).adjusted(-2, -2, 2, 2))
                 case ('inlet', _):
                     node, inlet = self._hovered_item[1]
-                    self.updateScene(self._inletRect(node, inlet).adjusted(-2, -2, 2, 2))
+                    inlet_rect = self._inletRect(node, inlet)
+                    if inlet_rect is not None:
+                        self.updateScene(inlet_rect.adjusted(-2, -2, 2, 2))
                 case ('outlet', _):
                     node, outlet = self._hovered_item[1]
                     self.updateScene(self._outletRect(node, outlet).adjusted(-2, -2, 2, 2))

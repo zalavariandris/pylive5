@@ -95,32 +95,25 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
         return None
 
     # Source mapping
-
-    def _inlet_source(
-        self, index: QModelIndex
-    ) -> tuple[NodeName, InletName] | None:
-        """Give subclasses an inlet identity without exposing shadow storage."""
-        shadow = self._shadow(index)
-        if isinstance(shadow, _InletShadow):
-            return shadow.parent_node.node_name, shadow.inlet_name
-        return None
-
     def mapFromSource(self, node_name: NodeName) -> QModelIndex:
         for row, node in enumerate(self._nodes):
             if node.node_name == node_name:
                 return self.createIndex(row, 0, node)
         return QModelIndex()
 
-    def mapToSource(self, index: QModelIndex) -> NodeName | None:
+    def mapToSource(self, index: QModelIndex) -> NodeName | tuple[NodeName, InletName] | None:
         """Return the owning node for either a node or an inlet index."""
         shadow = self._shadow(index)
-        if isinstance(shadow, _InletShadow):
-            return shadow.parent_node.node_name
-        if isinstance(shadow, _NodeShadow):
-            return shadow.node_name
-        return None
 
-    # Tree structure
+        match shadow:
+            case _InletShadow():
+                return shadow.parent_node.node_name, shadow.inlet_name
+            case _NodeShadow():
+                return shadow.node_name
+            case _:
+                return None
+
+        return None
 
     def index(
         self,

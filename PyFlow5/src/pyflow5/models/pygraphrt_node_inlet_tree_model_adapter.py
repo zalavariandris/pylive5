@@ -9,6 +9,7 @@ import pygraphrt as rt
 from pyflow5.editorregistry import EditorContext
 from pygraphrt.abstract_operator import ParameterData
 from qdageditor5.adapters.node_inlet_tree_model_adapter import (
+    _InletShadow,
     NodeInletTreeModelAdapter,
 )
 from qdageditor5.models.abstract_dag_model import InletName
@@ -75,11 +76,17 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
 
     def _input_details(self, index: QModelIndex) -> _InputDetails | None:
         source = self.sourceGraph()
-        inlet = self._inlet_source(index)
-        if not isinstance(source, PyGraphRTGraphModel) or inlet is None:
+        if not isinstance(source, PyGraphRTGraphModel):
             return None
 
-        node_name, inlet_name = inlet
+        shadow = self._shadow(index)
+        if not isinstance(shadow, _InletShadow):
+            return None
+        node_inlet = self.mapToSource(index)
+        if node_inlet is None:
+            return None
+
+        node_name, inlet_name = node_inlet
         node = source.mapToSource(node_name)
         if node is None:
             return None
@@ -142,6 +149,7 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
     ) -> object:
         if index.column() != 1:
             return super().data(index, role)
+
 
         details = self._input_details(index)
         if details is None:
