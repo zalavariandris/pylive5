@@ -28,7 +28,8 @@ def img_to_qimage(data: np.ndarray | QImage | QPixmap) -> QImage:
         3: QImage.Format.Format_RGB888,
         4: QImage.Format.Format_RGBA8888,
     }[channels]
+
     # The caller may modify or release its array after display() returns.
     return QImage(
         data.data, data.shape[1], data.shape[0], data.strides[0], image_format,
-    ).copy()
+    )

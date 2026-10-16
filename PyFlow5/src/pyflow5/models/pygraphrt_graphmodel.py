@@ -3,6 +3,7 @@ from logging import warning
 from typing import Iterable, override, Any
 import warnings
 
+from pygraphrt.graph_definition_rt import NodeRef
 from pygraphrt.graph_executor import ExecutionSuccess
 from pygraphrt.graph_executor_3_draft import GraphEvaluator
 from pytools import UniqueNameGenerator
@@ -29,7 +30,7 @@ from qdageditor5.models.abstract_dag_model import (
 import pygraphrt as rt
 
 from qdageditor5.core.item_data_roles import (
-    NodeDataRole
+    NodeDataRole, SocketDataRole
 )
 import inspect
 
@@ -66,13 +67,8 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         ):
             signal.connect(self._on_registry_changed)
 
-        self._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
         self._evaluator.evaluated.connect(self._on_evaluated)
 
-    @Slot(list)
-    def _on_nodes_invalidated(self, nodes: list[rt.NodeRef]) -> None:
-        if not self._closed:
-            self._evaluator.request(*nodes)
 
     @Slot(dict)
     def _on_evaluated(self, executions: dict[rt.NodeRef, rt.NodeExecution]) -> None:
@@ -95,7 +91,6 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         if self._closed:
             return
         self._closed = True
-        self._invalidator.nodes_invalidated.disconnect(self._on_nodes_invalidated)
         self._evaluator.evaluated.disconnect(self._on_evaluated)
 
     def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
@@ -251,6 +246,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
     @override
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
+        from typing import Annotated, get_args, get_origin
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 node_rt = self.mapToSource(node)
@@ -258,15 +254,50 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                     operator_rt = node_rt.get_operator()
                     if operator_rt is not  None:
                         if param := operator_rt.get_parameters().get(str(inlet)):
-                            if param.annotation != inspect._empty:
-                                if isinstance(param.annotation, type):
-                                    return f"{param.name}: {param.annotation.__name__}"
-                                else:
-                                    return f"{param.name}: {param.annotation}"
+                            annotation: Any = param.annotation
+                            if annotation is inspect.Parameter.empty:
+                                return param.name
+                            
+                            if get_origin(annotation) is Annotated:
+                                annotation = get_args(annotation)[0]
+
+                            if isinstance(annotation, type):
+                                type_name = annotation.__name__
                             else:
-                                return f"{param.name}"
+                                type_name = str(annotation)
+
+                            return f"{param.name}: {type_name}"
                 # fallback
                 return f"{inlet}"
+
+            case SocketDataRole.HiddenRole:
+                node_rt = self.mapToSource(node)
+                if node_rt is None:
+                    return None
+
+                # determine if the inlet has default
+                HasDefaultValue = False
+                operator_rt = node_rt.get_operator()
+                if operator_rt is None:
+                    return None
+                parameters = operator_rt.get_parameters()
+                if inlet in parameters.keys():
+                    param = parameters.get(inlet)
+                    if param and param.default is not inspect.Parameter.empty:
+                        HasDefaultValue = True
+
+                # determine if the inlet has a value
+                args, kwargs = node_rt.get_inputs()
+                HasLiteralValue = False
+                if inlet in kwargs:
+                    value = kwargs[inlet]
+                    if not isinstance(value, NodeRef):
+                        HasLiteralValue = True
+                # todo: missing implementation to determine if the inlet represents a positional arg
+
+                if HasLiteralValue or HasDefaultValue:
+                    return True
+                return False
             
             case Qt.ItemDataRole.ToolTipRole: 
                 node_rt = self.mapToSource(node)

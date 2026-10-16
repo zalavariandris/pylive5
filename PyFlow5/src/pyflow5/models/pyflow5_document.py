@@ -52,6 +52,10 @@ class PyFlowDocument(QObject):
             self._evaluator
         )
         self.graphselection_model = GraphSelectionModel(self.graph_model)
+        self._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
+        self.graphselection_model.currentNodeChanged.connect(
+            self._on_current_node_changed
+        )
 
         ## Modules Model
         self.modules_model = ModulesOperatorsTreeModel()
@@ -71,6 +75,29 @@ class PyFlowDocument(QObject):
         
         # Initial evaluation
         self._evaluator.request(*self._graph_rt.nodes())
+
+    @Slot(list)
+    def _on_nodes_invalidated(self, nodes: list[rt.NodeRef]) -> None:
+        current_name = self.graphselection_model.currentNode()
+        if current_name is None:
+            return
+
+        current = self.graph_model.mapToSource(current_name)
+        if current is not None and current in nodes:
+            self._evaluator.request(current)
+
+    @Slot(object, object)
+    def _on_current_node_changed(
+        self,
+        current: NodeName | None,
+        previous: NodeName | None,
+    ) -> None:
+        if current is None:
+            return
+
+        node = self.graph_model.mapToSource(current)
+        if node is not None:
+            self._evaluator.request(node)
 
     def close(self) -> None:
         """Stop evaluation and disconnect requests from the graph model."""

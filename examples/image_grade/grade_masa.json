@@ -3,7 +3,7 @@
     "modules": {
         "_local_": {
             "type": "embedded",
-            "source": "from vfxops.io import read_image\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.color import grade\n\ndef myread(path:str):\n    print(\"read image\")\n    return read_image(path)\n\n__all__ = [\n    \"myread\",\n    \"grade\",\n    \"read_image\",\n    \"gaussian_blur\"\n]"
+            "source": "from vfxops.io import read_image\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.color import grade, exposure\n\ndef myread(path:str):\n    print(\"read image\")\n    return read_image(path)\n\n__all__ = [\n    \"myread\",\n    \"grade\",\n    \"exposure\",\n    \"read_image\",\n    \"gaussian_blur\"\n]"
         }
     },
     "graph": {

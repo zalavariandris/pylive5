@@ -26,7 +26,8 @@ from .errors import (
 )
 
 from .function_operator import FunctionOperator
-
+type LiteralValue = None | bool | int | float | str
+type Value = NodeRef | LiteralValue
 
 @dataclass
 class NodeRef:
@@ -68,8 +69,7 @@ class NodeRef:
         return node_data.get_inputs()
         
 
-type LiteralValue = None | bool | int | float | str
-type Value = NodeRef | LiteralValue
+
 
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
 class _NodeState:

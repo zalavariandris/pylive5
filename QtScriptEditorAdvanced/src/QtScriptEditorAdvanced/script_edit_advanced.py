@@ -1,6 +1,6 @@
 from typing import *
 
-from qtpy.QtCore import Qt, QEvent
+from qtpy.QtCore import Qt, QEvent, QObject
 from qtpy.QtGui import QColor, QContextMenuEvent, QKeyEvent, QPalette, QFont, QTextCursor, QTextOption
 from qtpy.QtWidgets import QMenu, QPlainTextEdit, QAction
 from qtpy.QtWidgets import QGraphicsOpacityEffect

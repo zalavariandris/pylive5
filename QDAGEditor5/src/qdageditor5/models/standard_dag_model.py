@@ -14,7 +14,7 @@ from qtpy.QtCore import (
     QPointF
 )
 
-from qdageditor5.core.item_data_roles import NodeDataRole
+from qdageditor5.core.item_data_roles import SocketDataRole, NodeDataRole
 from qdageditor5.core.shape_data_enum import ShapeData
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel,
@@ -203,7 +203,7 @@ class StandardDAGModel(AbstractDAGModel):
             return str(inlet)
         if role == Qt.ItemDataRole.ForegroundRole:
             return None
-        if role == NodeDataRole.ShapeDataRole:
+        if role == SocketDataRole.ShapeDataRole:
             return ShapeData.Circle
         return None
 
@@ -236,7 +236,7 @@ class StandardDAGModel(AbstractDAGModel):
             return str(outlet)
         if role == Qt.ItemDataRole.ForegroundRole:
             return None
-        if role == NodeDataRole.ShapeDataRole:
+        if role == SocketDataRole.ShapeDataRole:
             return ShapeData.Circle
         return None
 

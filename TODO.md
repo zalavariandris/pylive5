@@ -1,4 +1,11 @@
 # TOD
+ - [ ] When linking, dropping an inlet right onto a node, should create a popup where all the possible inlets (invisibles especially) can be selected to link to.
+- [x] add visibility Role(orFlag) to inlets.
+      in pyflow hide an inlet if it has no Literal Input or has a default value.
+      # todo: missing implementation to determine if the inlet represents a positional arg
+
+- [x] optimize graphview by using cached local node bounding rects
+- [x] add Annotated[float, Range(-1,1)] editor support for the node inspector
 - [ ] review how string and non string annotation is received by the editors.py. also vfxops forexample uses `from __future__ import annotations` that might turn annotations into strings.
 - [x] add execute duration and show it in the graphview
 - [ ] checkout https://pypi.org/project/Fileseq/ for file sequences instead inventing the wheel, as we do it now in vfxops

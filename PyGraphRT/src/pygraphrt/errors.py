@@ -1,15 +1,19 @@
 # MODULE ERRORS
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+
+from .abstract_module_rt import AbstractModule
 
 if TYPE_CHECKING:
     from .graph_definition_rt import NodeRef
     from .graph_definition_rt import OperatorRef
-    from .abstract_module_rt import AbstractModuleRef
+    from .abstract_module_rt import AbstractModule
 
 class ModuleError(Exception):
     """Base class for all module-related errors."""
-    def __init__(self, msg:str="", module: AbstractModuleRef|None = None):
-        assert module is None or isinstance(module, AbstractModuleRef), "module must be an instance of AbstractModuleRef or None"
+    def __init__(self, msg:str="", module: AbstractModule|None = None):
+        assert module is None or isinstance(module, AbstractModule), "module must be an instance of AbstractModuleRef or None"
         self.module = module
         if msg is None:
             msg = f"Error in module: {module}"

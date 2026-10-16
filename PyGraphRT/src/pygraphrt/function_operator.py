@@ -4,8 +4,6 @@ import sys
 import inspect
 from pathlib import Path
 
-if sys.version_info >= (3, 14):
-    from annotationlib import Format
 
 from .abstract_operator import AbstractOperator, ParameterData
 
@@ -35,9 +33,7 @@ class FunctionOperator(AbstractOperator):
         except (NameError, SyntaxError, TypeError):
             pass
 
-        # Live edits can leave annotation names unfinished (e.g. s instead of str).
-        if sys.version_info >= (3, 14):
-            return inspect.signature(self._func, annotation_format=Format.FORWARDREF)
+
         return inspect.signature(self._func)
 
     def get_parameters(self) -> Mapping[str, ParameterData]:

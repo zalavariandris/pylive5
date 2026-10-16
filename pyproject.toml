@@ -36,6 +36,7 @@ members = [
 dev = [
     "pytest",
     "pytest-qt>=4.5.0",
+    "pytracy>=0.0.2",
 ]
 
 [project.optional-dependencies]

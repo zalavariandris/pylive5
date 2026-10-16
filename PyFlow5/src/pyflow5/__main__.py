@@ -38,6 +38,12 @@ class HoverFusionStyle(QProxyStyle):
 
 
 if __name__ == "__main__":
+    import pytracy
+    import sys
+    pytracy.set_filtering_mode(True, False, False)
+    pytracy.enable_tracing(True)
+    print("Tracing enabled")
+    print("Python profile callback:", sys.getprofile())
     from qtpy.QtWidgets import QApplication
     import sys
     app = QApplication(sys.argv)
@@ -46,5 +52,5 @@ if __name__ == "__main__":
     window = PyFlow5Window(use_session=True)
     window.setWindowTitle("PyFlow5 - DirectionalGraphView5")
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
     

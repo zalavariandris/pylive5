@@ -6,7 +6,6 @@ from types import FunctionType, MappingProxyType, ModuleType
 from typing import Callable, Iterable, Literal, Any, Mapping
 import inspect
 from pathlib import Path
-from annotationlib import Format
 
 from qtpy.QtCore import Signal, QObject
 
@@ -111,7 +110,7 @@ def _get_all_callables_from_script(
 
 class ScriptOperatorRef(AbstractOperator):
     """Represents an operator within a ScriptModule."""
-    def __init__(self, module: ScriptModuleRT, name: str):
+    def __init__(self, module: 'ScriptModuleRT', name: str):
         super().__init__()
         self._module = module
         self._name = name
@@ -119,7 +118,7 @@ class ScriptOperatorRef(AbstractOperator):
     def get_name(self) -> str:
         return self._name
 
-    def get_module(self) -> ScriptModuleRT:
+    def get_module(self) -> 'ScriptModuleRT':
         return self._module
 
     def get_module_name(self) -> str:
@@ -147,9 +146,7 @@ class ScriptOperatorRef(AbstractOperator):
         func = self._module._functions_cache.get(self._name, None)
         if func is None:
             return None
-        # Live edits can leave annotation names unfinished (e.g. s instead of str).
-        if sys.version_info >= (3, 14):
-            return inspect.signature(func, annotation_format=Format.FORWARDREF)
+
         return inspect.signature(func)
 
     def get_parameters(self) -> Mapping[str, ParameterData]:

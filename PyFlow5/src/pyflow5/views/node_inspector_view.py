@@ -15,6 +15,7 @@ class NodeInspectorView(BaseDetailsView):
     ) -> None:
         super().__init__(parent)
         self.setSelectionBehaviour(BaseDetailsView.SelectionBehaviour.FirstSelected)
+        self.setAutoFillBackground(True)
 
         self._form_view = FormView(self)
         self._field_delegate = NodeInputFieldDelegate(parent=self)

@@ -6,7 +6,11 @@ from .core import (
 )
 
 # draw
-def checkerboard(size:Size, square_size:int=32, color:Color=(1.0, 1.0, 1.0, 1.0)) -> ImageRGBA:
+def checkerboard(
+        size:Size, 
+        square_size:int=32, 
+        color:Color=(1.0, 1.0, 1.0, 1.0)
+    ) -> ImageRGBA:
     """create an RGBA checkerboard image of given size"""
     width, height = size
     rows = math.ceil(height/square_size)

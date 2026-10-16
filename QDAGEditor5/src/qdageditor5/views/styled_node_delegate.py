@@ -1,12 +1,13 @@
 from turtle import color
+from dataclasses import dataclass
 
 from qtpy.QtCore import QObject, QPointF, QRect, QRectF, Qt
 from qtpy.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPalette, QPen, QPen
 from qtpy.QtWidgets import QApplication, QStyle, QStyleOptionGraphicsItem, QStyleOptionViewItem
 from typing import TYPE_CHECKING, Iterable
 
-if TYPE_CHECKING:
-    from qdageditor5.models.abstract_dag_model import AbstractDAGModel, NodeName, InletName, OutletName
+# if TYPE_CHECKING:
+from qdageditor5.models.abstract_dag_model import AbstractDAGModel, NodeName, InletName, OutletName
 
 
 import abc
@@ -23,8 +24,8 @@ class _Graphics(abc.ABC):
         pass
 
 class _Label(_Graphics):
-    def __init__(self, text: str, pos: QPointF, alignment: Qt.AlignmentFlag, pen: QPen, padding: tuple[float, float] = (4.0, 2.0)) -> None:
-        self.text = text
+    def __init__(self, text: str | None, pos: QPointF, alignment: Qt.AlignmentFlag, pen: QPen, padding: tuple[float, float] = (4.0, 2.0)) -> None:
+        self.text = "" if text is None else str(text)
         self.pos = pos
         self.alignment = alignment
         self.pen = pen
@@ -108,78 +109,117 @@ def _bounding_rect(rects: list[QRectF]) -> QRectF:
     return united_rect
 
 
+@dataclass(frozen=True)
+class _LabelGeometry:
+    text: str
+    rect: QRectF
+    alignment: Qt.AlignmentFlag
+    padding: tuple[float, float]
+
+
+@dataclass(frozen=True)
+class NodeLocalGeometry:
+    """Measured node layout relative to its origin, owned by the view."""
+
+    labels: tuple[_LabelGeometry, ...]
+    bounding_rect: QRectF
+    shape: QPainterPath
+
+
 class StyledNodeDelegate(QObject):
     def __init__(self, parent=None) -> None:
         super().__init__(parent=parent)
 
-    def __labels(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> Iterable[_Graphics]:
+    def __labels(self, option: QStyleOptionViewItem, model: 'AbstractDAGModel', node: NodeName) -> tuple[_Label, _Label, _Label]:
         palette:QPalette = option.palette
 
         title_label = _Label(
             text=model.nodeData(node, Qt.ItemDataRole.DisplayRole),
-            pos=model.nodePosition(node),
+            pos=QPointF(),
             alignment=Qt.AlignmentFlag.AlignCenter,
             pen=QPen(palette.text().color(), 0)
         )
 
+        title_rect = title_label.boundingRect(option)
         leading_label = _Label(
             text=model.nodeData(node, NodeDataRole.LeadingRole),
-            pos=title_label.boundingRect(option).topLeft(),
+            pos=title_rect.topLeft(),
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
             pen=QPen(palette.placeholderText().color(), 0)
         )
 
         trailing_label = _Label(
             text=model.nodeData(node, NodeDataRole.TrailingRole),
-            pos=title_label.boundingRect(option).topRight(),
+            pos=title_rect.topRight(),
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
             pen=QPen(palette.placeholderText().color(), 0)
         )
 
-        return [title_label, leading_label, trailing_label]
+        return title_label, leading_label, trailing_label
 
-    def rect(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QRectF:
+    def createNodeLocalGeometry(
+        self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName,
+    ) -> NodeLocalGeometry:
+        """Measure once in node-local coordinates; do not retain paint state."""
+        labels = tuple(
+            _LabelGeometry(
+                label.text, label.boundingRect(option), label.alignment, label.padding,
+            )
+            for label in self.__labels(option, model, node)
+        )
+        shape = QPainterPath()
+        shape.addRoundedRect(labels[0].rect, 5, 5)
+        return NodeLocalGeometry(labels, _bounding_rect([label.rect for label in labels]), shape)
+
+    def _nodeLocalRect(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QRectF:
+        """Measure bounds relative to the node origin; do not apply its position."""
         assert isinstance(option, QStyleOptionViewItem)
 
-        scene_rect = _bounding_rect([
-            item.boundingRect(option) 
-            for item in self.__labels(option, model, node)
-        ])
-  
-        return scene_rect
+        geometry = self.createNodeLocalGeometry(option, model, node)
+        return QRectF(geometry.bounding_rect)
 
-    def shape(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QPainterPath:
-        # rect = self.rect(option, model, node)
-        title_label, leading_label, trailing_label = self.__labels(option, model, node)
-
-        path = QPainterPath()
-        path.addRoundedRect(title_label.boundingRect(option), 5, 5)
-        return path
+    def _nodeLocalShape(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QPainterPath:
+        """Measure the body shape relative to the node origin."""
+        geometry = self.createNodeLocalGeometry(option, model, node)
+        return QPainterPath(geometry.shape)
     
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName):
+    def paint(
+        self, painter: QPainter, option: QStyleOptionViewItem,
+        model: AbstractDAGModel, node: NodeName, geometry: NodeLocalGeometry | None = None,
+    ) -> None:
+        """Paint node-local geometry; the view positions the painter in the scene."""
+        if geometry is None:
+            geometry = self.createNodeLocalGeometry(option, model, node)
         style:QStyle = option.widget.style() if option.widget else QApplication.style()
+        title_rect = geometry.labels[0].rect
+
+        # Style options and measured geometry both use node-local coordinates.
+        option = QStyleOptionViewItem(option)
+        option.rect = title_rect.toAlignedRect()
 
         painter.save()
 
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, option.widget)
-        for graphic in list(self.__labels(option, model, node))[1:]:
-            # skip the first element, because it is painted using the drawControl method above
-            graphic.paint(painter, option)
+        painter.setFont(option.font)
+        painter.setPen(QPen(option.palette.placeholderText().color(), 0))
+        for label in geometry.labels[1:]:
+            padding_x, padding_y = label.padding
+            rect = label.rect.adjusted(padding_x, padding_y, -padding_x, -padding_y)
+            painter.drawText(rect, int(label.alignment), label.text)
         painter.restore()
 
         # paint ouside
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setClipPath(self.shape(option, model, node), Qt.ClipOperation.IntersectClip)
-        title_label = list(self.__labels(option, model, node))[0]
+        painter.setClipPath(geometry.shape, Qt.ClipOperation.IntersectClip)
         painter.setPen(QPen(option.palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
-        painter.drawRoundedRect(title_label.boundingRect(option), 5, 5)
+        painter.drawRoundedRect(title_rect, 5, 5)
         
         if option.state & QStyle.StateFlag.State_HasFocus:
             # draw a horizontal line at the top of the title label
             painter.setPen(QPen(option.palette.text().color(), 0))
             padding = 2
-            inner_rect = title_label.boundingRect(option).adjusted(padding, padding, -padding, -padding)
+            inner_rect = title_rect.adjusted(padding, padding, -padding, -padding)
             pen = QPen()
             pen.setColor(option.palette.placeholderText().color())
             # dashed line
