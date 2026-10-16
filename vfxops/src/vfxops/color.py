@@ -1,15 +1,14 @@
-from os import PathLike, fspath
-from typing import Annotated, TYPE_CHECKING
+from typing import Annotated
 import numpy as np
-if TYPE_CHECKING:
-    import PyOpenColorIO as ocio
 from .core import ImageRGBA, Range, validate_image_data
 
 
-def exposure(img: ImageRGBA, ev:Annotated[float, Range(-10.0, 10.0)]=0.0):
-    factor = 2.0 ** ev
-    scale = np.asarray((factor, factor, factor, 1.0), dtype=img.dtype) # keep it float32
-    return img * scale
+def exposure(img: ImageRGBA, ev:Annotated[float, Range(-10.0, 10.0)]=0.0) -> ImageRGBA:
+    """Adjust planar RGB exposure, preserving alpha and the input."""
+    validate_image_data(img)
+    result = img.copy(order="C")
+    result[:3] *= np.float32(2.0 ** ev)
+    return result
 
 
 def grade( 
@@ -36,28 +35,31 @@ def grade(
         raise ValueError("gamma must be positive")
 
     # Combine the linear controls into: rgb * scale + bias.
-    scale = multiply * (gain - lift) / input_range
-    bias = offset + lift - scale * blackpoint
+    scale = np.float32(multiply * (gain - lift) / input_range)
+    bias = np.float32(offset + lift - scale * blackpoint)
 
-    rgb = img[..., :3]
+    result = img.copy(order="C")
+    rgb = result[:3]
 
     # Preserve the sign when applying gamma to negative values.
     if reverse:
         if abs(scale) < 1e-8:
             raise ValueError("Cannot reverse a zero-slope grade")
 
-        rgb = np.sign(rgb) * np.power(np.abs(rgb), gamma)
-        rgb = (rgb - bias) / scale
+        if gamma != 1.0:
+            rgb[:] = np.sign(rgb) * np.power(np.abs(rgb), np.float32(gamma))
+        rgb -= bias
+        rgb /= scale
     else:
-        rgb = rgb * scale + bias
-        rgb = np.sign(rgb) * np.power(np.abs(rgb), 1.0 / gamma)
+        rgb *= scale
+        rgb += bias
+        if gamma != 1.0:
+            rgb[:] = np.sign(rgb) * np.power(np.abs(rgb), np.float32(1.0 / gamma))
 
     if black_clamp:
-        rgb = np.maximum(rgb, 0.0)
+        np.maximum(rgb, 0.0, out=rgb)
 
     if white_clamp:
-        rgb = np.minimum(rgb, 1.0)
+        np.minimum(rgb, 1.0, out=rgb)
 
-    result = img.copy()
-    result[..., :3] = rgb
     return result

@@ -11,7 +11,6 @@ def transform_colorspace(
         output_space: str, 
         configuration: ocio.Config | str | PathLike[str] | None = None
     ) -> ImageRGBA:
-    import numpy as np
     import PyOpenColorIO as ocio
     validate_image_data(image_data)
     pixels = image_data
@@ -35,8 +34,8 @@ def transform_colorspace(
 
     processor = config.getProcessor(input_space, output_space).getDefaultCPUProcessor()
     result = pixels.copy(order="C")
-    # Process RGB separately to preserve alpha even for custom OCIO matrices.
-    rgb = np.ascontiguousarray(result[..., :3])
-    processor.applyRGB(rgb)
-    result[..., :3] = rgb
+    # Omit alpha so custom OCIO matrices cannot change the stored alpha plane.
+    _, height, width = result.shape
+    planes = ocio.PlanarImageDesc(result[0], result[1], result[2], width, height)
+    processor.apply(planes)
     return result

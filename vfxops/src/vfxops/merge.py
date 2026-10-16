@@ -1,112 +1,65 @@
-from typing import Tuple
-
 import numpy as np
 
-from .core import (
-    ImageRGBA
-)
+from .core import IMAGE_DTYPE, Image, ImageRGBA, validate_image_data
 
-# merge
-def merge_over(A: np.ndarray, B: np.ndarray, mix: float) -> np.ndarray:
-    # 1. Determine common dimensions (the intersection)
-    h_overlap = min(A.shape[0], B.shape[0])
-    w_overlap = min(A.shape[1], B.shape[1])
 
-    # 2. Create views of the intersection
-    # This prevents broadcasting errors because A_part and B_part will have same H, W
-    A_part = A[:h_overlap, :w_overlap]
-    B_part = B[:h_overlap, :w_overlap]
+def merge_over(A: ImageRGBA, B: ImageRGBA, mix: float) -> ImageRGBA:
+    """Composite straight RGBA over the overlap, retaining A's extent outside it."""
+    validate_image_data(A)
+    validate_image_data(B)
+    height = min(A.shape[1], B.shape[1])
+    width = min(A.shape[2], B.shape[2])
+    foreground = A[:, :height, :width]
+    background = B[:, :height, :width]
+    alpha_a = foreground[3:4]
+    alpha_b = background[3:4]
 
-    # --- Your Original Logic starts here, but uses the slices ---
-    A_alpha = A_part[:, :, 3:4]
-    B_alpha = B_part[:, :, 3:4]
-    
-    out_alpha = A_alpha + B_alpha * (1 - A_alpha)
-    
-    out_rgb = A_part[:, :, :3] * A_alpha + B_part[:, :, :3] * B_alpha * (1 - A_alpha)
-    out_rgb = np.divide(out_rgb, out_alpha, out=np.zeros_like(out_rgb), where=out_alpha > 1e-6)
-    
-    composite = np.concatenate([out_rgb, out_alpha], axis=2)
-    
-    # Apply mix to the intersection
-    blended_part = B_part * (1 - mix) + composite * mix
-    # --- End of logic ---
+    composite = np.empty((4, height, width), dtype=IMAGE_DTYPE)
+    alpha = composite[3:4]
+    alpha[:] = alpha_a + alpha_b * (1.0 - alpha_a)
+    rgb = foreground[:3] * alpha_a + background[:3] * alpha_b * (1.0 - alpha_a)
+    composite[:3] = 0.0
+    np.divide(rgb, alpha, out=composite[:3], where=alpha > 1e-6)
 
-    # 3. Construct the final output
-    # We start with a copy of B so that the areas NOT covered by A remain untouched
-    result = A.copy()
-    result[:h_overlap, :w_overlap] = blended_part
-    
+    weight = np.float32(mix)
+    result = A.copy(order="C")
+    result[:, :height, :width] = background * (np.float32(1.0) - weight) + composite * weight
     return result
 
-def merge_multiply(A: ImageRGBA, B: ImageRGBA) -> ImageRGBA:
-    """Merge two RGBA float32 images using the 'multiply' blending mode.
-    
-    Parameters:
-    -----------
-    A : ImageRGBA
-        First image (H x W x 4) RGBA float32 (straight alpha)
-    B : ImageRGBA
-        Second image (H x W x 4) RGBA float32 (straight alpha)
-    
-    Returns:
-    --------
-    ImageRGBA
-        Blended RGBA float32 image (A multiplied by B)
-    """
-    # Multiply RGB channels
-    out_rgb = A[:,:,:3] * B[:,:,:3]
-    
-    # Combine alpha channels using 'over' operation
-    A_alpha = A[:,:,3:4]
-    B_alpha = B[:,:,3:4]
-    out_alpha = A_alpha + B_alpha * (1 - A_alpha)
-    
-    return np.dstack([out_rgb, out_alpha])
 
-def paste(img: ImageRGBA, other: ImageRGBA, origin:Tuple[int,int]):
-    x,y = origin
-    img[y:y+other.shape[0], x:x+other.shape[1]] = other
+def merge_multiply(A: ImageRGBA, B: ImageRGBA) -> ImageRGBA:
+    """Multiply RGB and combine alpha with over, using planar straight RGBA."""
+    validate_image_data(A)
+    validate_image_data(B)
+    if A.shape != B.shape:
+        raise ValueError("Images must have the same shape")
+    result = np.empty(A.shape, dtype=IMAGE_DTYPE)
+    np.multiply(A[:3], B[:3], out=result[:3])
+    result[3] = A[3] + B[3] * (1.0 - A[3])
+    return result
+
+
+def paste(img: Image, other: Image, origin: tuple[int, int]) -> Image:
+    """Paste other into img in place, at the (x, y) origin."""
+    validate_image_data(img, channels=None)
+    validate_image_data(other, channels=img.shape[0])
+    x, y = origin
+    img[:, y:y + other.shape[1], x:x + other.shape[2]] = other
     return img
-    
+
+
 def premultiply(img: ImageRGBA) -> ImageRGBA:
-    """Convert from straight (unassociated) alpha to premultiplied (associated) alpha.
-    
-    In premultiplied alpha, RGB channels are multiplied by the alpha channel.
-    This is the correct format for interpolation operations to avoid color bleeding.
-    
-    Parameters:
-    -----------
-    img : ImageRGBA
-        Image with straight alpha (H x W x 4) RGBA float32
-    
-    Returns:
-    --------
-    ImageRGBA
-        Image with premultiplied alpha
-    """
-    alpha = img[:,:,3:4]
-    rgb_premult = img[:,:,:3] * alpha
-    return np.dstack([rgb_premult, alpha])
+    """Multiply planar RGB by alpha, preserving the input and alpha plane."""
+    validate_image_data(img)
+    result = img.copy(order="C")
+    result[:3] *= result[3:4]
+    return result
+
 
 def unpremultiply(img: ImageRGBA) -> ImageRGBA:
-    """Convert from premultiplied (associated) alpha to straight (unassociated) alpha.
-    
-    Divides RGB channels by alpha to recover original colors.
-    Where alpha is near zero, RGB is set to black.
-    
-    Parameters:
-    -----------
-    img : ImageRGBA
-        Image with premultiplied alpha (H x W x 4) RGBA float32
-    
-    Returns:
-    --------
-    ImageRGBA
-        Image with straight alpha
-    """
-    alpha = img[:,:,3:4]
-    rgb = np.divide(img[:,:,:3], alpha, 
-                   out=np.zeros_like(img[:,:,:3]), 
-                   where=alpha > 1e-6)
-    return np.dstack([rgb, alpha])
+    """Recover straight RGB, setting RGB to zero where alpha is near zero."""
+    validate_image_data(img)
+    result = np.zeros(img.shape, dtype=IMAGE_DTYPE)
+    result[3] = img[3]
+    np.divide(img[:3], img[3:4], out=result[:3], where=img[3:4] > 1e-6)
+    return result

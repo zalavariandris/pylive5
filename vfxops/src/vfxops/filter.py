@@ -1,136 +1,75 @@
-import numba
-import numpy as np
 import cv2
+import numpy as np
 
-from .core import (
-    ImageRGBA
-)
-
-
-#filter
-def add_grain(img: ImageRGBA, variance:float):
-    """Add Gaussian noise (grain) to an RGBA image.
-    
-    Args:
-        img: Input RGBA float32 image
-        variance: Noise variance. Typical range: 0.0001-0.01 (subtle to moderate grain).
-    
-    Returns:
-        RGBA float32 image with added grain
-    """
-    assert img.dtype == np.float32
-
-    row,col,ch= img.shape
-    mean = 0
-    sigma = variance**0.5
-    gauss = np.random.normal(mean,sigma,(row,col,ch)).astype(np.float32)
-    gauss = gauss.reshape(row,col,ch)
-    noisy = img + gauss
-    return noisy
+from .core import IMAGE_DTYPE, Image, ImageRGBA, validate_image_data
 
 
-def noisy(img: ImageRGBA, noise_typ):
-    """
-    Parameters
-    ----------
-    image : ndarray
-        Input image data. Will be converted to float.
-    mode : str
-        One of the following strings, selecting the type of noise to add:
+def add_grain(img: ImageRGBA, variance: float) -> ImageRGBA:
+    """Add Gaussian noise to all RGBA planes, matching the existing grain behavior."""
+    validate_image_data(img)
+    if variance < 0:
+        raise ValueError("variance must be nonnegative")
+    noise = np.random.default_rng().standard_normal(img.shape, dtype=IMAGE_DTYPE)
+    noise *= np.float32(variance ** 0.5)
+    noise += img
+    return noise
 
-        'gauss'     Gaussian-distributed additive noise.
-        'poisson'   Poisson-distributed noise generated from the data.
-        's&p'       Replaces random pixels with 0 or 1.
-        'speckle'   Multiplicative noise using out = image + n*image,where
-                    n is uniform noise with specified mean & variance
-    """
+
+def noisy(img: ImageRGBA, noise_typ: str) -> ImageRGBA:
+    """Add gauss, poisson, s&p, or speckle noise to all planar RGBA channels."""
+    validate_image_data(img)
+    rng = np.random.default_rng()
 
     if noise_typ == "gauss":
-        row,col,ch= img.shape
-        mean = 0
-        var = 0.0001
-        sigma = var**0.5
-        gauss = np.random.normal(mean,sigma,(row,col,ch))
-        gauss = gauss.reshape(row,col,ch)
-        noisy = img + gauss
-        return noisy
+        return add_grain(img, variance=0.0001)
 
-    elif noise_typ == "s&p":
-        row,col,ch = img.shape
-        s_vs_p = 0.5
-        amount = 0.004
-        out = np.copy(img)
-        # Salt mode
-        num_salt = np.ceil(amount * img.size * s_vs_p)
-        coords = [np.random.randint(0, i - 1, int(num_salt)) for i in img.shape]
-        out[coords] = 1
+    if noise_typ == "s&p":
+        result = img.copy(order="C")
+        count = int(np.ceil(0.004 * img.size * 0.5))
+        for value in (1.0, 0.0):
+            coordinates = tuple(rng.integers(0, length, count) for length in img.shape)
+            result[coordinates] = value
+        return result
 
-        # Pepper mode
-        num_pepper = np.ceil(amount* img.size * (1. - s_vs_p))
-        coords = [np.random.randint(0, i - 1, int(num_pepper)) for i in img.shape]
-        out[coords] = 0
-        return out
-    
-    elif noise_typ == "poisson":
-        vals = len(np.unique(img))
-        vals = 2 ** np.ceil(np.log2(vals))*10
-        noisy = np.random.poisson(img * vals) / float(vals)
-        return noisy
-    
-    elif noise_typ =="speckle":
-        row,col,ch = img.shape
-        gauss = np.random.randn(row,col,ch)
-        gauss = gauss.reshape(row,col,ch)        
-        noisy = img + img * gauss
-        return noisy
+    if noise_typ == "poisson":
+        levels = np.float32(2 ** np.ceil(np.log2(len(np.unique(img)))) * 10)
+        # Poisson samples are integers. Convert before floating-point division.
+        result = rng.poisson(img * levels).astype(IMAGE_DTYPE)
+        result /= levels
+        return result
 
-def gaussian_blur(img: np.ndarray, size: float) -> np.ndarray:
-    """
-    Gaussian blur with After Effects-style control.
-    
-    Parameters
-    ----------
-    img : float32 RGBA or RGB image in range [0, 1]
-    size : blur radius in pixels
-    """
+    if noise_typ == "speckle":
+        result = rng.standard_normal(img.shape, dtype=IMAGE_DTYPE)
+        result *= img
+        result += img
+        return result
 
+    raise ValueError(f"Unknown noise type: {noise_typ!r}")
+
+
+def gaussian_blur(img: Image, size: float) -> Image:
+    """Blur planar RGB, preserving alpha when present; size is a pixel radius."""
+    validate_image_data(img, channels=(3, 4))
     if size <= 0:
         return img
 
     ksize = max(3, int(size * 2) | 1)
     sigma = size / 3.0
-
-    result = img.copy()
-
-    rgb = np.ascontiguousarray(img[..., :3])
-
-    cv2.GaussianBlur(
-        rgb,
-        (ksize, ksize),
-        sigmaX=sigma,
-        dst=rgb,
-        borderType=cv2.BORDER_REFLECT
-    )
-
-    result[..., :3] = rgb
-
+    result = img.copy(order="C")
+    for channel in range(3):
+        cv2.GaussianBlur(
+            img[channel],
+            (ksize, ksize),
+            sigmaX=sigma,
+            dst=result[channel],
+            borderType=cv2.BORDER_REFLECT,
+        )
     return result
 
-def clip(img: np.ndarray, min_val: float = 0.0, max_val: float = 1.0) -> np.ndarray:
-    """
-    Clip image values to the specified range [min_val, max_val].
 
-    Parameters
-    ----------
-    img : float32 RGBA or RGB image
-    min_val : float, optional
-        Minimum value to clip to, by default 0.0
-    max_val : float, optional
-        Maximum value to clip to, by default 1.0
-
-    Returns
-    -------
-    np.ndarray
-        Clipped image
-    """
-    return np.clip(img, min_val, max_val)
+def clip(img: Image, min_val: float = 0.0, max_val: float = 1.0) -> Image:
+    """Clip every plane of a float32 image to the requested range."""
+    validate_image_data(img, channels=None)
+    result = np.empty(img.shape, dtype=IMAGE_DTYPE)
+    np.clip(img, np.float32(min_val), np.float32(max_val), out=result)
+    return result

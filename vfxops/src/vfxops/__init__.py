@@ -1,4 +1,4 @@
-from .core import Range
+from .core import IMAGE_DTYPE, Image, ImageRGBA, Range, from_interleaved, to_interleaved
 
 # Type aliases
 # from .core import (

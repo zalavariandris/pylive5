@@ -11,6 +11,7 @@ authors = [
 description = "A collection of functions for VFX operations"
 requires-python = ">=3.10"
 dependencies = [
+    "numpy>=2.0",
     "pyglm",
     "opencv-python",
     "numba",
