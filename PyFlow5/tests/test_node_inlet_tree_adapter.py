@@ -7,7 +7,7 @@ from pygraphrt.script_module import ScriptOperatorRef
 from qdageditor5.adapters.node_inlet_tree_model_adapter import NodeInletTreeModelAdapter
 from qtpy.QtCore import QModelIndex, QPersistentModelIndex, Qt
 
-from pyflow5.core.nodert_input_roles import NodeRTInputRole
+from pyflow5.core.input_roles import InputDataRole
 
 
 def test_tree_contract_and_persistent_indexes(qtmodeltester, make_input_model) -> None:
@@ -125,13 +125,13 @@ def test_default_and_typed_editing(make_input_model, annotation, default, value,
 
     model = make_input_model(graph)
     index = model.index(0, 1, model.index(0, 0))
-    assert index.data(NodeRTInputRole.IsUsingDefaultRole)
+    assert index.data(InputDataRole.IsUsingDefaultRole)
     assert index.data(Qt.ItemDataRole.EditRole) == default
     assert model.setData(index, value)
     assert graph.nodes()[0].get_inputs()[1]["input"] == expected
-    assert not index.data(NodeRTInputRole.IsUsingDefaultRole)
+    assert not index.data(InputDataRole.IsUsingDefaultRole)
     assert model.setData(index, ParameterData.EMPTY)
-    assert index.data(NodeRTInputRole.IsUsingDefaultRole)
+    assert index.data(InputDataRole.IsUsingDefaultRole)
 
 
 def test_operator_reload_updates_rows_defaults_and_annotations(qtmodeltester, make_input_model) -> None:
@@ -154,7 +154,7 @@ def test_operator_reload_updates_rows_defaults_and_annotations(qtmodeltester, ma
     assert model.rowCount(parent) == 3
     assert last.isValid() and last.row() == 2
     assert last.data() == "4"
-    assert model.index(0, 1, parent).data(NodeRTInputRole.AnnotationRole) is float
+    assert model.index(0, 1, parent).data(InputDataRole.AnnotationRole) is float
     assert resets == []
 
 

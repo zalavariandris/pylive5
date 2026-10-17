@@ -28,6 +28,7 @@ from .abstract_module_rt import (
 
 from . import execution_plan
 
+from .abstract_operator import AbstractOperator, ParameterData
 from .function_operator import FunctionOperator
 from .script_module import ScriptModuleRT, ScriptOperatorRef
 from .import_module import ImportModuleRT
@@ -38,6 +39,8 @@ from .graph_serializer import GraphSerializer, GraphDeserializer
 from .abstract_module_rt import ParameterData
 
 __all__ = [
+    "AbstractOperator",
+    "ParameterData",
     "AbstractModule",
     "NodeRef",
     "GraphDefinitionRT",

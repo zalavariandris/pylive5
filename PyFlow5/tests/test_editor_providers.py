@@ -10,7 +10,7 @@ from myqtx import EditorContext, EditorRegistry
 from myqtx.widgets.coloredit import ColorEdit
 from pyflow5.editors import NumericTupleEdit, numeric_tuple_editor
 from pyflow5.views.formview import FormView
-from pyflow5.core.nodert_input_roles import NodeRTInputRole
+from pyflow5.core.input_roles import InputDataRole
 from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
 from pyflow5.vfxops_editors import register_vfxops_editors, vfxops_editor_provider
 
@@ -54,12 +54,12 @@ def test_vfxops_aliases_edit_clear_and_preserve_defaults(
     node, model, form = make_provider_form(module, editors)
     wrapper = form._mapper.mappedWidgetAt(0)
     index = model.index(0, 1, model.index(0, 0))
-    context = index.data(NodeRTInputRole.EditorContextRole)
+    context = index.data(InputDataRole.EditorContextRole)
     assert context.source_path == path.resolve()
     assert context.module_name == "arbitrary display name"
     assert context.operator_name == "operation"
     assert context.parameter_name == "value"
-    assert context.annotation is index.data(NodeRTInputRole.AnnotationRole)
+    assert context.annotation is index.data(InputDataRole.AnnotationRole)
     assert wrapper.editor.property("usingDefault") is True
     form._mapper.submit()
     assert node.get_inputs() == ((), {})
@@ -142,7 +142,7 @@ def test_context_for_function_operators_and_connected_inputs(make_input_model, q
 
     model = make_input_model(graph)
     index = model.index(0, 1, model.mapFromSource(graph.nodes()[1].get_name()))
-    context = index.data(NodeRTInputRole.EditorContextRole)
+    context = index.data(InputDataRole.EditorContextRole)
     assert context.module_name == __name__
     assert context.source_path == Path(__file__).resolve()
     assert context.parameter_name == "value"

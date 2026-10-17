@@ -15,7 +15,7 @@ def test_executing_node_without_an_operator():
 
 
     execution:NodeExecution = E.request(node)
-    assert isinstance(execution, ExecutionFailure)
+    assert isinstance(execution, ExecutionFailure), f"Expected ExecutionFailure, got {type(execution)}"
 
 def test_executing_node_with_a_valid_operator():
     import pygraphrt as rt

@@ -17,8 +17,9 @@ class AbstractInputEditorProvider(QObject, metaclass=_AbstractQObjectMeta):
     Return None from createEditor for unsupported inputs. Standard Qt editors
     retain their normal Enter/focus-loss commits. Optionally emit commitData(editor)
     to request an immediate commit. The router suppresses commits while loading
-    values and supplies the input's default, or None when no value is available.
-    QLineEdit defaults are shown as placeholders and receive None instead.
+    values and supplies only explicitly set node inputs, including explicit None.
+    Unset inputs do not load an editor value. Operator defaults are indicated
+    by dimming the editor.
 
     Override the value methods when a widget's user property does not match the
     computation's Python type. Widgets without a user property can be used too,
@@ -38,7 +39,7 @@ class AbstractInputEditorProvider(QObject, metaclass=_AbstractQObjectMeta):
         raise NotImplementedError
 
     def setEditorValue(self, editor: QWidget, value: Any) -> None:
-        """Display a Python value; accept None for an input without a value."""
+        """Display an explicitly set Python value, which may be None."""
         value_property = editor.metaObject().userProperty()
         if not value_property.isValid() or not value_property.write(editor, value):
             raise TypeError(f"Failed to set value '{value}' on the user property of {type(editor).__name__}")

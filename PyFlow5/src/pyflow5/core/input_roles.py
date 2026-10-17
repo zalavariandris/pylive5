@@ -6,7 +6,7 @@ from enum import IntEnum
 from qtpy.QtCore import Qt
 
 
-class NodeRTInputRole(IntEnum):
+class InputDataRole(IntEnum):
     # display the value (as string?)
     DisplayRole = int(Qt.ItemDataRole.DisplayRole)
     # the actual editable value
@@ -22,11 +22,17 @@ class NodeRTInputRole(IntEnum):
     IsUsingDefaultRole = UserRole + 2
     # the default value of the input for display
     DefaultValueRole = UserRole + 3
+
+    InputValueRole = UserRole + 4
     
     # whether the input has an annotation
-    HasAnnotationRole = UserRole + 4
+    HasAnnotationRole = UserRole + 5
+
     # the annotation associated with the input
-    AnnotationRole = UserRole + 5
+    AnnotationRole = UserRole + 6
     
     # the node connected to this input, should return None if no connection exists
-    ConnectionRole = UserRole + 6
+    ConnectionRole = UserRole + 7
+
+    # Whether the node has an explicit input. This includes a connected Node, None, or an empty string.
+    InputIsSetRole = UserRole + 8

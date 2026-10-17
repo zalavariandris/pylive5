@@ -1,7 +1,7 @@
 import pygraphrt as rt
 from qtpy.QtCore import QPersistentModelIndex, QModelIndex
 
-from pyflow5.core.nodert_input_roles import NodeRTInputRole
+from pyflow5.core.input_roles import InputDataRole
 from pygraphrt.abstract_operator import ParameterData
 
 
@@ -17,8 +17,8 @@ def test_clear_input_removes_and_shifts_positional_arguments(qtbot, make_input_m
     node_index = model.index(0, 0)
     input_index = model.index(0, 1, node_index)
 
-    assert input_index.data(NodeRTInputRole.ConnectionRole) == node_ref
-    assert input_index.data(NodeRTInputRole.InputLocationRole) == "first"
+    assert input_index.data(InputDataRole.ConnectionRole) == node_ref
+    assert input_index.data(InputDataRole.InputLocationRole) == "first"
     assert model.setData(input_index, ParameterData.EMPTY)
     assert node_ref.get_inputs() == ((20,), {})
     assert model.index(0, 1, node_index).data() == 20

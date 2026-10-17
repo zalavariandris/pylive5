@@ -1,4 +1,7 @@
 # TODO
+- [ ] create a smoke test for the insector. setting values, clear values, connect inputs, unconnect inputs, and the editor model binding. default values, empty values etc.
+- [ ] review NodeRTInputRole. I think (most of) it could be moved to QDAGEditor5
+      also, the QDAGEditor5 NodeDataRole and SocketDataRole needs a UserRoel to allow extension.
 - [ ] consider *@vfxops* ImageRGBA using _Planar(CHW)_ channels layout instead of _Interleaved (HWC)_ layout
      interleaved: RGBA RGBA RGBA …
      Planar: RRR… GGG… BBB… AAA…

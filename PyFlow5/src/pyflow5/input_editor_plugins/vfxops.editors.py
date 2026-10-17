@@ -21,7 +21,7 @@ from myqtx.widgets.numeric_tuple_edit import NumericTupleEdit
 from myqtx.widgets.qfloatslider import QFloatSlider
 from vfxops_interleaved.core import Range
 
-from pyflow5.core.nodert_input_roles import NodeRTInputRole
+from pyflow5.core.input_roles import InputDataRole
 from pyflow5.views.abstract_input_editor_provider import AbstractInputEditorProvider
 from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
 
@@ -33,7 +33,7 @@ class VFXInputEditorProvider(AbstractInputEditorProvider):
         option: QStyleOptionViewItem,
         index: QModelIndex,
     ) -> QWidget | None:
-        annotation = index.data(NodeRTInputRole.AnnotationRole)
+        annotation = index.data(InputDataRole.AnnotationRole)
         if get_origin(annotation) is Annotated:
             annotation, *metadata = get_args(annotation)
             value_range = next(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, QObject, Qt, SignalInstance
 
@@ -30,6 +31,10 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
 
     Subclasses can add columns; only column zero can have children.
     """
+
+    class ItemType(StrEnum):
+        Node = "Node"
+        Inlet = "Inlet"
 
     def __init__(
         self,
@@ -164,6 +169,16 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
             flags |= Qt.ItemFlag.ItemIsSelectable
         return flags
 
+    def getItemType(self, index: QModelIndex) -> ItemType | None:
+        """return ItemType.Node or ItemType.Inlet"""
+        # todo: review: if the item type should be determined differently.
+        shadow = self._shadow(index)
+        if isinstance(shadow, _NodeShadow):
+            return self.ItemType.Node
+        if isinstance(shadow, _InletShadow):
+            return self.ItemType.Inlet
+        return None
+
     def data(
         self,
         index: QModelIndex,
@@ -173,19 +188,24 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
         if graph is None or index.column() != 0:
             return None
 
-        shadow = self._shadow(index)
-        if isinstance(shadow, _NodeShadow):
-            return graph.nodeData(shadow.node_name, role)
 
-        if isinstance(shadow, _InletShadow):
-            value = graph.inletData(
-                shadow.parent_node.node_name,
-                shadow.inlet_name,
-                role,
-            )
-            if value is None and role == Qt.ItemDataRole.DisplayRole:
-                return str(shadow.inlet_name)
-            return value
+
+        itemtype = self.getItemType(index)
+
+        match itemtype:
+            case self.ItemType.Node:
+                shadow = self._shadow(index)
+                assert isinstance(shadow, _NodeShadow)
+                return graph.nodeData(shadow.node_name, role)
+            
+            case self.ItemType.Inlet:
+                shadow = self._shadow(index)
+                assert isinstance(shadow, _InletShadow)
+                return graph.inletData(
+                    shadow.parent_node.node_name,
+                    shadow.inlet_name,
+                    role
+                )
 
         return None
 

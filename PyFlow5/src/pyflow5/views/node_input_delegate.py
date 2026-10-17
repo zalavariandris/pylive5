@@ -17,6 +17,7 @@ from qtpy.QtCore import (
 )
 from qtpy.QtGui import QPaintEvent, QPainter
 from qtpy.QtWidgets import (
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -28,9 +29,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from pygraphrt.abstract_operator import ParameterData
+import pygraphrt as rt
 
-from ..core.nodert_input_roles import NodeRTInputRole
+from ..core.input_roles import InputDataRole
 from .abstract_input_editor_provider import AbstractInputEditorProvider
 
 # Custom Widgets for the NodesInspector
@@ -113,7 +114,7 @@ class NodeInputLabelDelegate(QStyledItemDelegate):
         data_text = index.data(Qt.ItemDataRole.DisplayRole)
         input_label_widget = InputLabelWidget(data_text, parent)
         input_label_widget.clearRequested.connect(lambda: 
-            index.model().setData(index.siblingAtColumn(1), ParameterData.EMPTY)
+            index.model().setData(index.siblingAtColumn(1), rt.ParameterData.EMPTY)
         )
         # expland the widget to fill the available space
         input_label_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -223,7 +224,7 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
         option: QStyleOptionViewItem,
         index: QModelIndex,
     ) -> QWidget:
-        connected_node = index.data(NodeRTInputRole.ConnectionRole)
+        connected_node = index.data(InputDataRole.ConnectionRole)
         
         editor:QWidget | None = None
 
@@ -252,13 +253,13 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
         self._editor_providers.pop(editor, None)
 
     def setModelData(
-        self, editor: QWidget, model: QAbstractItemModel, index: QModelIndex,
+        self, editor: QWidget|None, model: QAbstractItemModel|None, index: QModelIndex,
     ) -> None:
         # Signals emitted while loading an editor must not write back to the model.
         if editor in self._updating_editors:
             return
 
-        if index.data(NodeRTInputRole.ConnectionRole):
+        if index.data(InputDataRole.ConnectionRole):
             return
 
         if provider:=self._editor_providers.get(editor):
@@ -274,27 +275,27 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
 
         self._updating_editors.add(editor)
         try:
-            value = index.data(Qt.ItemDataRole.EditRole)
-            is_using_default = bool(index.data(NodeRTInputRole.IsUsingDefaultRole))
-            default_value = index.data(NodeRTInputRole.DefaultValueRole)
-            if is_using_default and default_value is not ParameterData.EMPTY:
-                value = default_value
-            if isinstance(editor, QLineEdit):
-                placeholder = ""
-                if default_value is not ParameterData.EMPTY and default_value is not None:
-                    placeholder = str(default_value)
-                editor.setPlaceholderText(placeholder)
-                if is_using_default:
-                    value = None
+            is_using_default = bool(index.data(InputDataRole.IsUsingDefaultRole))
+            effect = editor.graphicsEffect()
+            if not isinstance(effect, QGraphicsOpacityEffect):
+                effect = QGraphicsOpacityEffect(editor)
+                editor.setGraphicsEffect(effect)
+            effect.setOpacity(0.5 if is_using_default else 1.0)
 
+            # Unset inputs only update presentation; do not load an editor value.
+            if not index.data(InputDataRole.InputIsSetRole):
+                return
+
+            value = index.data(Qt.ItemDataRole.EditRole)
             provider = self._editor_providers.get(editor)
             if provider is None:
                 super().setEditorData(editor, index)
-            else:
-                try:
-                    provider.setEditorValue(editor, value)
-                except Exception as e:
-                    print(f"Error setting editor value: {e}")
+                return
+
+            try:
+                provider.setEditorValue(editor, value)
+            except Exception as e:
+                print(f"Error setting editor value: {e}")
         finally:
             self._updating_editors.remove(editor)
 

@@ -6,8 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any, get_args, get_origin
 
 import pygraphrt as rt
-from pyflow5.editorregistry import EditorContext
-from pygraphrt.abstract_operator import ParameterData
+
 from qdageditor5.adapters.node_inlet_tree_model_adapter import (
     _InletShadow,
     NodeInletTreeModelAdapter,
@@ -15,7 +14,7 @@ from qdageditor5.adapters.node_inlet_tree_model_adapter import (
 from qdageditor5.models.abstract_dag_model import InletName
 from qtpy.QtCore import QModelIndex, QObject, Qt
 
-from ..core.nodert_input_roles import NodeRTInputRole
+from ..core.input_roles import InputDataRole
 from .pygraphrt_graphmodel import PyGraphRTGraphModel
 
 
@@ -75,8 +74,8 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
         return None
 
     def _input_details(self, index: QModelIndex) -> _InputDetails | None:
-        source = self.sourceGraph()
-        if not isinstance(source, PyGraphRTGraphModel):
+        source_graph = self.sourceGraph()
+        if not isinstance(source_graph, PyGraphRTGraphModel):
             return None
 
         shadow = self._shadow(index)
@@ -87,18 +86,18 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
             return None
 
         node_name, inlet_name = node_inlet
-        node = source.mapToSource(node_name)
-        if node is None:
+        node_rt = source_graph.mapToSource(node_name)
+        if node_rt is None:
             return None
 
-        args, kwargs = node.get_inputs()
-        operator = node.get_operator()
+        args, kwargs = node_rt.get_inputs()
+        operator = node_rt.get_operator()
         parameters = operator.get_parameters() if operator is not None else {}
         parameter = parameters.get(inlet_name)
 
         # The graph orders declared parameters, extra positional inputs, then
         # extra keywords. Use its identities, including escaped numeric names.
-        inlets = list(source.inlets(node_name))
+        inlets = list(source_graph.inlets(node_name))
         if inlet_name not in inlets:
             return None
         position = inlets.index(inlet_name)
@@ -110,10 +109,10 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
             if not isinstance(inlet_name, str):
                 return None
             location = inlet_name
-            value = kwargs.get(location, ParameterData.EMPTY)
+            value = kwargs.get(location, rt.ParameterData.EMPTY)
 
-        default: object = ParameterData.EMPTY
-        annotation: object = ParameterData.EMPTY
+        default: object = rt.ParameterData.EMPTY
+        annotation: object = rt.ParameterData.EMPTY
         if parameter is not None:
             default = parameter.default
             annotation = parameter.annotation
@@ -126,15 +125,15 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                 "Path": Path,
                 "pathlib.Path": Path,
             }.get(annotation)
-        elif annotation is ParameterData.EMPTY:
-            example = default if value is ParameterData.EMPTY else value
-            if example is ParameterData.EMPTY:
+        elif annotation is rt.ParameterData.EMPTY:
+            example = default if value is rt.ParameterData.EMPTY else value
+            if example is rt.ParameterData.EMPTY:
                 annotation = None
             else:
                 annotation = Path if isinstance(example, Path) else type(example)
 
         return _InputDetails(
-            node=node,
+            node=node_rt,
             inlet_name=inlet_name,
             location=location,
             value=value,
@@ -147,64 +146,59 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
         index: QModelIndex,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> object:
-        if index.column() != 1:
-            return super().data(index, role)
-
-
-        details = self._input_details(index)
-        if details is None:
+        source_graph = self.sourceGraph()
+        if source_graph is None:
             return None
 
-        value = details.value
-        if role == Qt.ItemDataRole.DisplayRole:
-            if isinstance(value, rt.NodeRef):
-                return f"-> {value.get_name()}"
+        itemtype = self.getItemType(index)
+        match itemtype:
+            case self.ItemType.Node:
+                return super().data(index, role) #todo: why is the super giving back the execution values instead of the name of the node for example?
             
-            if value is ParameterData.EMPTY:
-                return None
-            
-            return f"{value}"
-        
-        if role == Qt.ItemDataRole.EditRole:
-            if isinstance(value, rt.NodeRef):
-                return f"-> {value.get_name()}"
-            if value is ParameterData.EMPTY:
-                return None
-            return value
+            case self.ItemType.Inlet:
+                node_name, inlet_name = self.mapToSource(index)
+                match index.column():
+                    case 0: # inlet label
+                        match role:
+                            case Qt.ItemDataRole.DisplayRole:
+                                return f"{inlet_name}"
+                            case _:
+                                return super().data(index, role)
+                    
+                    case 1: # inlet field
+                        match role:
+                            case Qt.ItemDataRole.DisplayRole:
+                                for link in source_graph.inLinks(node_name, inlet_name):
+                                    src, out_, tgt, in_ = link
+                                    return f"-> {src}"
+                                return super().data(index, role)
+                            case Qt.ItemDataRole.EditRole:
+                                return super().data(index, role)
+                            case _:
+                                return super().data(index, role)
 
-        if role == NodeRTInputRole.InputLocationRole:
-            return details.inlet_name
-
-        if role == NodeRTInputRole.IsUsingDefaultRole:
-            return (
-                value is ParameterData.EMPTY
-                and details.default is not ParameterData.EMPTY
-            )
-
-        if role == NodeRTInputRole.DefaultValueRole:
-            # if details.default is ParameterData.EMPTY:
-            #     return None
-            return details.default
-
-        if role == NodeRTInputRole.HasAnnotationRole:
-            return details.annotation is not None
-
-        if role == NodeRTInputRole.AnnotationRole:
-            return details.annotation
-        
-        if role == NodeRTInputRole.ConnectionRole:
-            return value.get_name() if isinstance(value, rt.NodeRef) else None
-        
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
-        flags = super().flags(index)
-        if index.column() == 1:
-            details = self._input_details(index)
-            if details is not None and details.editable_type is not None:
-                flags |= Qt.ItemFlag.ItemIsEditable
-        return flags
+        sourcegraph = self.sourceGraph()
+        if sourcegraph is None:
+            return Qt.ItemFlag.NoItemFlags
 
+        match self.getItemType(index):
+            case self.ItemType.Node:
+                return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            
+            case self.ItemType.Inlet:
+                if index.column() == 1:
+                    node_name, inlet_name = self.mapToSource(index)
+                    inlinks = list(sourcegraph.inLinks(node_name, inlet_name))
+                    if len(inlinks)  == 0:
+                        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsEditable
+                    else:
+                        return Qt.ItemFlag.ItemIsEnabled
+
+        return super().flags(index)
+    
     def setData(
         self,
         index: QModelIndex,
@@ -217,10 +211,19 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
         if details is None:
             return False
 
+        itemtype = super().getItemType(index)
+        match itemtype:
+            case self.ItemType.Node:
+                return False # todo: consider setting node props here.
+            case self.ItemType.Inlet:
+                pass
+            case _:
+                return False
+
         args, kwargs = details.node.get_inputs()
         args, kwargs = list(args), dict(kwargs)
         location = details.location
-        if value is ParameterData.EMPTY:
+        if value is rt.ParameterData.EMPTY:
             if isinstance(location, int):
                 args.pop(location)
             elif location in kwargs:

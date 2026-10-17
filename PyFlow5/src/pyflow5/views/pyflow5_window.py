@@ -51,7 +51,6 @@ from qtpy.QtWidgets import (
 
 # widgets
 from myqtx.selection_dialog_view import SelectionDialog
-from pyflow5.editorregistry import EditorRegistry
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 
 # models
@@ -192,6 +191,7 @@ class PyFlow5Window(QMainWindow):
 
         self._right_tabwidget = QTabWidget(self)
         self._right_tabwidget.addTab(self._viewer, "Viewer")
+        self._right_tabwidget.addTab(self._node_tree_view, "Node Inlets")
         splitter.addWidget(self._right_tabwidget)
         splitter.setSizes([730, 730])
         self.resize(1460, 760)
