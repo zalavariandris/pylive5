@@ -1,1 +1,0 @@
-A collection of pure functions for VFX operations.

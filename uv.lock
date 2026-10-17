@@ -929,6 +929,7 @@ source = { editable = "vfxops" }
 dependencies = [
     { name = "av" },
     { name = "numba" },
+    { name = "numpy" },
     { name = "opencolorio" },
     { name = "opencv-python" },
     { name = "pyglm" },
@@ -938,6 +939,7 @@ dependencies = [
 requires-dist = [
     { name = "av" },
     { name = "numba" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "opencolorio", specifier = ">=2.6.0" },
     { name = "opencv-python" },
     { name = "pyglm" },

@@ -27,6 +27,7 @@ class DisplayWidget(QWidget):
     @dataclass
     class Image:
         data: np.ndarray
+        channel_axis: int | None = None
 
 
     @dataclass
@@ -44,9 +45,11 @@ class DisplayWidget(QWidget):
         """Two images with a wipe slider; B is stretched to fit the dimensions of A."""
         a: np.ndarray
         b: np.ndarray
+        channel_axis: int | None = None
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, channel_axis: int = -1) -> None:
         super().__init__(parent)
+        self._channel_axis = channel_axis
         # setup widget
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setWindowTitle("Display Widget")
@@ -95,11 +98,16 @@ class DisplayWidget(QWidget):
     def _set_editor_data(self, editor: QWidget, data: object) -> None:
         """Set the data for the given editor view."""
         match data, editor:
-            case DisplayWidget.Image()|np.ndarray()|QImage()|QPixmap(), ImageCanvas() as image_canvas:
-                image_canvas.set_image(data)
+            case DisplayWidget.Image(), ImageCanvas() as image_canvas:
+                axis = self._channel_axis if data.channel_axis is None else data.channel_axis
+                image_canvas.set_image(data.data, channel_axis=axis)
+
+            case np.ndarray()|QImage()|QPixmap(), ImageCanvas() as image_canvas:
+                image_canvas.set_image(data, channel_axis=self._channel_axis)
 
             case DisplayWidget.ImageCompare(), ImageCompareWidget() as image_compare_view:
-                image_compare_view.set_images(data.a, data.b)
+                axis = self._channel_axis if data.channel_axis is None else data.channel_axis
+                image_compare_view.set_images(data.a, data.b, channel_axis=axis)
 
             case DisplayWidget.HTML(), QTextBrowser() as html_browser:
                 html_browser.setHtml(data.data)

@@ -44,7 +44,7 @@ class NumpyImageItem(QGraphicsItem):
         self._float_buffer = None
         self.update()
 
-    def setImage(self, data: np.ndarray | QImage | QPixmap) -> None:
+    def setImage(self, data: np.ndarray | QImage | QPixmap, *, channel_axis: int = -1) -> None:
         if isinstance(data, QPixmap):
             data = data.toImage()
 
@@ -52,6 +52,8 @@ class NumpyImageItem(QGraphicsItem):
             image = data.copy()  # independent of caller's subsequent changes
             owner = None
         elif isinstance(data, np.ndarray):
+            if data.ndim == 3:
+                data = np.moveaxis(data, channel_axis, -1)
             if data.ndim != 3 or data.shape[2] != 4:
                 raise ValueError('Expected RGBA data with shape (H, W, 4)')
             if data.shape[0] == 0 or data.shape[1] == 0:
@@ -119,9 +121,9 @@ class ImageCanvas(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self._fit_pending = False
 
-    def set_image(self, data: np.ndarray | QImage | QPixmap) -> None:
+    def set_image(self, data: np.ndarray | QImage | QPixmap, *, channel_axis: int = -1) -> None:
         first_image = not self.item.hasImage()
-        self.item.setImage(data)
+        self.item.setImage(data, channel_axis=channel_axis)
         if first_image:
             self.fit_image()
 

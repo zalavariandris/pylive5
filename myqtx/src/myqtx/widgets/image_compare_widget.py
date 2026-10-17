@@ -29,9 +29,9 @@ class ImageCompareWidget(QWidget):
         layout.addLayout(controls)
         self.setFocusProxy(self.canvas)
 
-    def set_images(self, A: np.ndarray, B: np.ndarray) -> None:
-        A = utils.img_to_qimage(A)
-        B = utils.img_to_qimage(B)
+    def set_images(self, A: np.ndarray, B: np.ndarray, *, channel_axis: int = -1) -> None:
+        A = utils.img_to_qimage(A, channel_axis=channel_axis)
+        B = utils.img_to_qimage(B, channel_axis=channel_axis)
         if A.size() != B.size():
             B = B.scaled(
                 A.size(),

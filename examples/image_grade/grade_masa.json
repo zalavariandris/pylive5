@@ -3,7 +3,7 @@
     "modules": {
         "_local_": {
             "type": "embedded",
-            "source": "from vfxops.io import read_image\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.color import grade, exposure\nfrom vfxops.core import ImageRGBA, Range\nfrom typing import Annotated\n\ndef myread(path:str):\n    print(\"read image\")\n    return read_image(path)\n    \ndef myexp(img: ImageRGBA, ev:Annotated[float, Range(-10.0, 10.0)]=0.0):\n    factor = 2.0 ** ev\n    return img * (factor, factor, factor, 1.0)\n\n__all__ = [\n    \"myread\",\n    \"grade\",\n    \"exposure\",\n    \"myexp\",\n    \"read_image\",\n    \"gaussian_blur\"\n]"
+            "source": "from vfxops.io import read_image\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.color import grade, exposure\nfrom vfxops.core import ImageRGBA, Range\nfrom typing import Annotated\n\ndef myread(path:str):\n    print(\"read image\")\n    return read_image(path)\n    \ndef myexp(img: ImageRGBA, ev:Annotated[float, Range(-10.0, 10.0)]=0.0):\n    return exposure(img, ev)\n\n__all__ = [\n    \"myread\",\n    \"grade\",\n    \"exposure\",\n    \"myexp\",\n    \"read_image\",\n    \"gaussian_blur\"\n]"
         }
     },
     "graph": {

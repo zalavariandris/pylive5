@@ -6,7 +6,7 @@ import myqtx
 class Viewer(BaseDetailsView):
     def __init__(self, parent=None)->None:
         super().__init__(parent)
-        self.setBodyWidget(myqtx.widgets.DisplayWidget())
+        self.setBodyWidget(myqtx.widgets.DisplayWidget(channel_axis=0))
         
     def showCurrentRootEvent(self):
         if self._current_root.isValid() is False:

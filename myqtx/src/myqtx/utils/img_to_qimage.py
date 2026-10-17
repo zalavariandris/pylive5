@@ -1,13 +1,15 @@
 import numpy as np
 from qtpy.QtGui import QImage, QPixmap
 
-def img_to_qimage(data: np.ndarray | QImage | QPixmap) -> QImage:
+def img_to_qimage(data: np.ndarray | QImage | QPixmap, *, channel_axis: int = -1) -> QImage:
     if isinstance(data, QImage):
         return data.copy()
     if isinstance(data, QPixmap):
         return data.toImage().copy()
     if not isinstance(data, np.ndarray):
         raise TypeError("Image data must be a NumPy array, QImage, or QPixmap")
+    if data.ndim == 3:
+        data = np.moveaxis(data, channel_axis, -1)
     if data.ndim == 2:
         channels = 1
     elif data.ndim == 3 and data.shape[2] in (1, 3, 4):
