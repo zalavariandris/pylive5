@@ -29,14 +29,14 @@ members = [
     "QDAGEditor5", 
     "QScriptEdit2",
     "QtScriptEditorAdvanced",
-    "vfxops"
+    "vfxops_interleaved"
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
     "pytest-qt>=4.5.0",
-    "pytracy>=0.0.2",
+    # "pytracy>=0.0.2",
 ]
 
 [project.optional-dependencies]

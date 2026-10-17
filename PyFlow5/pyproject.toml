@@ -19,13 +19,13 @@ dependencies = [
     "pygraphrt",
     "qdageditor5",
     "QtScriptEditorAdvanced",
-    "vfxops",
+    "vfxops_interleaved",
 ]
 
 [tool.uv.sources]
 myutils = { workspace = true }
 myqtx = { workspace = true }
-vfxops = { workspace = true }
+vfxops_interleaved = { workspace = true }
 pygraphrt = { workspace = true }
 qdageditor5 = { workspace = true }
 QtScriptEditorAdvanced = { workspace = true }

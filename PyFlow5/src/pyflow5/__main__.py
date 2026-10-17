@@ -38,12 +38,16 @@ class HoverFusionStyle(QProxyStyle):
 
 
 if __name__ == "__main__":
-    import pytracy
-    import sys
-    pytracy.set_filtering_mode(True, False, False)
-    pytracy.enable_tracing(True)
-    print("Tracing enabled")
-    print("Python profile callback:", sys.getprofile())
+    try:
+        import pytracy
+        import sys
+        pytracy.set_filtering_mode(True, False, False)
+        pytracy.enable_tracing(True)
+        print("Tracing enabled")
+        print("Python profile callback:", sys.getprofile())
+    except ImportError:
+        print("pytracy not available")
+        
     from qtpy.QtWidgets import QApplication
     import sys
     app = QApplication(sys.argv)

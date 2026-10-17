@@ -3,7 +3,7 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vfxops"
+name = "vfxops_interleaved"
 version = "0.5.0"
 authors = [
     { name = "András Zalavári", email = "zalavariandris@gmail.com" }
@@ -20,7 +20,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["vfxops", "vfxops.*"]
+include = ["vfxops_interleaved", "vfxops_interleaved.*"]
 namespaces = false
 
 [tool.setuptools.exclude-package-data]
