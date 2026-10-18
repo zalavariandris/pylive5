@@ -10,7 +10,7 @@ from qtpy.QtWidgets import QStyleOptionViewItem
 
 import pygraphrt as rt
 from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
-from pygraphrt.graph_evaluator import GraphEvaluator, InlineExecutionBackend
+from pygraphrt.graph_evaluator import GraphEvaluatorEngine, InlineExecutionBackend
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.abstract_dag_model import AbstractDAGModel, NodeName
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
@@ -35,7 +35,7 @@ def make_model() -> PyGraphRTGraphModel:
 
     registry = rt.ModuleRegistry()
     invalidator = rt.GraphInvalidator(graph, registry)
-    evaluator = GraphEvaluator(graph, InlineExecutionBackend(), invalidator=invalidator)
+    evaluator = GraphEvaluatorEngine(graph, InlineExecutionBackend(), invalidator=invalidator)
     model = PyGraphRTGraphModel(graph, registry, invalidator, evaluator)
     for row, node in enumerate(model.nodes()):
         model.setNodePosition(node, QPointF(220, 80 + row * 120))

@@ -10,10 +10,6 @@ from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
 
 import pygraphrt as rt
-from pygraphrt.graph_evaluator import (
-    GraphEvaluator,
-    QtThreadPoolExecutionBackend,
-)
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
@@ -27,26 +23,26 @@ from qdageditor5.adapters.node_inlet_tree_selection_model_adapter import NodeInl
 
 class PyFlowDocument(QObject):
     def __init__(self, 
-        engine: rt.PyGraphEngine|None=None,
+        engine: rt.GraphEvaluatorEngine|None=None,
         parent:QObject|None=None
     ):
         super().__init__(parent=parent)
         # RT
-        self._engine = engine or rt.PyGraphEngine()
+        self._engine = engine or rt.GraphEvaluatorEngine()
 
         # Models
         ## Graph Model
         self.graph_model = PyGraphRTGraphModel(self._engine)
         
         self.graphselection_model = GraphSelectionModel(self.graph_model)
-        self._engine.evaluator._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
+        self._engine._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
         self.graphselection_model.currentNodeChanged.connect(
             self._on_current_node_changed
         )
 
         ## Modules Model
         self.modules_model = ModulesOperatorsTreeModel()
-        self.modules_model.setSourceRegistry(self._engine.registry)
+        self.modules_model.setSourceRegistry(self._engine._registry)
         self.modulesselection_model = QItemSelectionModel(self.modules_model)
 
         # Adapters
@@ -61,7 +57,7 @@ class PyFlowDocument(QObject):
         self.nodes_list_selection_adapter.setSourceSelection(self.graphselection_model)
         
         # Initial evaluation
-        self._engine.evaluator.request(*self._engine.graph.nodes())
+        self._engine.request(*self._engine._graph.nodes())
 
     @Slot(list)
     def _on_nodes_invalidated(self, nodes: list[rt.NodeRef]) -> None:
@@ -71,7 +67,7 @@ class PyFlowDocument(QObject):
 
         current = self.graph_model.mapToSource(current_name)
         if current is not None and current in nodes:
-            self._engine.evaluator.request(current)
+            self._engine.request(current)
 
     @Slot(object, object)
     def _on_current_node_changed(
@@ -84,12 +80,12 @@ class PyFlowDocument(QObject):
 
         node = self.graph_model.mapToSource(current)
         if node is not None:
-            self._engine.evaluator.request(node)
+            self._engine.request(node)
 
     def close(self) -> None:
         """Stop evaluation and disconnect requests from the graph model."""
         self.graph_model.close()
-        self._engine.evaluator.close()
+        self._engine.close()
 
     def getNodeOperator(self, node_name: NodeName) -> QModelIndex:
         node_ref = self.graph_model.mapToSource(node_name)
@@ -110,12 +106,12 @@ class PyFlowDocument(QObject):
         data = json.loads(path.read_text(encoding="utf-8"))
         deserializer = rt.GraphDeserializer(base_dir=path.parent)
         registry, graph = deserializer.fromdict(data)
-        doc = cls(engine=rt.PyGraphEngine(graph=graph, registry=registry))
+        doc = cls(engine=rt.GraphEvaluatorEngine(graph=graph, registry=registry))
         return doc
 
     def save(self, file_path: str | Path) -> None:
         """Save the runtime and node positions as UTF-8 JSON."""
-        serializer = rt.GraphSerializer(self._engine.graph, self._engine.registry)
+        serializer = rt.GraphSerializer(self._engine._graph, self._engine._registry)
         data = serializer.todict()
 
         # inject position

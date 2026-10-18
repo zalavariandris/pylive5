@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from concurrent.futures import Future
 from weakref import ref
 
+from pygraphrt.graph_evaluator.qt_threadpool_backend import QtThreadPoolExecutionBackend
 from qtpy.QtCore import QObject, Qt, Signal, Slot
 
 from ..graph_definition_rt import GraphDefinitionRT, NodeRef
@@ -18,9 +19,9 @@ from . import execution_plan
 from .execution_backend import ExecutionBackend
 from .execution_plan import ExecutionPlan, ExecutionResults
 from .graph_cache import GraphCache
+from ..module_registry import ModuleRegistry
 
-
-class GraphEvaluator(QObject):
+class GraphEvaluatorEngine(QObject):
     """Manage requests, cached results, and invalidation around an execution backend.
 
     Construct and use this object on the graph's owning thread. Requests are
@@ -45,22 +46,23 @@ class GraphEvaluator(QObject):
 
     def __init__(
         self,
-        graph: GraphDefinitionRT,
-        backend: ExecutionBackend,
+        graph: GraphDefinitionRT|None=None,
+        registry: ModuleRegistry|None=None,
+        backend: ExecutionBackend|None = None,
         parent: QObject | None = None,
         *,
-        cache: GraphCache | None = None,
-        invalidator: GraphInvalidator | None = None,
+        cache: GraphCache | None = None
     ) -> None:
         super().__init__(parent)
-        self._graph = graph
-        self._backend = backend
+        self._graph = graph or GraphDefinitionRT(parent=self)
+        self._registry = registry or ModuleRegistry(parent=self)
+        self._backend = backend or QtThreadPoolExecutionBackend()
         self._cache = cache if cache is not None else GraphCache()
-        self._invalidator = (
-            invalidator if invalidator is not None else GraphInvalidator(graph)
+        self._invalidator = GraphInvalidator(
+            self._graph, 
+            self._registry, 
+            parent=self
         )
-        if invalidator is None:
-            self._invalidator.setParent(self)
 
         self._revision = 0
         self._pending: set[NodeRef] = set()
@@ -76,7 +78,7 @@ class GraphEvaluator(QObject):
             self._on_backend_finished, Qt.ConnectionType.QueuedConnection
         )
         self._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
-        graph.nodes_removed.connect(self._on_nodes_removed)
+        self._graph.nodes_removed.connect(self._on_nodes_removed)
 
     def graph(self) -> GraphDefinitionRT:
         return self._graph

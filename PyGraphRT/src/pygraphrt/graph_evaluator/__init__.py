@@ -18,7 +18,7 @@ from .execution_plan import (
     prepare,
 )
 from .graph_cache import GraphCache
-from .graph_evaluator import GraphEvaluator
+from .graph_evaluator import GraphEvaluatorEngine
 from .qt_threadpool_backend import QtThreadPoolExecutionBackend
 
 __all__ = [
@@ -29,7 +29,7 @@ __all__ = [
     "ExecutionResults",
     "ExecutionSuccess",
     "GraphCache",
-    "GraphEvaluator",
+    "GraphEvaluatorEngine",
     "InlineExecutionBackend",
     "NodeExecution",
     "NodeOutput",

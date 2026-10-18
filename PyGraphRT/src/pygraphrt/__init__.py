@@ -36,9 +36,11 @@ from .module_registry import ModuleRegistry
 from .graph_invalidator import GraphInvalidator
 from .graph_serializer import GraphSerializer, GraphDeserializer
 from .abstract_module_rt import ParameterData
-from .pygraphengine import PyGraphEngine
+
+from .graph_evaluator.graph_evaluator import GraphEvaluatorEngine
+
 __all__ = [
-    "PyGraphEngine",
+    "GraphEvaluatorEngine",
     "AbstractOperator",
     "ParameterData",
     "AbstractModule",

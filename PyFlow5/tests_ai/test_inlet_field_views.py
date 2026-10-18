@@ -5,7 +5,7 @@ from typing import Annotated
 import numpy as np
 import pygraphrt as rt
 import pytest
-from pygraphrt.graph_evaluator import GraphEvaluator, InlineExecutionBackend
+from pygraphrt.graph_evaluator import GraphEvaluatorEngine, InlineExecutionBackend
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, Qt
 from qtpy.QtWidgets import QApplication, QLineEdit, QSpinBox, QStyleOptionViewItem, QTreeView
@@ -21,12 +21,12 @@ from pyflow5.views.viewer_view import Viewer
 @pytest.fixture
 def make_model(qapp: object) -> Iterator[Callable[[rt.GraphDefinitionRT], PyGraphRTNodeInletTreeModelAdapter]]:
     models: list[PyGraphRTGraphModel] = []
-    evaluators: list[GraphEvaluator] = []
+    evaluators: list[GraphEvaluatorEngine] = []
 
     def make(graph: rt.GraphDefinitionRT) -> PyGraphRTNodeInletTreeModelAdapter:
         registry = rt.ModuleRegistry()
         invalidator = rt.GraphInvalidator(graph, registry)
-        evaluator = GraphEvaluator(graph, InlineExecutionBackend(), invalidator=invalidator)
+        evaluator = GraphEvaluatorEngine(graph, InlineExecutionBackend(), invalidator=invalidator)
         source = PyGraphRTGraphModel(graph, registry, invalidator, evaluator)
         models.append(source)
         evaluators.append(evaluator)
@@ -259,7 +259,7 @@ def test_window_shares_tree_fields_with_viewer_and_inspector(qtbot: QtBot) -> No
 
     window = PyFlow5Window(use_session=False)
     qtbot.addWidget(window)
-    document = PyFlowDocument(engine=rt.PyGraphEngine(graph=graph))
+    document = PyFlowDocument(engine=rt.GraphEvaluatorEngine(graph=graph))
     window._connectDocument(document)
     model = document.node_inlet_tree_adapter
     selection = document.node_inlet_tree_selection_adapter

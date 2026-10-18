@@ -26,7 +26,7 @@ def document(qtbot: QtBot) -> PyFlowDocument:
     def third() -> int:
         return 3
 
-    document = PyFlowDocument(engine=rt.PyGraphEngine(graph=graph))
+    document = PyFlowDocument(engine=rt.GraphEvaluatorEngine(graph=graph))
     for row, node in enumerate(document.graph_model.nodes()):
         document.graph_model.setNodePosition(node, QPointF(250, 100 + row * 120))
     return document
@@ -139,7 +139,7 @@ def test_link_current_is_independent_and_cleared_on_removal(qtbot: QtBot, remova
     def target(value: int) -> int:
         return value
 
-    document = PyFlowDocument(engine=rt.PyGraphEngine(graph=graph))
+    document = PyFlowDocument(engine=rt.GraphEvaluatorEngine(graph=graph))
     selection = document.graphselection_model
     link = next(iter(document.graph_model.links()))
     selection.selectLink(link)
