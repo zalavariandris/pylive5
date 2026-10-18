@@ -1,6 +1,6 @@
 """Graph evaluation with an injected backend and an invalidation-based cache."""
 
-from ..graph_executor import (
+from ..core import (
     ExecutionBlocked,
     ExecutionFailure,
     ExecutionSuccess,

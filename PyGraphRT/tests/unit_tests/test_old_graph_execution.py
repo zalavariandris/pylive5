@@ -3,14 +3,15 @@ import pytest
 from typing import TYPE_CHECKING
 
 
-from pygraphrt.graph_executor import NodeExecution, ExecutionFailure, ExecutionSuccess
+from pygraphrt.old_graph_executor import GraphExecutorRT
+from pygraphrt.core import NodeExecution, ExecutionFailure, ExecutionSuccess
 
 
 def test_executing_node_without_an_operator():
     import pygraphrt as rt
 
     G = rt.GraphDefinitionRT()
-    E = rt.GraphExecutorRT(G)
+    E = GraphExecutorRT(G)
     node = G._create_node()
 
 

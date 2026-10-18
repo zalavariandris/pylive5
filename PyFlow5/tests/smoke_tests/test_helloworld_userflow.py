@@ -14,12 +14,6 @@ from pyflow5.views.pyflow5_window import PyFlow5Window
 from pyflow5.models.pyflow5_document import PyFlowDocument
 
 
-import pygraphrt as rt
-from pygraphrt.graph_executor import (
-    ExecutionFailure, 
-    ExecutionSuccess, 
-    NodeExecution
-)
 
 global WAIT_TIME_MS
 WAIT_TIME_MS = 1000

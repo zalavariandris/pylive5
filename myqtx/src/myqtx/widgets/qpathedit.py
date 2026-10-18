@@ -41,7 +41,6 @@ class QPathEdit(QWidget):
     def setPath(self, path:pathlib.Path|str):
         self._lineedit.setText(str(path))
 
-    path = Property(pathlib.Path, getPath, setPath, notify=pathChanged, user=True)
 
 
 if __name__ == "__main__":

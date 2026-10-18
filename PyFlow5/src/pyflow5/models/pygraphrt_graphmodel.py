@@ -6,8 +6,7 @@ from typing import Annotated, Iterable, override, Any, get_args, get_origin
 import warnings
 
 from pygraphrt.graph_definition_rt import NodeRef
-from pygraphrt.graph_executor import ExecutionSuccess
-from pygraphrt.graph_executor_3_draft import GraphEvaluator
+from pygraphrt.graph_evaluator import GraphEvaluator
 from pytools import UniqueNameGenerator
 
 from qtpy.QtCore import (

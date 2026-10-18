@@ -5,7 +5,7 @@ from qtpy.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot
 from . import execution_plan
 from .execution_plan import ExecutionPlan, ExecutionResults
 from .graph_definition_rt import GraphDefinitionRT, NodeRef
-from .graph_executor import (
+from .core import (
     ExecutionBlocked,
     ExecutionFailure,
     ExecutionSuccess,

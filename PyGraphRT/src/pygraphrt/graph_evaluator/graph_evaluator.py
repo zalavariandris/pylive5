@@ -7,7 +7,7 @@ from weakref import ref
 from qtpy.QtCore import QObject, Qt, Signal, Slot
 
 from ..graph_definition_rt import GraphDefinitionRT, NodeRef
-from ..graph_executor import (
+from ..core import (
     ExecutionBlocked,
     ExecutionFailure,
     ExecutionSuccess,

@@ -95,6 +95,16 @@
       this could be a nice development feature.
 
 
+## Known Limitations and BUGS
+- [ ] TODO: Investigate PyQt Python-object property conversion failure.
+      - Create a minimal QObject with Property(object, ...) returning a pathlib.Path.
+      - Compare direct property access with QMetaProperty.read() / write().
+      - Repeat with a plain custom Python object and a str control.
+      - Record Python, PyQt6, Qt, and PyQt6-sip versions; reproduce in a clean environment.
+      - Check upstream reports and report a minimal reproduction if needed.
+      Observed locally with PyQt 6.11.0: meta-property reads fail for both Path and custom objects with unable to convert ... to a C++ 'PyQt_PyObject' instance. Cause remains unknown.
+      Current workaround: call QPathEdit.getPath() / setPath() directly through the provider.
+
 ## Inspector dev
 
 - [x] expose the inlets, based on the operator, and the actual inputs. 
