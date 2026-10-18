@@ -265,17 +265,14 @@ class PyFlow5Window(QMainWindow):
 
             # Fit after the window's startup layout has been established.
             QTimer.singleShot(0, self._graph_view.fitNodes)
-            self._node_tree_view.setModel(document.node_inlet_tree_adapter)
             document.node_inlet_tree_adapter.modelReset.connect(
                 lambda: self._node_tree_view.expandAll())
             # self._inspector_view.setModel(document.graphdetails_model)
-            self._viewer.setModel(document.nodes_list_adapter)
-            self._viewer.setSelectionModel(document.nodes_list_selection_adapter)
-
             self._viewer.setModel(document.node_inlet_tree_adapter)
             self._viewer.setSelectionModel(document.node_inlet_tree_selection_adapter)
             self._node_inspector.setModel(document.node_inlet_tree_adapter)
             self._node_inspector.setSelectionModel(document.node_inlet_tree_selection_adapter)
+            self._node_tree_view.expandAll()
 
             # set the new document
             self._document = document

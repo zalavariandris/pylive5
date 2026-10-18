@@ -134,19 +134,15 @@ class DisplayWidget(QWidget):
                         userprop.write(editor, data)
 
     def display(self, data: object) -> None:
-        # update current widget in stack
-        if type(data) != type(self._cached_data):
-            if type(data) not in self._view_for_data:
-                editor = self._create_editor(data)
-                self._view_for_data[type(data)] = editor
-                self._stack.addWidget(editor)
+        if type(data) not in self._view_for_data:
+            editor = self._create_editor(data)
+            self._view_for_data[type(data)] = editor
+            self._stack.addWidget(editor)
 
-            editor = self._view_for_data[type(data)]
-            self._stack.setCurrentWidget(editor)
-
-        # set data for the appropriate widget
-        editor = self._stack.currentWidget()
+        editor = self._view_for_data[type(data)]
         self._set_editor_data(editor, data)
+        # clear() may have hidden this editor even when the data type is unchanged.
+        self._stack.setCurrentWidget(editor)
         self._cached_data = data
 
     def clear(self) -> None:

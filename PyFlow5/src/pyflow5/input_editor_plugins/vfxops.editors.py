@@ -19,7 +19,7 @@ from qtpy.QtWidgets import (
 from myqtx.widgets.coloredit import ColorEdit
 from myqtx.widgets.numeric_tuple_edit import NumericTupleEdit
 from myqtx.widgets.qfloatslider import QFloatSlider
-from vfxops_interleaved.core import Range
+from vfxops.core import Range
 
 from pyflow5.core.input_roles import InputDataRole
 from pyflow5.views.abstract_input_editor_provider import AbstractInputEditorProvider

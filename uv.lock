@@ -11,7 +11,7 @@ members = [
     "pylive5",
     "qdageditor5",
     "qtscripteditoradvanced",
-    "vfxops-interleaved",
+    "vfxops",
 ]
 
 [[package]]
@@ -429,7 +429,7 @@ dependencies = [
     { name = "qdarkstyle" },
     { name = "qtpy" },
     { name = "qtscripteditoradvanced" },
-    { name = "vfxops-interleaved" },
+    { name = "vfxops" },
 ]
 
 [package.metadata]
@@ -442,7 +442,7 @@ requires-dist = [
     { name = "qdarkstyle" },
     { name = "qtpy" },
     { name = "qtscripteditoradvanced", editable = "QtScriptEditorAdvanced" },
-    { name = "vfxops-interleaved", editable = "vfxops_interleaved" },
+    { name = "vfxops", editable = "vfxops" },
 ]
 
 [[package]]
@@ -899,9 +899,9 @@ wheels = [
 ]
 
 [[package]]
-name = "vfxops-interleaved"
+name = "vfxops"
 version = "0.5.0"
-source = { editable = "vfxops_interleaved" }
+source = { editable = "vfxops" }
 dependencies = [
     { name = "av" },
     { name = "numba" },

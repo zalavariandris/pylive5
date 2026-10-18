@@ -1,6 +1,8 @@
 from collections import defaultdict
+from enum import Enum
 from logging import warning
-from typing import Iterable, override, Any
+from pathlib import Path
+from typing import Annotated, Iterable, override, Any, get_args, get_origin
 import warnings
 
 from pygraphrt.graph_definition_rt import NodeRef
@@ -250,9 +252,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     
     @override
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
-        from typing import Annotated, get_args, get_origin
-
-        def get_parameter(node, inlet):
+        def get_parameter(node: NodeName, inlet: InletName) -> rt.ParameterData | None:
             node_rt = self.mapToSource(node)
             if node_rt is None:
                 return None
@@ -270,11 +270,6 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         match role:
             case Qt.ItemDataRole.EditRole:
                 # -> str | int
-                return inlet
-
-            case InputDataRole.InputLocationRole:
-                # -> str | int
-                # todo: is this the same as the edit role?
                 return inlet
 
             case Qt.ItemDataRole.DisplayRole:
@@ -299,43 +294,66 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 return f"{param.name}: {type_name}"
 
             case InputDataRole.AnnotationRole:
-                # -> type | str | None
                 param = get_parameter(node, inlet)
-                if param is None:
-                    return f"{inlet}"
+                annotation = param.annotation if param is not None else rt.ParameterData.EMPTY
+                if isinstance(annotation, str):
+                    return {
+                        "int": int, "float": float, "str": str, "bool": bool,
+                        "Path": Path, "pathlib.Path": Path,
+                    }.get(annotation)
+                if annotation is not rt.ParameterData.EMPTY:
+                    return annotation
 
-                if param.annotation is inspect.Parameter.empty:
+                value = self.inletData(node, inlet, InputDataRole.InputValueRole)
+                if value is self.EmptyInputValue:
+                    value = self.inletData(node, inlet, InputDataRole.DefaultValueRole)
+                if value is self.EmptyInputValue:
                     return None
-                
-                return str(param.annotation)
+                return Path if isinstance(value, Path) else type(value)
 
-            case InputDataRole.InputValueRole:
-                # -> object | None | self.EmptyInputValue
-                #     note: we do not return a noderef here.
-                #           only the explicitelly set input values
-                #           we dont want to return graph structure here.
+            case InputDataRole.HasAnnotationRole:
+                param = get_parameter(node, inlet)
+                return param is not None and param.annotation is not rt.ParameterData.EMPTY
+
+            case (
+                InputDataRole.InputLocationRole
+                | InputDataRole.InputValueRole
+                | InputDataRole.InputIsSetRole
+                | InputDataRole.ConnectionRole
+            ):
                 node_rt = self.mapToSource(node)
                 if node_rt is None:
                     return None
-
+                inlets = list(self.inlets(node))
+                if inlet not in inlets:
+                    return None
                 args, kwargs = node_rt.get_inputs()
-                try:
-                    value = kwargs[str(inlet)]
-                    if not isinstance(value, NodeRef):
-                        return value
-                    
-                except KeyError:
-                    try:
-                        inlet_pos = list(self.inlets(node)).index(inlet)
-                        if inlet_pos < len(args):
-                            value = args[inlet_pos]
-                            if not isinstance(value, NodeRef):
-                                return value
-                            
-                    except ValueError:
-                        pass
+                position = inlets.index(inlet)
+                location: int | str
+                if str(inlet) in kwargs:
+                    location = str(inlet)
+                    value = kwargs[location]
+                elif position < len(args):
+                    location = position
+                    value = args[position]
+                else:
+                    location = str(inlet)
+                    value = self.EmptyInputValue
 
-                return self.EmptyInputValue
+                if role == InputDataRole.InputLocationRole:
+                    return location
+                if role == InputDataRole.InputIsSetRole:
+                    return value is not self.EmptyInputValue
+                if role == InputDataRole.ConnectionRole:
+                    return value.get_name() if isinstance(value, NodeRef) else None
+                return self.EmptyInputValue if isinstance(value, NodeRef) else value
+
+            case InputDataRole.IsUsingDefaultRole:
+                return (
+                    not self.inletData(node, inlet, InputDataRole.InputIsSetRole)
+                    and self.inletData(node, inlet, InputDataRole.DefaultValueRole)
+                    is not self.EmptyInputValue
+                )
 
             case InputDataRole.DefaultValueRole:
                 # -> object | None | self.EmptyInputValue
@@ -353,7 +371,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 IsConnected = len(list(self.inLinks(node, inlet))) > 0 # todo: performance?
                 if IsConnected:
                     return True
-                HasDefaultValue = self.inletData(node, inlet, InputDataRole.DefaultValueRole) != self.EmptyInputValue
+                HasDefaultValue = self.inletData(node, inlet, InputDataRole.DefaultValueRole) is not self.EmptyInputValue
                 if HasDefaultValue:
                     return True
                 return False
@@ -432,24 +450,78 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
     # - WRITES
     @override
+    def setInletData(
+        self,
+        node: NodeName,
+        inlet: InletName,
+        value: object,
+        role: int,
+    ) -> bool:
+        if role != InputDataRole.InputValueRole:
+            return False
+        node_rt = self.mapToSource(node)
+        if node_rt is None:
+            return False
+        location = self.inletData(node, inlet, InputDataRole.InputLocationRole)
+        if not isinstance(location, (int, str)):
+            return False
+
+        args, kwargs = node_rt.get_inputs()
+        args, kwargs = list(args), dict(kwargs)
+        if value is rt.ParameterData.EMPTY or value is self.EmptyInputValue:
+            if isinstance(location, int):
+                args.pop(location)
+            elif location in kwargs:
+                del kwargs[location]
+            else:
+                return False
+        else:
+            if self.inletData(node, inlet, InputDataRole.ConnectionRole) is not None:
+                return False
+            if isinstance(value, NodeRef):
+                return False  # Connections are edited through the graph's link API.
+
+            annotation = self.inletData(node, inlet, InputDataRole.AnnotationRole)
+            if get_origin(annotation) is Annotated:
+                annotation = get_args(annotation)[0]
+            value_type = tuple if get_origin(annotation) is tuple else annotation
+            if not isinstance(value_type, type) or value_type is Any:
+                return False
+            try:
+                if value_type is bool and isinstance(value, str):
+                    if value.lower() not in ("true", "false"):
+                        return False
+                    value = value.lower() == "true"
+                elif value_type is tuple and get_origin(annotation) is tuple:
+                    if not isinstance(value, tuple):
+                        return False
+                    component_types = get_args(annotation)
+                    if component_types and all(t in (int, float) for t in component_types):
+                        if len(value) != len(component_types):
+                            return False
+                        value = tuple(t(item) for t, item in zip(component_types, value))
+                elif issubclass(value_type, (int, float, str, Path, Enum)):
+                    value = value_type(value)
+                elif not isinstance(value, value_type):
+                    return False
+            except (TypeError, ValueError, OverflowError):
+                return False
+
+            if isinstance(location, int):
+                args[location] = value
+            else:
+                kwargs[location] = value
+
+        # Runtime notifications refresh the graph and all its adapters.
+        node_rt.set_inputs(*args, **kwargs)
+        return True
+
+    @override
     def setNodePosition(self, node_name:NodeName, position:QPointF|None):
         if position:
             self._positions[node_name] = (position.x(), position.y())
         else:
             self._positions.pop(node_name, None)
-
-    # @override
-    # def setNodeData(self, node: NodeName, role: int, value: Any) -> bool:
-    #     node_ref = self.mapToSource(node)
-    #     if node_ref is None:
-    #         return False
-    #     match role:
-    #         case self.ResultsRole:
-    #             self._results[node_ref] = value
-    #             self.nodeDataChanged.emit((node,), tuple([role]))
-    #             return True
-    #         case _:
-    #             return False
 
     # - MUTATIONS
     @override

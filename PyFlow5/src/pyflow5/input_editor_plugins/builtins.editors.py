@@ -21,7 +21,7 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
         if get_origin(datatype) is Annotated:
             datatype = get_args(datatype)[0]
         editor: QWidget | None = None
-        if datatype == str|Path:
+        if datatype in (str, str | Path):
             editor = QLineEdit(parent)
             editor.textChanged.connect(lambda: self.commitData.emit(editor))
 
@@ -46,5 +46,11 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
         #     editor.pathChanged.connect(lambda: self.commitData.emit(editor))
 
         return editor
+
+    def setEditorValue(self, editor: QWidget, value: Any) -> None:
+        if isinstance(editor, QLineEdit):
+            editor.setText("" if value is None else str(value))
+        else:
+            super().setEditorValue(editor, value)
 
 NodeInputFieldDelegate.register_input_editor_provider(BuiltinInputEditorProvider)

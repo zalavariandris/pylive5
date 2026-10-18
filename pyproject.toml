@@ -29,7 +29,7 @@ members = [
     "QDAGEditor5", 
     "QScriptEdit2",
     "QtScriptEditorAdvanced",
-    "vfxops_interleaved"
+    "vfxops"
 ]
 
 [dependency-groups]

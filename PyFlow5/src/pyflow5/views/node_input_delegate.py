@@ -10,6 +10,7 @@ from qtpy.QtCore import (
     QAbstractItemModel,
     QModelIndex,
     QObject,
+    QPersistentModelIndex,
     QSize,
     QTimer,
     Qt,
@@ -17,6 +18,7 @@ from qtpy.QtCore import (
 )
 from qtpy.QtGui import QPaintEvent, QPainter
 from qtpy.QtWidgets import (
+    QApplication,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -110,12 +112,19 @@ class InputLabelWidget(QWidget):
 
 # Delegates for the NodesInspector
 class NodeInputLabelDelegate(QStyledItemDelegate):
-    def createEditor(self, parent, option, index):
+    def createEditor(
+        self, parent: QWidget | None, option: QStyleOptionViewItem, index: QModelIndex,
+    ) -> QWidget:
         data_text = index.data(Qt.ItemDataRole.DisplayRole)
         input_label_widget = InputLabelWidget(data_text, parent)
-        input_label_widget.clearRequested.connect(lambda: 
-            index.model().setData(index.siblingAtColumn(1), rt.ParameterData.EMPTY)
-        )
+        persistent_index = QPersistentModelIndex(index)
+
+        def clear_input() -> None:
+            if persistent_index.isValid():
+                label_index = QModelIndex(persistent_index)
+                label_index.model().setData(label_index.siblingAtColumn(1), rt.ParameterData.EMPTY)
+
+        input_label_widget.clearRequested.connect(clear_input)
         # expland the widget to fill the available space
         input_label_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         return input_label_widget
@@ -131,7 +140,9 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._providers: list[AbstractInputEditorProvider] = []
         self._editor_providers: dict[QWidget, AbstractInputEditorProvider] = {}
+        self._loaded_values: dict[QWidget, object] = {}
         self._updating_editors: set[QWidget] = set()
+        self._committing_editors: set[QWidget] = set()
 
         if not NodeInputFieldDelegate._plugins_loaded:
             self._discover_providers()
@@ -151,7 +162,7 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
 
     def _discover_providers(self) -> None:
         """Load shipped sidecars in a stable order during startup only."""
-        plugin_directory = Path(__file__).parent.parent / "editor_plugins"
+        plugin_directory = Path(__file__).parent.parent / "input_editor_plugins"
         # Specialized providers see metadata before the built-in type fallback.
         plugin_paths = sorted(
             plugin_directory.glob("*.editors.py"),
@@ -229,10 +240,11 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
         editor:QWidget | None = None
 
         # if input is connected, show that.
-        if connected_node:
+        if connected_node is not None:
             editor = QLineEdit(parent)
             editor.setText(f"-> {connected_node}")
             editor.setReadOnly(True)
+            editor.destroyed.connect(lambda: self._forget_editor(editor))
             return editor
 
         # Route future value transfers to the provider that created the editor.
@@ -247,44 +259,75 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
                 editor.destroyed.connect(lambda: self._forget_editor(editor))
                 return editor
 
-        return QLineEdit(parent)
+        editor = QLineEdit(parent)
+        editor.destroyed.connect(lambda: self._forget_editor(editor))
+        return editor
 
     def _forget_editor(self, editor: QWidget) -> None:
         self._editor_providers.pop(editor, None)
+        self._loaded_values.pop(editor, None)
+
+    def _editor_value(self, editor: QWidget) -> object:
+        provider = self._editor_providers.get(editor)
+        if provider is not None:
+            return provider.editorValue(editor)
+        return editor.metaObject().userProperty().read(editor)
 
     def setModelData(
         self, editor: QWidget|None, model: QAbstractItemModel|None, index: QModelIndex,
     ) -> None:
         # Signals emitted while loading an editor must not write back to the model.
-        if editor in self._updating_editors:
+        if editor is None or model is None or editor in self._updating_editors:
             return
 
-        if index.data(InputDataRole.ConnectionRole):
+        if index.data(InputDataRole.ConnectionRole) is not None:
             return
 
-        if provider:=self._editor_providers.get(editor):
-            value = provider.editorValue(editor)
-            model.setData(index, value, Qt.ItemDataRole.EditRole)
-        else:
-            super().setModelData(editor, model, index)
-            return
+        value = self._editor_value(editor)
+        if editor in self._loaded_values:
+            previous = self._loaded_values[editor]
+            if value is previous:
+                return
+            try:
+                if value == previous:
+                    return
+            except (TypeError, ValueError):
+                pass  # Some custom values do not support scalar equality.
+        self._committing_editors.add(editor)
+        try:
+            if model.setData(index, value, Qt.ItemDataRole.EditRole):
+                self._loaded_values[editor] = self._editor_value(editor)
+        finally:
+            self._committing_editors.discard(editor)
         
     def setEditorData(self, editor: QWidget | None, index: QModelIndex) -> None:
         if editor is None or editor in self._updating_editors:
             return
 
+        # Load a new editor once, even if the view has already focused it.
+        focus = QApplication.focusWidget()
+        if editor in self._loaded_values and (
+            focus is editor or (focus is not None and editor.isAncestorOf(focus))
+        ):
+            return
+        if editor in self._committing_editors:
+            return
+
         self._updating_editors.add(editor)
         try:
+            connected_node = index.data(InputDataRole.ConnectionRole)
+            if isinstance(editor, QLineEdit):
+                editor.setReadOnly(connected_node is not None)
+                if connected_node is not None:
+                    editor.setText(f"-> {connected_node}")
+                    return
+
             is_using_default = bool(index.data(InputDataRole.IsUsingDefaultRole))
             effect = editor.graphicsEffect()
             if not isinstance(effect, QGraphicsOpacityEffect):
                 effect = QGraphicsOpacityEffect(editor)
                 editor.setGraphicsEffect(effect)
             effect.setOpacity(0.5 if is_using_default else 1.0)
-
-            # Unset inputs only update presentation; do not load an editor value.
-            if not index.data(InputDataRole.InputIsSetRole):
-                return
 
             value = index.data(Qt.ItemDataRole.EditRole)
             provider = self._editor_providers.get(editor)
@@ -298,6 +341,7 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
                 print(f"Error setting editor value: {e}")
         finally:
             self._updating_editors.remove(editor)
+            self._loaded_values[editor] = self._editor_value(editor)
 
     # def initStyleOption(
     #     self, option: QStyleOptionViewItem | None, index: QModelIndex

@@ -105,7 +105,8 @@ class BaseDetailsView(QFrame):
                 signal.connect(slot)
         
         self._model = model
-        # self._setCurrentIndex(QModelIndex())
+        self._current_root = QModelIndex()
+        self.showCurrentRootEvent()
 
     def currentRoot(self)->QModelIndex:
         return self._current_root
@@ -120,14 +121,16 @@ class BaseDetailsView(QFrame):
 
         match self._selection_behaviour:
             case BaseDetailsView.SelectionBehaviour.FirstSelected:
-                first_index = selected.indexes()[0] if selected.indexes() else QModelIndex()
+                indexes = self._nodes_selection_model.selectedIndexes()
+                first_index = indexes[0] if indexes else QModelIndex()
                 self._current_root = first_index
-                self._lock_switch.setText(f"{self._current_root.data()}") 
+                self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
                 self.showCurrentRootEvent()
             case BaseDetailsView.SelectionBehaviour.LastSelected:
-                last_index = selected.indexes()[-1] if selected.indexes() else QModelIndex()
+                indexes = self._nodes_selection_model.selectedIndexes()
+                last_index = indexes[-1] if indexes else QModelIndex()
                 self._current_root = last_index
-                self._lock_switch.setText(f"{self._current_root.data()}")
+                self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
                 self.showCurrentRootEvent()
             case _:
                 pass
@@ -141,7 +144,7 @@ class BaseDetailsView(QFrame):
             return 
             
         self._current_root = current
-        self._lock_switch.setText(f"{self._current_root.data()}")
+        self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
         self.showCurrentRootEvent()
 
     def setSelectionModel(self, selection_model: QItemSelectionModel):
@@ -164,15 +167,17 @@ class BaseDetailsView(QFrame):
             for signal, slot in self._selection_model_connections:
                 signal.connect(slot)
             self._nodes_selection_model = selection_model
+            self._on_selection_changed(selection_model.selection(), QItemSelection())
+            self._on_current_changed(selection_model.currentIndex(), QModelIndex())
 
     def _on_model_reset(self):
         self._current_root = QModelIndex()
         self.showCurrentRootEvent()
 
-    def _on_data_changed(self, topLeft:QModelIndex, bottomRight:QModelIndex, roles:list[int]=[]):
-        columns = range(topLeft.column(), bottomRight.column() + 1)
-
-        if 0 not in columns:
+    def _on_data_changed(
+        self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list[int],
+    ) -> None:
+        if not self._current_root.isValid():
             return
 
         if topLeft.parent() != self._current_root.parent():
@@ -197,4 +202,3 @@ class BaseDetailsView(QFrame):
         #todo:
         """this will be called automatically when the current selection changes."""
         pass
-    

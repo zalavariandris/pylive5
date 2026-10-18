@@ -2,7 +2,6 @@
 from pathlib import Path
 from typing import Union
 
-import cv2
 import av
 import numpy as np
 
@@ -66,7 +65,7 @@ def read_image(path: Path) -> ImageRGBA:
 
 def encode_jpg(image: ImageRGBA, quality:int=75) -> bytes:
     # clip to [0, 1] and convert to 8-bit integers
-    # clip to [0, 1] and convert to 8-bit integers
+    import cv2
     image = np.clip(image, 0, 1)
     rgba = np.rint(np.clip(image, 0, 1) * 255).astype(np.uint8)
     bgra = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)

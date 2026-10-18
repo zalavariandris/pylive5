@@ -55,7 +55,7 @@ class NumpyImageItem(QGraphicsItem):
             if data.ndim == 3:
                 data = np.moveaxis(data, channel_axis, -1)
             if data.ndim != 3 or data.shape[2] != 4:
-                raise ValueError('Expected RGBA data with shape (H, W, 4)')
+                raise ValueError(f'Expected RGBA data with shape (H, W, 4) got {data.shape}')
             if data.shape[0] == 0 or data.shape[1] == 0:
                 raise ValueError('Image dimensions must be positive')
 
