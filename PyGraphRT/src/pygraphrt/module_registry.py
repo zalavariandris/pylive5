@@ -21,8 +21,8 @@ class ModuleRegistry(QObject):
     operators_removed = Signal(list)
     operators_changed = Signal(list)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent: QObject|None = None):
+        super().__init__(parent=parent)
         self._modules: list[ScriptModuleRT | ImportModuleRT] = []
         self._module_connections: dict[ScriptModuleRT | ImportModuleRT, list[tuple[Any, Any]]] = {}
 

@@ -7,8 +7,8 @@ from .module_registry import ModuleRegistry
 class GraphInvalidator(QObject):
     nodes_invalidated: Signal = Signal(list) # list[NodeRef]
 
-    def __init__(self, graph: GraphDefinitionRT, module_registry: ModuleRegistry|None=None):
-        super().__init__()
+    def __init__(self, graph: GraphDefinitionRT, module_registry: ModuleRegistry|None=None, parent: QObject|None = None):
+        super().__init__(parent=parent)
         self._graph = graph
         self._registry: ModuleRegistry|None= module_registry
 

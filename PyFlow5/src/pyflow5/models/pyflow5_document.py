@@ -35,24 +35,22 @@ class PyFlowDocument(QObject):
         self._module_registry = registry or rt.ModuleRegistry()
         self._graph_rt = graph or rt.GraphDefinitionRT()
 
-        self._invalidator = rt.GraphInvalidator(self._graph_rt, self._module_registry)
-        self._evaluator = GraphEvaluator(
-            self._graph_rt,
-            QtThreadPoolExecutionBackend(),
-            parent=self,
-            invalidator=self._invalidator,
-        )
-
         # Models
         ## Graph Model
         self.graph_model = PyGraphRTGraphModel(
             self._graph_rt, 
             self._module_registry, 
-            self._invalidator,
-            self._evaluator
+            # evaluator._invalidator,
+            GraphEvaluator(
+                self._graph_rt,
+                QtThreadPoolExecutionBackend(),
+                parent=self,
+                invalidator=rt.GraphInvalidator(self._graph_rt, self._module_registry),
+            )
         )
         self.graphselection_model = GraphSelectionModel(self.graph_model)
-        self._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
+        
+        self.graph_model._evaluator._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
         self.graphselection_model.currentNodeChanged.connect(
             self._on_current_node_changed
         )
@@ -74,7 +72,7 @@ class PyFlowDocument(QObject):
         self.nodes_list_selection_adapter.setSourceSelection(self.graphselection_model)
         
         # Initial evaluation
-        self._evaluator.request(*self._graph_rt.nodes())
+        self.graph_model._evaluator.request(*self._graph_rt.nodes())
 
     @Slot(list)
     def _on_nodes_invalidated(self, nodes: list[rt.NodeRef]) -> None:
@@ -84,7 +82,7 @@ class PyFlowDocument(QObject):
 
         current = self.graph_model.mapToSource(current_name)
         if current is not None and current in nodes:
-            self._evaluator.request(current)
+            self.graph_model._evaluator.request(current)
 
     @Slot(object, object)
     def _on_current_node_changed(
@@ -97,12 +95,12 @@ class PyFlowDocument(QObject):
 
         node = self.graph_model.mapToSource(current)
         if node is not None:
-            self._evaluator.request(node)
+            self.graph_model._evaluator.request(node)
 
     def close(self) -> None:
         """Stop evaluation and disconnect requests from the graph model."""
         self.graph_model.close()
-        self._evaluator.close()
+        self.graph_model._evaluator.close()
 
     def getNodeOperator(self, node_name: NodeName) -> QModelIndex:
         node_ref = self.graph_model.mapToSource(node_name)

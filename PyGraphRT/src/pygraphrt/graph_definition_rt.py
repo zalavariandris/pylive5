@@ -69,8 +69,6 @@ class NodeRef:
         return node_data.get_inputs()
         
 
-
-
 @dataclass(frozen=True) # i think data could be frozen. anything here changes would meka the graph downsteam dirty.
 class _NodeState:
     args: tuple[Value, ...] = tuple()
@@ -89,10 +87,10 @@ class GraphDefinitionRT(QObject):
     # nodes_about_to_be_removed = Signal(list) # list[NodeRef]
     nodes_changed = Signal(list) # list[NodeRef]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent: QObject|None = None):
+        super().__init__(parent=parent)
 
-        self._local = ScriptModuleRT("_local_", parent=self)
+        self._local = ScriptModuleRT("_local_", parent=parent)
         self._nodes: dict[NodeRef, _NodeState] = dict()
         self._out_links: dict[NodeRef, dict[NodeRef, set[int | str]]] = {}
         self._operator_to_nodes = ManyToOneRelation[NodeRef, AbstractOperator]()
@@ -231,13 +229,6 @@ class GraphDefinitionRT(QObject):
         self.__store_node(node_ref, node_data)
         self.nodes_changed.emit([node_ref])
 
-    # deprecated for now
-    # def _set_node(self, node_ref: NodeRef, node_data: NodeData) -> None:
-    #     if node_ref in self._nodes:
-    #         self._update_node(node_ref, node_data.get_operator(), node_data.get_inputs()[0], node_data.get_inputs()[1])
-    #     else:
-    #         self._create_node(node_data.get_operator(), node_data.get_inputs()[0], node_data.get_inputs()[1])
-
     def _delete_node(self, node_ref: NodeRef) -> None:
         if node_ref not in self._nodes:
             raise KeyError(node_ref)
@@ -284,7 +275,6 @@ class GraphDefinitionRT(QObject):
         if changed_nodes:
             self.nodes_changed.emit(changed_nodes)
         
-
     def nodes(self) -> list[NodeRef]:
         return list(self._nodes.keys())
 

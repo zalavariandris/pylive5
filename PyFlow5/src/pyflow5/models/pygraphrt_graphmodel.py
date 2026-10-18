@@ -46,13 +46,12 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def __init__(self, 
         graph: rt.GraphDefinitionRT, 
         registry: rt.ModuleRegistry,
-        invalidator: rt.GraphInvalidator,
+        # invalidator: rt.GraphInvalidator,
         evaluator: GraphEvaluator
     ) -> None:
         super().__init__()
         self._graph: rt.GraphDefinitionRT = graph
         self._registry: rt.ModuleRegistry = registry
-        self._invalidator: rt.GraphInvalidator = invalidator
         self._evaluator: GraphEvaluator = evaluator
         self._closed = False
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
