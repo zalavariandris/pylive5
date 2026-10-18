@@ -5,6 +5,7 @@ from textwrap import dedent
 import traceback
 
 
+
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
 
@@ -26,38 +27,26 @@ from qdageditor5.adapters.node_inlet_tree_selection_model_adapter import NodeInl
 
 class PyFlowDocument(QObject):
     def __init__(self, 
-        graph: rt.GraphDefinitionRT|None=None, 
-        registry: rt.ModuleRegistry|None=None,
+        engine: rt.PyGraphEngine|None=None,
         parent:QObject|None=None
     ):
         super().__init__(parent=parent)
         # RT
-        self._module_registry = registry or rt.ModuleRegistry()
-        self._graph_rt = graph or rt.GraphDefinitionRT()
+        self._engine = engine or rt.PyGraphEngine()
 
         # Models
         ## Graph Model
-        self.graph_model = PyGraphRTGraphModel(
-            self._graph_rt, 
-            self._module_registry, 
-            # evaluator._invalidator,
-            GraphEvaluator(
-                self._graph_rt,
-                QtThreadPoolExecutionBackend(),
-                parent=self,
-                invalidator=rt.GraphInvalidator(self._graph_rt, self._module_registry),
-            )
-        )
-        self.graphselection_model = GraphSelectionModel(self.graph_model)
+        self.graph_model = PyGraphRTGraphModel(self._engine)
         
-        self.graph_model._evaluator._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
+        self.graphselection_model = GraphSelectionModel(self.graph_model)
+        self._engine.evaluator._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
         self.graphselection_model.currentNodeChanged.connect(
             self._on_current_node_changed
         )
 
         ## Modules Model
         self.modules_model = ModulesOperatorsTreeModel()
-        self.modules_model.setSourceRegistry(self._module_registry)
+        self.modules_model.setSourceRegistry(self._engine.registry)
         self.modulesselection_model = QItemSelectionModel(self.modules_model)
 
         # Adapters
@@ -72,7 +61,7 @@ class PyFlowDocument(QObject):
         self.nodes_list_selection_adapter.setSourceSelection(self.graphselection_model)
         
         # Initial evaluation
-        self.graph_model._evaluator.request(*self._graph_rt.nodes())
+        self._engine.evaluator.request(*self._engine.graph.nodes())
 
     @Slot(list)
     def _on_nodes_invalidated(self, nodes: list[rt.NodeRef]) -> None:
@@ -82,7 +71,7 @@ class PyFlowDocument(QObject):
 
         current = self.graph_model.mapToSource(current_name)
         if current is not None and current in nodes:
-            self.graph_model._evaluator.request(current)
+            self._engine.evaluator.request(current)
 
     @Slot(object, object)
     def _on_current_node_changed(
@@ -95,12 +84,12 @@ class PyFlowDocument(QObject):
 
         node = self.graph_model.mapToSource(current)
         if node is not None:
-            self.graph_model._evaluator.request(node)
+            self._engine.evaluator.request(node)
 
     def close(self) -> None:
         """Stop evaluation and disconnect requests from the graph model."""
         self.graph_model.close()
-        self.graph_model._evaluator.close()
+        self._engine.evaluator.close()
 
     def getNodeOperator(self, node_name: NodeName) -> QModelIndex:
         node_ref = self.graph_model.mapToSource(node_name)
@@ -121,12 +110,12 @@ class PyFlowDocument(QObject):
         data = json.loads(path.read_text(encoding="utf-8"))
         deserializer = rt.GraphDeserializer(base_dir=path.parent)
         registry, graph = deserializer.fromdict(data)
-        doc = cls(graph=graph, registry=registry)
+        doc = cls(engine=rt.PyGraphEngine(graph=graph, registry=registry))
         return doc
 
     def save(self, file_path: str | Path) -> None:
         """Save the runtime and node positions as UTF-8 JSON."""
-        serializer = rt.GraphSerializer(self._graph_rt, self._module_registry)
+        serializer = rt.GraphSerializer(self._engine.graph, self._engine.registry)
         data = serializer.todict()
 
         # inject position
@@ -165,15 +154,3 @@ class PyFlowDocument(QObject):
         current_index = self.modulesselection_model.currentIndex()
         if current_index:
             self.modules_model.removeModule(current_index)
-
-    def importModule(self, file_path: str | Path) -> rt.ImportModuleRT | None:
-        """Import and select a module, returning it with its evaluation state."""
-        if module_idx := self.modules_model.importModule(Path(file_path)):
-            self.modulesselection_model.setCurrentIndex(
-                module_idx, 
-                QItemSelectionModel.ClearAndSelect
-            )
-            module = self.modules_model.mapToSource(module_idx)
-            assert isinstance(module, rt.ImportModuleRT)
-            return module
-        return None

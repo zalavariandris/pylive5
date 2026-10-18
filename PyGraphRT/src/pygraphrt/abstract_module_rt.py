@@ -6,7 +6,6 @@ from qtpy.QtCore import (
     Signal,
 )
 
-
 from .abstract_operator import AbstractOperator, ParameterData
 
 

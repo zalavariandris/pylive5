@@ -143,6 +143,7 @@ class GraphEvaluator(QObject):
         self._invalidate_nodes(nodes)
 
     def _schedule(self) -> None:
+        """Schedule the next evaluation if conditions allow."""
         if (
             not self._closed
             and self._active_plan is None

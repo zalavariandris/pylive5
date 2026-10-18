@@ -12,13 +12,11 @@ class GraphInvalidator(QObject):
         self._graph = graph
         self._registry: ModuleRegistry|None= module_registry
 
+        # note: nodes removed is not needed, 
+        # because change events will fire for the dependant nodes, anyway. 
+        # because there inputs changed. inputs are cleared when a node is removed.
         self._graph.nodes_added.connect(self._invalidate_nodes_descendants)
         self._graph.nodes_changed.connect(self._invalidate_nodes_descendants)
-
-        # note: nodes removed is not needed. because change event will fire for the dependant nodes, because there inputs changed.
-        # also after a ndoe has been deleted we cannot retreive its descendants. 
-        # So listnening to removed events would not even work this is not even workin
-        # self._graph.nodes_removed.connect(self._invalidate_nodes_descendants)
             
         if self._registry is not None:
             self._registry.operators_added.connect(self._invalidate_operator_nodes_descendants)          

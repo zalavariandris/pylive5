@@ -223,8 +223,6 @@ class PyFlow5Window(QMainWindow):
         
         # Create a fresh, local menu instance right here
         menu = QMenu(self._modules_listview)
-        add_action = menu.addAction("Import Module")
-        add_action.triggered.connect(self.importModule)
         add_action = menu.addAction("Add Embedded Module")
         add_action.triggered.connect(self.addEmbeddedModule)
 
@@ -395,7 +393,6 @@ class PyFlow5Window(QMainWindow):
         edit_menu.addAction("Duplicate Nodes", lambda: None)
         edit_menu.addSeparator()
 
-        edit_menu.addAction("Import Module", lambda: self.importModule()).setShortcut("Ctrl+I")
         edit_menu.addAction("Add Embedded Module", lambda: self.addEmbeddedModule())
         edit_menu.addAction("Remove Selected Module", lambda: self.removeSelectedModule())
 

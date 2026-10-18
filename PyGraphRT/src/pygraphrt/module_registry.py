@@ -9,8 +9,6 @@ from qtpy.QtCore import (
     Signal
 )
 
-# from .inline_module import InlineModuleRT
-from .import_module import ImportModuleRT
 from .script_module import ScriptModuleRT
 
 
@@ -23,25 +21,25 @@ class ModuleRegistry(QObject):
 
     def __init__(self, parent: QObject|None = None):
         super().__init__(parent=parent)
-        self._modules: list[ScriptModuleRT | ImportModuleRT] = []
-        self._module_connections: dict[ScriptModuleRT | ImportModuleRT, list[tuple[Any, Any]]] = {}
+        self._modules: list[ScriptModuleRT] = []
+        self._module_connections: dict[ScriptModuleRT, list[tuple[Any, Any]]] = {}
 
     def modules(self):
         return [module for module in self._modules]
 
-    def add_module(self, module: ScriptModuleRT | ImportModuleRT) -> None:
+    def add_module(self, module: ScriptModuleRT) -> None:
         if module not in self._modules:
             self._modules.append(module)
             self._make_module_connections(module)
             self.modules_added.emit([module])
 
-    def find_module_by_name(self, name: str) -> ScriptModuleRT | ImportModuleRT | None:
+    def find_module_by_name(self, name: str) -> ScriptModuleRT | None:
         for module in self._modules:
             if module.get_display_name() == name:
                 return module
         return None
 
-    def _make_module_connections(self, module: ScriptModuleRT | ImportModuleRT) -> None:
+    def _make_module_connections(self, module: ScriptModuleRT) -> None:
         self._module_connections[module] = [
             (module.operators_added, self.operators_added),
             (module.operators_removed, self.operators_removed),
@@ -51,13 +49,7 @@ class ModuleRegistry(QObject):
         for signal, slot in self._module_connections[module]:
             signal.connect(slot)
 
-    # def import_module(self, path:str) -> None:
-    #     module = ImportModuleRT(path)
-    #     if module not in self._modules:
-    #         self._modules.append(module)
-    #         self.modules_added.emit([module])
-
-    def remove_module(self, module: ScriptModuleRT | ImportModuleRT) -> None:
+    def remove_module(self, module: ScriptModuleRT) -> None:
         self._modules.remove(module)
         for signal, slot in self._module_connections.pop(module, []):
             signal.disconnect(slot)

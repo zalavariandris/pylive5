@@ -9,23 +9,31 @@ from .graph_invalidator import GraphInvalidator
 from qtpy.QtCore import QObject
 
 class PyGraphEngine(QObject):
-    def __init__(self, parent: QObject|None = None,):
+    def __init__(self, 
+        graph: GraphDefinitionRT|None = None,
+        registry: ModuleRegistry|None = None,
+        parent: QObject|None = None
+    ):
         super().__init__(parent=parent)
 
-        self.graph = GraphDefinitionRT(parent=self)
-        self.registry = ModuleRegistry(parent=self)
+        self.graph = graph or GraphDefinitionRT(parent=self)
+        self.registry = registry or ModuleRegistry(parent=self)
+        
         backend = QtThreadPoolExecutionBackend()
+        
         invalidator = GraphInvalidator(
             self.graph, 
             self.registry, 
             parent=self
         )
-        cache = GraphCache()
+
+        self.cache = GraphCache()
+
         self.evaluator = GraphEvaluator(
             self.graph, 
             backend,
             invalidator = invalidator,
-            cache = cache
+            cache = self.cache
         )
 
     def close(self) -> None:

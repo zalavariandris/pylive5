@@ -15,7 +15,6 @@ from qtpy.QtCore import (
 )
 
 from .relations import ManyToOneRelation
-from .import_module import ImportModuleRT
 from .script_module import ScriptModuleRT
 from .graph_schema import validate_graph_data
 from .abstract_module_rt import AbstractOperator

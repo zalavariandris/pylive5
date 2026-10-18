@@ -26,7 +26,7 @@ def document(qtbot: QtBot) -> PyFlowDocument:
     def third() -> int:
         return 3
 
-    return PyFlowDocument(graph=graph)
+    return PyFlowDocument(engine=rt.PyGraphEngine(graph=graph))
 
 
 @pytest.fixture

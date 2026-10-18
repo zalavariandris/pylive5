@@ -259,7 +259,7 @@ def test_window_shares_tree_fields_with_viewer_and_inspector(qtbot: QtBot) -> No
 
     window = PyFlow5Window(use_session=False)
     qtbot.addWidget(window)
-    document = PyFlowDocument(graph)
+    document = PyFlowDocument(engine=rt.PyGraphEngine(graph=graph))
     window._connectDocument(document)
     model = document.node_inlet_tree_adapter
     selection = document.node_inlet_tree_selection_adapter

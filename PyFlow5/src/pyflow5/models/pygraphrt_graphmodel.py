@@ -44,34 +44,37 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     EmptyInputValue = object()
 
     def __init__(self, 
-        graph: rt.GraphDefinitionRT, 
-        registry: rt.ModuleRegistry,
+        engine: rt.PyGraphEngine,
+        # graph: rt.GraphDefinitionRT, 
+        # registry: rt.ModuleRegistry,
         # invalidator: rt.GraphInvalidator,
-        evaluator: GraphEvaluator
+        # evaluator: GraphEvaluator
     ) -> None:
         super().__init__()
-        self._graph: rt.GraphDefinitionRT = graph
-        self._registry: rt.ModuleRegistry = registry
-        self._evaluator: GraphEvaluator = evaluator
+        self._engine = engine
+        # self._graph: rt.GraphDefinitionRT = graph
+        # self._registry: rt.ModuleRegistry = registry
+        # self._evaluator: GraphEvaluator = evaluator
         self._closed = False
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
 
         self._executions: dict[NodeName, rt.NodeExecution] = {}
 
         # Adapters observe this model, including changes made directly to the RT.
-        graph.nodes_added.connect(self._on_rt_nodes_added)
-        graph.nodes_removed.connect(self._on_rt_nodes_removed)
-        graph.nodes_changed.connect(self._on_rt_nodes_changed)
+        self._engine.graph.nodes_added.connect(self._on_rt_nodes_added)
+        self._engine.graph.nodes_removed.connect(self._on_rt_nodes_removed)
+        self._engine.graph.nodes_changed.connect(self._on_rt_nodes_changed)
         for signal in (
-            registry.modules_added,
-            registry.modules_removed,
-            registry.operators_added,
-            registry.operators_removed,
-            registry.operators_changed,
+            self._engine.registry.modules_added,
+            self._engine.registry.modules_removed,
+            self._engine.registry.operators_added,
+            self._engine.registry.operators_removed,
+            self._engine.registry.operators_changed,
         ):
-            signal.connect(self._on_registry_changed)
+            signal.connect(lambda *_: self._on_rt_nodes_changed(self._engine.graph.nodes()))
 
-        self._evaluator.evaluated.connect(self._on_evaluated)
+
+        self._engine.evaluator.evaluated.connect(self._on_evaluated)
 
 
     @Slot(dict)
@@ -122,9 +125,6 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             self.inletsChanged.emit(name)
         self.nodesDataChanged.emit(names, ())
 
-    def _on_registry_changed(self, *_: object) -> None:
-        self._on_rt_nodes_changed(self._graph.nodes())
-
     def setRT(self, graph: rt.GraphDefinitionRT, positions=None):
         raise NotImplementedError("setRT method is not implemented yet.")
 
@@ -133,7 +133,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         Call after a failed mutation has unwound, not from a mutation signal handler.
         """
-        node_names = {node.get_name() for node in self._graph.nodes()}
+        node_names = {node.get_name() for node in self._engine.graph.nodes()}
         positions = {name: position for name, position in self._positions.items()
                      if name in node_names}
         # Recovery deliberately abandons notifications left open by a failed edit.
@@ -146,7 +146,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def mapToSource(self, node_name:NodeName)->rt.NodeRef|None:
         # todo: consider caching node references by name for faster lookup
         # find noderef by the name
-        for node_ref in self._graph.nodes():
+        for node_ref in self._engine.graph.nodes():
             if node_ref.get_name() == node_name:
                 return node_ref
         return None
@@ -160,7 +160,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def nodes(self)->Iterable[NodeName]:
         return [
             self.mapFromSource(node_ref)
-            for node_ref in self._graph.nodes()
+            for node_ref in self._engine.graph.nodes()
         ]
 
     @override
@@ -427,7 +427,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
     @override
     def links(self)->Iterable[DirectionalLinkId]:
-        for node_ref in self._graph.nodes():
+        for node_ref in self._engine.graph.nodes():
             yield from self.__node_input_links(node_ref)
 
     @override
@@ -560,7 +560,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             node_ref = self.mapToSource(node_name)
             assert node_ref is not None, f"Node '{node_name}' not found"
 
-            self._graph._delete_node(node_ref)
+            self._engine.graph._delete_node(node_ref)
             self._positions.pop(node_name, None)
         self._endRemoveNodes()
 
@@ -596,10 +596,10 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         position: QPointF|None, in scene coordinates"""
         assert isinstance(operator, rt.AbstractOperator), f"operator must be an instance of AbstractOperator, got: {operator}"
         new_node_name = operator.get_name()
-        node_names = [ref.get_name() for ref in self._graph.nodes()]
+        node_names = [ref.get_name() for ref in self._engine.graph.nodes()]
         unique_name = UniqueNameGenerator(existing_names=node_names)(new_node_name)
         self._beginAddNodes([unique_name])
-        new_node_ref = self._graph._create_node(operator, name=unique_name)
+        new_node_ref = self._engine.graph._create_node(operator, name=unique_name)
         if position:
             self._positions[new_node_ref.get_name()] = position.x(), position.y()
         self._endAddNodes()
