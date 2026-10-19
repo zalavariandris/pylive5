@@ -16,8 +16,7 @@ from .modules_operator_tree_model import ModulesOperatorsTreeModel
 from .pygraphrt_graphmodel import PyGraphRTGraphModel
 from .pygraphrt_node_inlet_tree_model_adapter import PyGraphRTNodeInletTreeModelAdapter
 
-from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
-from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
+
 from qdageditor5.adapters.node_inlet_tree_selection_model_adapter import NodeInletTreeSelectionModelAdapter
 
 
@@ -50,11 +49,6 @@ class PyFlowDocument(QObject):
         self.node_inlet_tree_adapter = PyGraphRTNodeInletTreeModelAdapter(self.graph_model)
         self.node_inlet_tree_selection_adapter = NodeInletTreeSelectionModelAdapter(self.node_inlet_tree_adapter)
         self.node_inlet_tree_selection_adapter.setSourceSelection(self.graphselection_model)
-
-        ## NodeList adapter
-        self.nodes_list_adapter = NodesListModelAdapter(self.graph_model)
-        self.nodes_list_selection_adapter = NodesListSelectionModelAdapter(self.nodes_list_adapter)
-        self.nodes_list_selection_adapter.setSourceSelection(self.graphselection_model)
         
         # Initial evaluation
         self._engine.request(*self._engine._graph.nodes())

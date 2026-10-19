@@ -6,16 +6,26 @@
        I like it when projectfiles open in another instance of the whole application, but also the session, and recent files in the menu
        has a wider responsibility than a single document. So... maybe we could have tabs as well as opening document in multiple window, 
        but in a single app.
+       
+- [ ] Consider using AnyIO for async tasks, like
+      graph execution. it support cancelling jobs.
+
+- [ ] create a method that compiles the graph into a native python script so its runnable without the app.
+      also think about if we could compile it to a python app without using the PyGraphRT module.
+      in case the graph processing library brakes, the graph will be still runnable.
+
+- [ ] we have to solve the mutability problem in the graph processing
+
 - [ ] consider implementing structural change notifications for inlets in DirectionalGraphView5
 - [x] GraphView now uses lazy caching with (signal driven) explicit invalidation
 - [ ] create a smoke test for the inspector. setting values, clear values, connect inputs, unconnect inputs, and the editor model binding. default values, empty values etc.
 - [ ] review NodeRTInputRole. I think (most of) it could be moved to QDAGEditor5
       also, the QDAGEditor5 NodeDataRole and SocketDataRole needs a UserRoel to allow extension.
-- [ ] consider *@vfxops* ImageRGBA using _Planar(CHW)_ channels layout instead of _Interleaved (HWC)_ layout
+- [x] consider *@vfxops* ImageRGBA using _Planar(CHW)_ channels layout instead of _Interleaved (HWC)_ layout
      interleaved: RGBA RGBA RGBA …
      Planar: RRR… GGG… BBB… AAA…
      it is possible a lot faster.
-- [ ] we have to solve the mutability problem in the graph processing
+
 - [x] When linking, dropping an inlet right onto a node, should create a popup where all the possible inlets (invisibles especially) can be selected to link to.
 
 - [ ] I think we need a single helper function to consolidate node args, kwargs and the operator parameters.
@@ -42,12 +52,7 @@
 - [x] We also Need a NodeInletTree(+selection?)ModelAdapter for the inspector to work with standard qt models
 
 
-- [ ] Consider using AnyIO for async tasks, like
-      graph execution. it support cancelling jobs.
 
-- [ ] create a method that compiles the graph into a native python script so its runnable without the app.
-      also think about if we could compile it to a python app without using the PyGraphRT module.
-      in case the graph processing library brakes, the graph will be still runnable.
 
 - [x] cleanup myqtx file structure and class names.
 
@@ -65,7 +70,6 @@
       I think PyGraphRt could become PyGraphEngine
 
 - [ ] find a better name for graph modules, o distinguishe from standard python modules
-
 
 - [ ] ImportModule should support importing from a file without specifying a name
 

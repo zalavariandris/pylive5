@@ -71,8 +71,6 @@ from qtpy.QtCore import QSettings
 
 from pathlib import Path
 
-from qdageditor5.adapters.nodes_list_model_adapter import NodesListModelAdapter
-from qdageditor5.adapters.nodes_list_selection_model_adapter import NodesListSelectionModelAdapter
 
 
 class PyFlow5Window(QMainWindow):
@@ -157,9 +155,6 @@ class PyFlow5Window(QMainWindow):
         self._session_path = (
             Path(self._settings.fileName()).parent / "session.json"
         )
-
-        self._nodes_list_view = QListView(self)
-        self._nodes_list_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
                 
         # - Overlay the selected node tree on the graph -
         self._graph_container = QWidget(self)
@@ -252,9 +247,6 @@ class PyFlow5Window(QMainWindow):
             self._module_details_view.setModel(document.modules_model)
             self._module_details_view.setSelectionModel(document.modulesselection_model)
 
-            self._nodes_list_view.setModel(document.nodes_list_adapter)
-            
-            self._nodes_list_view.setSelectionModel(document.nodes_list_selection_adapter)
             self._graph_view.setModel(document.graph_model)
             self._graph_view.setSelectionModel(document.graphselection_model)
             self._graph_view.layout_nodes()
