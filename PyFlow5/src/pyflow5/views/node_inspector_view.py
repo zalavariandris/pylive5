@@ -34,9 +34,9 @@ class NodeInspectorView(BaseDetailsView):
         super().setModel(model)
         self._current_root = QModelIndex()
         self._form_view.setModel(model)
-        self.showCurrentRootEvent()
+        self.showCurrentRootEvent(self._current_root)
 
-    def showCurrentRootEvent(self) -> None:
+    def showCurrentRootEvent(self, index: QModelIndex, roles: list[int] = [])->None:
         root = self.currentRoot()
         self._form_view.setVisible(root.isValid())
         if root.isValid():

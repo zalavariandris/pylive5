@@ -1,17 +1,22 @@
 from .base_details_view import BaseDetailsView
 from ..models.pygraphrt_graphmodel import PyGraphRTGraphModel
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, QModelIndex
 from qtpy.QtWidgets import QWidget
 import myqtx
 
 
-class Viewer(BaseDetailsView):
+class OutputViewer(BaseDetailsView):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setBodyWidget(myqtx.widgets.DisplayWidget(channel_axis=-1))
         
-    def showCurrentRootEvent(self) -> None:
-        if self._current_root.isValid() is False:
+    def showCurrentRootEvent(self, index: QModelIndex, roles: list[int] = []):
+        if not roles or not any(role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole, PyGraphRTGraphModel.ExecutionRole) for role in roles):
+            return
+
+
+        
+        if index.isValid() is False:
             self._lock_switch.setText("-no node selected-")
             self._body_widget.clear()
             return
@@ -21,7 +26,7 @@ class Viewer(BaseDetailsView):
             self._body_widget.clear()
             return
 
-        label_index = self._current_root.siblingAtColumn(0)
+        label_index = index.siblingAtColumn(0)
         self._lock_switch.setText(str(label_index.data(Qt.ItemDataRole.DisplayRole)))
         if not label_index.parent().isValid():
             # Node outputs belong to column zero's execution role.

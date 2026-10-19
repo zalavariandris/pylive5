@@ -1,6 +1,7 @@
 """Regression checks for view-owned geometry during interactive node movement."""
 
 from collections.abc import Iterator
+from unittest.mock import patch
 
 import pytest
 from pytestqt.qtbot import QtBot
@@ -10,7 +11,7 @@ from qtpy.QtWidgets import QStyleOptionViewItem
 
 import pygraphrt as rt
 from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
-from pygraphrt.graph_evaluator_engine import GraphEvaluatorEngine, InlineExecutionBackend
+from pyflow5.core.input_roles import InputDataRole
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.abstract_dag_model import AbstractDAGModel, NodeName
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
@@ -34,9 +35,8 @@ def make_model() -> PyGraphRTGraphModel:
         return value
 
     registry = rt.ModuleRegistry()
-    invalidator = rt.GraphInvalidator(graph, registry)
-    evaluator = GraphEvaluatorEngine(graph, InlineExecutionBackend(), invalidator=invalidator)
-    model = PyGraphRTGraphModel(graph, registry, invalidator, evaluator)
+    engine = rt.GraphEvaluatorEngine(graph, registry, backend=rt.InlineExecutionBackend())
+    model = PyGraphRTGraphModel(engine)
     for row, node in enumerate(model.nodes()):
         model.setNodePosition(node, QPointF(220, 80 + row * 120))
     return model
@@ -52,7 +52,7 @@ def graph_view(qtbot: QtBot) -> Iterator[tuple[DirectionalGraphView5, PyGraphRTG
     qtbot.addWidget(view)
     yield view, model
     model.close()
-    model._evaluator.close()
+    model._engine.close()
 
 
 def render(view: DirectionalGraphView5) -> QImage:
@@ -71,7 +71,7 @@ def test_view_and_delegate_expose_position_independent_local_geometry(
 ) -> None:
     view, model = graph_view
     node = "second"
-    option = view._createNodeStyleOption(node)
+    option = view._nodeStyleOption(node)
     local_rect = view._nodeLocalRect(option, node)
     local_shape = view._nodeLocalShape(option, node)
     delegate = view._nodes_delegate
@@ -82,7 +82,7 @@ def test_view_and_delegate_expose_position_independent_local_geometry(
     model.setNodePosition(node, position)
     view._zoom = 2.0
     view._pan = QPointF(30, 40)
-    moved_option = view._createNodeStyleOption(node)
+    moved_option = view._nodeStyleOption(node)
     assert moved_option.rect == option.rect
     assert view._nodeLocalRect(moved_option, node) == local_rect
     assert view._nodeLocalShape(moved_option, node) == local_shape
@@ -111,12 +111,12 @@ def test_group_drag_reuses_geometry_for_bounds_hit_testing_and_paint(
     view._selection_model.selectNodes(list(model.nodes()))
     render(view)
     before = {
-        node: view._nodeSceneRect(view._createNodeStyleOption(node), node)
+        node: view._nodeSceneRect(view._nodeStyleOption(node), node)
         for node in model.nodes()
     }
     inlet_before = view._inletPos("second", "value")
     link = next(iter(model.links()))
-    link_before = view._linkShape(link)
+    link_before = view._linkSceneShape(link)
 
     def unexpected_measurement(*args: object, **kwargs: object) -> None:
         pytest.fail("Moving and painting cached nodes must reuse their bounds and shape")
@@ -134,12 +134,12 @@ def test_group_drag_reuses_geometry_for_bounds_hit_testing_and_paint(
     qtbot.mouseRelease(view, Qt.MouseButton.LeftButton, pos=end)
 
     for node in model.nodes():
-        rect = view._nodeSceneRect(view._createNodeStyleOption(node), node)
+        rect = view._nodeSceneRect(view._nodeStyleOption(node), node)
         assert rect == before[node].translated(delta)
         item = view.itemAt(view.mapFromScene(model.nodePosition(node)))
         assert item is not None and item.kind == "node" and item.item == node
     assert view._inletPos("second", "value") == inlet_before + delta
-    assert view._linkShape(link) == link_before.translated(delta)
+    assert view._linkSceneShape(link) == link_before.translated(delta)
     render(view)
 
 
@@ -152,7 +152,7 @@ def test_result_label_change_remeasures_only_the_changed_node(
     node = model.mapToSource("second")
     model._on_evaluated({node: rt.ExecutionFailure(node, ValueError("A much longer error label"))})
 
-    rect = view._nodeSceneRect(view._createNodeStyleOption("second"), "second")
+    rect = view._nodeSceneRect(view._nodeStyleOption("second"), "second")
     assert rect.width() > old_cache["second"].bounding_rect.width()
     assert view._node_item_cache["first"] is old_cache["first"]
     assert view._node_item_cache["third"] is old_cache["third"]
@@ -186,11 +186,11 @@ def test_font_change_remeasures_bounds(
     graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
 ) -> None:
     view, _ = graph_view
-    before = view._nodeSceneRect(view._createNodeStyleOption("first"), "first")
+    before = view._nodeSceneRect(view._nodeStyleOption("first"), "first")
     font = view.font()
     font.setPointSizeF(font.pointSizeF() * 2)
     view.setFont(font)
-    after = view._nodeSceneRect(view._createNodeStyleOption("first"), "first")
+    after = view._nodeSceneRect(view._nodeStyleOption("first"), "first")
     assert after.width() > before.width()
     assert after.height() > before.height()
 
@@ -200,8 +200,10 @@ def test_model_lifecycle_discards_cached_nodes(
     graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel], change: str,
 ) -> None:
     view, model = graph_view
-    view._createNodeStyleOption("first")
+    render(view)
     assert "first" in view._node_item_cache
+    assert "first" in view._outlet_item_cache
+    assert view._link_item_cache
     if change == "reset":
         model._beginResetModel()
         model._endResetModel()
@@ -209,10 +211,12 @@ def test_model_lifecycle_discards_cached_nodes(
         replacement = make_model()
         view.setModel(replacement)
         replacement.close()
-        replacement._evaluator.close()
+        replacement._engine.close()
     else:
         model.removeNodes(["first"])
     assert "first" not in view._node_item_cache
+    assert "first" not in view._outlet_item_cache
+    assert all(source != "first" and target != "first" for source, _, target, _ in view._link_item_cache)
 
 
 def test_view_owns_geometry_returned_by_a_custom_delegate(
@@ -243,7 +247,7 @@ def test_view_owns_geometry_returned_by_a_custom_delegate(
             painter.fillRect(option.rect, QColor("cyan"))
 
     view._nodes_delegate = CustomDelegate()
-    option = view._createNodeStyleOption("first")
+    option = view._nodeStyleOption("first")
     expected_rect = QRectF(local_rect)
     expected_shape = QPainterPath(local_shape)
     assert view._nodeLocalRect(option, "first") == expected_rect
@@ -279,7 +283,7 @@ def test_paint_reads_current_labels_without_rebuilding_the_cache(
     cached = view._node_item_cache["second"]
 
     # Deliberately skip a data-change signal to check that paint owns its labels.
-    label = "456"
+    label = "updated label"
     assert render(view) != before
     assert view._node_item_cache["second"] is cached
 
@@ -293,3 +297,133 @@ def test_changed_ports_reposition_without_stale_node_bounds(
     second.set_inputs(model.mapToSource("first"), extra=2, another=3)
     assert view._inletPos("second", "value") != previous
     assert view._inletPos("second", "extra").x() > view._inletPos("second", "value").x()
+
+
+def test_node_shape_does_not_measure_label_bounds_until_requested(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+) -> None:
+    view, _ = graph_view
+    delegate = view._nodes_delegate
+    with (
+        patch.object(delegate, "_nodeLocalRect", wraps=delegate._nodeLocalRect) as measure_rect,
+        patch.object(delegate, "_nodeLocalShape", wraps=delegate._nodeLocalShape) as measure_shape,
+    ):
+        option = view._nodeStyleOption("second")
+        view._nodeLocalShape(option, "second")
+        measure_shape.assert_called_once()
+        measure_rect.assert_not_called()
+
+        view._nodeLocalRect(option, "second")
+        view._nodeLocalRect(option, "second")
+        measure_rect.assert_called_once()
+
+
+def test_warm_paint_builds_only_one_style_option_per_node(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+) -> None:
+    view, model = graph_view
+    before = render(view)
+    with patch.object(view, "_nodeStyleOption", wraps=view._nodeStyleOption) as make_option:
+        assert render(view) == before
+        assert [call.args[0] for call in make_option.call_args_list] == list(model.nodes())
+
+
+def test_cached_link_reads_do_not_resolve_endpoints_again(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+) -> None:
+    view, model = graph_view
+    link = next(iter(model.links()))
+    shape = view._linkSceneShape(link)
+    with (
+        patch.object(view, "_outletPos", wraps=view._outletPos) as outlet_pos,
+        patch.object(view, "_inletPos", wraps=view._inletPos) as inlet_pos,
+    ):
+        view._linkSceneRect(link)
+        assert view._linkSceneShape(link) == shape
+        outlet_pos.assert_not_called()
+        inlet_pos.assert_not_called()
+
+
+def test_moving_one_node_updates_link_endpoints_and_reuses_port_layout(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+) -> None:
+    view, model = graph_view
+    render(view)
+    link = ("first", "out", "second", "value")
+    view._get_affected_rect("first")
+    old_shape = view._linkSceneShape(link)
+    old_outlet = view._outletPos("first", "out")
+    delta = QPointF(50, -30)
+    with patch.object(view, "_nodeStyleOption", wraps=view._nodeStyleOption) as make_option:
+        model.setNodePosition("first", model.nodePosition("first") + delta)
+        assert view._outletPos("first", "out") == old_outlet + delta
+        shape = view._linkSceneShape(link)
+        assert shape != old_shape
+        assert shape.pointAtPercent(0) == view._outletPos("first", "out")
+        assert shape.pointAtPercent(1) == view._inletPos("second", "value")
+        make_option.assert_not_called()
+
+
+def test_outlet_positions_share_layout_and_follow_reordering(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    view, model = graph_view
+    original_outlets = model.outlets
+    outlets = ["out", "extra"]
+    monkeypatch.setattr(model, "outlets", lambda node: tuple(outlets) if node == "first" else original_outlets(node))
+    with patch.object(view, "_nodeStyleOption", wraps=view._nodeStyleOption) as make_option:
+        left = view._outletPos("first", "out")
+        right = view._outletPos("first", "extra")
+        view._outletRect("first", "out")
+        view._outletShape("first", "extra")
+        assert right.x() - left.x() == 10
+        make_option.assert_called_once_with("first")
+
+    outlets.reverse()
+    model.outletsReset.emit("first")
+    assert view._outletPos("first", "out") == right
+    assert view._outletPos("first", "extra") == left
+
+
+def test_inlet_value_can_resize_node_and_move_its_outlet_and_link(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+) -> None:
+    view, model = graph_view
+    second = model.mapToSource("second")
+    second.set_inputs(value=40)
+
+    class ValueSizedDelegate(StyledNodeDelegate):
+        def _nodeLocalShape(
+            self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName,
+        ) -> QPainterPath:
+            if node != "second":
+                return super()._nodeLocalShape(option, model, node)
+            width = model.inletData(node, "value", InputDataRole.InputValueRole)
+            shape = QPainterPath()
+            shape.addRect(QRectF(0, 0, width, 20))
+            return shape
+
+    view._nodes_delegate = ValueSizedDelegate()
+    link = ("second", "out", "third", "value")
+    before = view._linkSceneShape(link)
+    second.set_inputs(value=120)
+    after = view._linkSceneShape(link)
+    assert after.pointAtPercent(0).x() == before.pointAtPercent(0).x() + 40
+    assert after.pointAtPercent(0) == view._outletPos("second", "out")
+    assert after.pointAtPercent(1) == view._inletPos("third", "value")
+
+
+def test_font_change_invalidates_links_before_any_node_option_is_requested(
+    graph_view: tuple[DirectionalGraphView5, PyGraphRTGraphModel],
+) -> None:
+    view, model = graph_view
+    link = ("first", "out", "second", "value")
+    before = view._linkSceneShape(link)
+    font = view.font()
+    font.setPointSizeF(font.pointSizeF() * 2)
+    view.setFont(font)
+    after = view._linkSceneShape(link)
+    assert after != before
+    assert after.pointAtPercent(0) == view._outletPos("first", "out")
+    assert after.pointAtPercent(1) == view._inletPos("second", "value")

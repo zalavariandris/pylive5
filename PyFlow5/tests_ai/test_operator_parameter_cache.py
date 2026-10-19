@@ -48,7 +48,8 @@ def test_repeated_queries_and_value_edits_share_parameters(
         assert model.setInletData("first", "value", 7, InputDataRole.InputValueRole)
         assert model.inletData("first", "value", InputDataRole.InputValueRole) == 7
         assert list(model.inlets("first")) == ["value"]
-        get_parameters.assert_called_once()
+        # Initial graph snapshots already populated the shared parameter cache.
+        get_parameters.assert_not_called()
 
 
 def test_script_changes_refresh_parameters_before_notifying_observers(
@@ -65,7 +66,7 @@ def test_script_changes_refresh_parameters_before_notifying_observers(
             model.inletData(node_name, "amount", InputDataRole.DefaultValueRole)
         )
 
-    model.inletsChanged.connect(read_parameters)
+    model.inletsReset.connect(read_parameters)
     module.set_script("def operation(amount: float = 2.5):\n    return amount\n")
     assert observed_defaults == [2.5, 2.5]
 

@@ -99,9 +99,9 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     nodeAboutToMove = Signal(object) # NodeT
     nodeMoved = Signal(object) # NodeT
     
-    inletsChanged = Signal(object) # NodeT
+    inletsReset = Signal(object) # NodeT
     inletDataChanged = Signal(object, tuple, list) # NodeT, tuple[InletT...], roles: list[int]
-    outletsChanged = Signal(object) # NodeT
+    outletsReset = Signal(object) # NodeT
 
     cellsAboutToBeInserted = Signal(object, int, int) # NodeT, first, last
     cellsInserted = Signal(object, int, int) # # NodeT, first, last
@@ -264,7 +264,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         msg = self._message_queue.pop()
         assert isinstance(msg, ResetInletsMessage), f"Expected ResetInletsMessage, got {type(msg)}"
         node = msg.node
-        self.inletsChanged.emit(node)
+        self.inletsReset.emit(node)
 
     # == OUTLETS API ==
     @abstractmethod
@@ -291,7 +291,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     def _endResetOutlets(self) -> None:
         msg = self._message_queue.pop()
         assert isinstance(msg, ResetOutletsMessage), f"Expected ResetOutletsMessage, got {type(msg)}"
-        self.outletsChanged.emit(msg.node)
+        self.outletsReset.emit(msg.node)
 
     # == LINKS API ==
     @abstractmethod

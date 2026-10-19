@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import Enum
 from logging import warning
 from pathlib import Path
@@ -19,7 +20,9 @@ from qtpy.QtGui import QColor
 
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel,
+    AddLinkMessage,
     AddNodeMessage,
+    RemoveLinkMessage,
     RemoveNodeMessage,
     CellIdx, 
     DirectionalLinkId, 
@@ -37,11 +40,67 @@ from qdageditor5.core.item_data_roles import (
 )
 import inspect
 
+EmptyInletValue = object()
+
+
+def _same_value(previous: object, current: object) -> bool:
+    """Compare supported immutable values, including their types.
+
+    Mutable or unfamiliar values are conservatively considered changed whenever
+    the runtime notifies us, since retaining a reference cannot snapshot them.
+    """
+    if type(previous) is not type(current):
+        return False
+    if previous is EmptyInletValue or previous is rt.ParameterData.EMPTY:
+        return previous is current
+    if isinstance(previous, tuple) and isinstance(current, tuple):
+        return len(previous) == len(current) and all(
+            _same_value(old, new) for old, new in zip(previous, current)
+        )
+    if (
+        isinstance(previous, (type(None), bool, int, float, str, bytes, Path, Enum, type))
+        or get_origin(previous) is not None
+    ):
+        try:
+            equal = previous is current or previous == current
+            return isinstance(equal, bool) and equal
+        except Exception:
+            return False
+    return False
+
+
+@dataclass(frozen=True, eq=False)
+class _InletShadow:
+    location: int | str
+    parameter_name: str | None
+    annotation: object
+    default: object
+    input: object
+    connection: NodeName | None
+
+    def same_data(self, other: "_InletShadow") -> bool:
+        return (
+            self.location == other.location
+            and self.parameter_name == other.parameter_name
+            and self.connection == other.connection
+            and _same_value(self.annotation, other.annotation)
+            and _same_value(self.default, other.default)
+            and _same_value(self.input, other.input)
+        )
+
+
+@dataclass(frozen=True)
+class _NodeShadow:
+    operator_name: str | None
+    inlets: dict[InletName, _InletShadow]
+    links: frozenset[DirectionalLinkId]
+
+
 class PyGraphRTGraphModel(AbstractDAGModel):
     ExecutionRole = Qt.ItemDataRole.UserRole+1
     ResolutionRole = Qt.ItemDataRole.UserRole+2
 
-    EmptyInputValue = object()
+    EmptyInputValue = EmptyInletValue
 
     def __init__(self, 
         engine: rt.GraphEvaluatorEngine,
@@ -60,6 +119,10 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         self._executions: dict[NodeName, rt.NodeExecution] = {}
         self._operator_parameters_cache: dict[rt.AbstractOperator, Mapping[str, rt.ParameterData]] = {}
+        self._nodes: dict[NodeName, _NodeShadow] = {
+            node.get_name(): self._make_node_shadow(node)
+            for node in self._engine._graph.nodes()
+        }
 
         # Adapters observe this model, including changes made directly to the RT.
         self._engine._graph.nodes_added.connect(self._on_rt_nodes_added)
@@ -77,6 +140,114 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         self._engine.evaluated.connect(self._on_evaluated)
 
+    def _make_node_shadow(self, node: rt.NodeRef) -> _NodeShadow:
+        operator = node.get_operator()
+        parameters = self._get_operator_parameters(operator) if operator is not None else {}
+        inlet_names, bindings = self.__node_inlets(node)
+        args, kwargs = node.get_inputs()
+        inlets: dict[InletName, _InletShadow] = {}
+        for position, inlet in enumerate(inlet_names):
+            parameter = parameters.get(str(inlet))
+            location, value = self._input_binding(inlet, position, args, kwargs)
+            inlets[inlet] = _InletShadow(
+                location=location,
+                parameter_name=parameter.name if parameter is not None else None,
+                annotation=parameter.annotation if parameter is not None else rt.ParameterData.EMPTY,
+                default=parameter.default if parameter is not None else rt.ParameterData.EMPTY,
+                input=self.EmptyInputValue if isinstance(value, NodeRef) else value,
+                connection=value.get_name() if isinstance(value, NodeRef) else None,
+            )
+        return _NodeShadow(
+            operator_name=operator.get_name() if operator is not None else None,
+            inlets=inlets,
+            links=frozenset(
+                (value.get_name(), 'out', node.get_name(), inlet)
+                for inlet, value in bindings if isinstance(value, NodeRef)
+            ),
+        )
+
+    def _input_binding(
+        self,
+        inlet: InletName,
+        position: int,
+        args: tuple[object, ...],
+        kwargs: Mapping[str, object],
+    ) -> tuple[int | str, object]:
+        if str(inlet) in kwargs:
+            return str(inlet), kwargs[str(inlet)]
+        if position < len(args):
+            return position, args[position]
+        return str(inlet), self.EmptyInputValue
+
+    def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
+        if self._closed:
+            return
+        for node in nodes:
+            self._nodes[node.get_name()] = self._make_node_shadow(node)
+        if any(isinstance(msg, AddNodeMessage) for msg in self._message_queue):
+            return  # addNode already owns the source notification pair.
+        names = tuple(node.get_name() for node in nodes)
+        self.nodesAboutToBeAdded.emit(names)
+        self.nodesAdded.emit(names)
+
+    def _on_rt_nodes_removed(self, nodes: list[rt.NodeRef]) -> None:
+        if self._closed:
+            return
+        names = tuple(node.get_name() for node in nodes)
+        for name in names:
+            self._nodes.pop(name, None)
+            self._positions.pop(name, None)
+            self._executions.pop(name, None)
+        if any(isinstance(msg, RemoveNodeMessage) for msg in self._message_queue):
+            return  # removeNodes already owns the source notification pair.
+        self.nodesAboutToBeRemoved.emit(names)
+        self.nodesRemoved.emit(names)
+
+    def _on_rt_nodes_changed(self, nodes: list[rt.NodeRef]) -> None:
+        if self._closed:
+            return
+        # Update the whole batch before notifying synchronous observers.
+        changes: list[tuple[NodeName, _NodeShadow, _NodeShadow]] = []
+        for node in nodes:
+            name = node.get_name()
+            previous = self._nodes[name]
+            current = self._make_node_shadow(node)
+            self._nodes[name] = current
+            changes.append((name, previous, current))
+
+        changed_headers: list[NodeName] = []
+        added_links: set[DirectionalLinkId] = set()
+        removed_links: set[DirectionalLinkId] = set()
+        for name, previous, current in changes:
+            added_links.update(current.links - previous.links)
+            removed_links.update(previous.links - current.links)
+            if tuple(previous.inlets) != tuple(current.inlets):
+                self.inletsReset.emit(name)
+            else:
+                changed_inlets = tuple(
+                    inlet for inlet in current.inlets
+                    if not previous.inlets[inlet].same_data(current.inlets[inlet])
+                )
+                if changed_inlets:
+                    self.inletDataChanged.emit(name, changed_inlets, [])
+            if previous.operator_name != current.operator_name:
+                changed_headers.append(name)
+
+        # Model commands already own their link notification pairs. Runtime
+        # edits have committed, so use a reset for any remaining link changes
+        # rather than issuing about-to notifications against the new graph.
+        for message in self._message_queue:
+            if isinstance(message, AddLinkMessage):
+                added_links.difference_update(message.links)
+            elif isinstance(message, RemoveLinkMessage):
+                removed_links.difference_update(message.links)
+        if added_links or removed_links:
+            self.linksReset.emit()
+        if changed_headers:
+            self.nodesDataChanged.emit(
+                tuple(changed_headers),
+                (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.BackgroundRole),
+            )
 
     @Slot(dict)
     def _on_evaluated(self, executions: dict[rt.NodeRef, rt.NodeExecution]) -> None:
@@ -100,6 +271,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             return
         self._closed = True
         self._operator_parameters_cache.clear()
+        self._nodes.clear()
         self._engine.evaluated.disconnect(self._on_evaluated)
 
     @Slot(list)
@@ -113,36 +285,10 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def _get_operator_parameters(
         self, operator: rt.AbstractOperator
     ) -> Mapping[str, rt.ParameterData]:
-        """return operator parameters (using a cache"""
-        #Reuse parameter metadata across UI queries and input-value edits."""
+        """Reuse parameter metadata across snapshots, UI queries, and input edits."""
         if operator not in self._operator_parameters_cache:
             self._operator_parameters_cache[operator] = operator.get_parameters()
         return self._operator_parameters_cache[operator]
-
-    def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
-        if any(isinstance(msg, AddNodeMessage) for msg in self._message_queue):
-            return  # addNode already owns the source notification pair.
-        names = tuple(node.get_name() for node in nodes)
-        self.nodesAboutToBeAdded.emit(names)
-        self.nodesAdded.emit(names)
-
-    def _on_rt_nodes_removed(self, nodes: list[rt.NodeRef]) -> None:
-        names = tuple(node.get_name() for node in nodes)
-        for name in names:
-            self._positions.pop(name, None)
-            self._executions.pop(name, None)
-        if any(isinstance(msg, RemoveNodeMessage) for msg in self._message_queue):
-            return  # removeNodes already owns the source notification pair.
-        self.nodesAboutToBeRemoved.emit(names)
-        self.nodesRemoved.emit(names)
-
-    def _on_rt_nodes_changed(self, nodes: list[rt.NodeRef]) -> None:
-        names = tuple(node.get_name() for node in nodes)
-        for name in names:
-            # The base tree adapter compares inlet identities and only changes
-            # rows when necessary; unchanged rows still receive dataChanged.
-            self.inletsChanged.emit(name)
-        self.nodesDataChanged.emit(names, ())
 
     def setRT(self, graph: rt.GraphDefinitionRT, positions=None):
         raise NotImplementedError("setRT method is not implemented yet.")
@@ -160,6 +306,10 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._beginResetModel()
         self._operator_parameters_cache.clear()
         self._positions = defaultdict(lambda: (0.0, 0.0), positions)
+        self._nodes = {
+            node.get_name(): self._make_node_shadow(node)
+            for node in self._engine._graph.nodes()
+        }
         self._endResetModel()
 
     # = Mapping Source =
@@ -348,16 +498,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                     return None
                 args, kwargs = node_rt.get_inputs()
                 position = inlets.index(inlet)
-                location: int | str
-                if str(inlet) in kwargs:
-                    location = str(inlet)
-                    value = kwargs[location]
-                elif position < len(args):
-                    location = position
-                    value = args[position]
-                else:
-                    location = str(inlet)
-                    value = self.EmptyInputValue
+                location, value = self._input_binding(inlet, position, args, kwargs)
 
                 if role == InputDataRole.InputLocationRole:
                     return location
@@ -537,10 +678,12 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
     @override
     def setNodePosition(self, node_name:NodeName, position:QPointF|None):
+        self.nodeAboutToMove.emit(node_name)
         if position:
             self._positions[node_name] = (position.x(), position.y())
         else:
             self._positions.pop(node_name, None)
+        self.nodeMoved.emit(node_name)
 
     # - MUTATIONS
     @override

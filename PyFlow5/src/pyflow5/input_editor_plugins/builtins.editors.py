@@ -25,7 +25,7 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
         
         if datatype ==str:
             editor = QLineEdit(parent)
-            # editor.textChanged.connect(lambda: self.commitData.emit(editor))
+            editor.textChanged.connect(lambda: self.commitData.emit(editor))
 
         elif datatype == Path:
             editor = QPathEdit(parent=parent)
@@ -33,15 +33,15 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
 
         elif datatype == bool:
             editor = QCheckBox(parent)
-            # editor.stateChanged.connect(lambda: self.commitData.emit(editor))
+            editor.stateChanged.connect(lambda: self.commitData.emit(editor))
 
         elif datatype == int:
             editor = QSpinBox(parent)
-            # editor.valueChanged.connect(lambda: self.commitData.emit(editor))
+            editor.valueChanged.connect(lambda: self.commitData.emit(editor))
             
         elif datatype == float:
             editor = QDoubleSpinBox(parent)
-            # editor.valueChanged.connect(lambda: self.commitData.emit(editor))
+            editor.valueChanged.connect(lambda: self.commitData.emit(editor))
 
         
 

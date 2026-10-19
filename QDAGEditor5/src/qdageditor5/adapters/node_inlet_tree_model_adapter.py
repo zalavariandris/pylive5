@@ -68,7 +68,7 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
                 (source_graph.nodesAdded, self._on_nodes_added),
                 (source_graph.nodesRemoved, self._on_nodes_removed),
                 (source_graph.nodesDataChanged, self._on_nodes_data_changed),
-                (source_graph.inletsChanged, self._on_inlets_changed),
+                (source_graph.inletsReset, self._on_inlets_changed),
                 (source_graph.inletDataChanged, self._on_inlet_data_changed),
                 (source_graph.linksAdded, self._on_links_changed),
                 (source_graph.linksRemoved, self._on_links_changed),
@@ -253,7 +253,7 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
         for node_name in node_names:
             index = self.mapFromSource(node_name)
             if index.isValid():
-                self._emit_rows_changed(QModelIndex(), index.row(), index.row())
+                self._emit_rows_changed(QModelIndex(), index.row(), index.row(), _roles)
 
     def _on_inlets_changed(self, node_name: NodeName) -> None:
         graph = self._source_graph
@@ -305,13 +305,13 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
             self._emit_rows_changed(parent, 0, count - 1)
 
     def _emit_rows_changed(
-        self, parent: QModelIndex, first: int, last: int
+        self, parent: QModelIndex, first: int, last: int, roles: Sequence[int] = []
     ) -> None:
         # Subclasses may derive values and roles in any column from source data.
         self.dataChanged.emit(
             self.index(first, 0, parent),
             self.index(last, self.columnCount(parent) - 1, parent),
-            [],
+            roles,
         )
 
     def _on_inlet_data_changed(
@@ -328,7 +328,7 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
         changed = set(inlet_names)
         for row, inlet in enumerate(node.inlets):
             if inlet.inlet_name in changed:
-                self._emit_rows_changed(parent, row, row)
+                self._emit_rows_changed(parent, row, row, _roles)
 
     def _on_links_changed(
         self, links: Sequence[DirectionalLinkId]

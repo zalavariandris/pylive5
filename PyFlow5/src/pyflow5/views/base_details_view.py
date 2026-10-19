@@ -106,7 +106,7 @@ class BaseDetailsView(QFrame):
         
         self._model = model
         self._current_root = QModelIndex()
-        self.showCurrentRootEvent()
+        self.showCurrentRootEvent(self._current_root, [])
 
     def currentRoot(self)->QModelIndex:
         return self._current_root
@@ -125,13 +125,13 @@ class BaseDetailsView(QFrame):
                 first_index = indexes[0] if indexes else QModelIndex()
                 self._current_root = first_index
                 self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
-                self.showCurrentRootEvent()
+                self.showCurrentRootEvent(self._current_root, [])
             case BaseDetailsView.SelectionBehaviour.LastSelected:
                 indexes = self._nodes_selection_model.selectedIndexes()
                 last_index = indexes[-1] if indexes else QModelIndex()
                 self._current_root = last_index
                 self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
-                self.showCurrentRootEvent()
+                self.showCurrentRootEvent(self._current_root, [])
             case _:
                 pass
 
@@ -145,7 +145,7 @@ class BaseDetailsView(QFrame):
             
         self._current_root = current
         self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
-        self.showCurrentRootEvent()
+        self.showCurrentRootEvent(self._current_root, [])
 
     def setSelectionModel(self, selection_model: QItemSelectionModel):
         assert isinstance(selection_model, QItemSelectionModel) or selection_model is None
@@ -172,7 +172,7 @@ class BaseDetailsView(QFrame):
 
     def _on_model_reset(self):
         self._current_root = QModelIndex()
-        self.showCurrentRootEvent()
+        self.showCurrentRootEvent(self._current_root, [])
 
     def _on_data_changed(
         self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list[int],
@@ -188,16 +188,16 @@ class BaseDetailsView(QFrame):
 
         rows = range(topLeft.row(), bottomRight.row() + 1)
         if self._current_root.row() in rows:
-            self.showCurrentRootEvent()
+            self.showCurrentRootEvent(self._current_root, roles)
 
     def _on_rows_removed(self, parent:QModelIndex, first: int, last: int):
         if parent != self._current_root.parent():
             return
         
         if self._current_root.row() >= first and self._current_root.row() <= last:
-            self.showCurrentRootEvent()
+            self.showCurrentRootEvent(self._current_root, [])
 
-    def showCurrentRootEvent(self):
+    def showCurrentRootEvent(self, index: QModelIndex, roles: list[int] = [])->None:
         # todo: make it an abstrat emthod
         #todo:
         """this will be called automatically when the current selection changes."""

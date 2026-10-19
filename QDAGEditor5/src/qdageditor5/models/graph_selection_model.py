@@ -62,8 +62,8 @@ class GraphSelectionModel(QObject):
             (model.nodesRemoved, self._prune_links),
             (model.linksAboutToBeRemoved, self._on_links_removed),
             (model.linksReset, self._prune_links),
-            (model.inletsChanged, self._prune_links),
-            (model.outletsChanged, self._prune_links),
+            (model.inletsReset, self._prune_links),
+            (model.outletsReset, self._prune_links),
         ]
         for signal, slot in self._connections:
             signal.connect(slot)

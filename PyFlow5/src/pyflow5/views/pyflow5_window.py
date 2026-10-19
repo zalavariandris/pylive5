@@ -8,7 +8,7 @@ from pyflow5.views.node_inspector_view import NodeInspectorView
 
 
 from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
-from pyflow5.views.viewer_view import Viewer
+from PyFlow5.src.pyflow5.views.output_viewer import OutputViewer
 
 from pygraphrt.script_module import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex, QSize
@@ -128,7 +128,7 @@ class PyFlow5Window(QMainWindow):
 
         self._node_inspector = NodeInspectorView(self)
         # - Setup display widget -
-        self._viewer = Viewer(self)
+        self._viewer = OutputViewer(self)
 
         # - Settings
         self._settings = QSettings(
@@ -417,6 +417,19 @@ class PyFlow5Window(QMainWindow):
         self._navigate_operator_action.triggered.connect(self._navigate_to_current_node_operator)
         self._graph_view.addAction(self._navigate_operator_action)
         view_menu.addAction(self._navigate_operator_action)
+        panels = [
+            (self._modules_panel, "Modules"),
+            (self._graph_view, "Graph"),
+            (self._node_tree_view, "Tree"),
+            (self._viewer, "Viewer")
+        ]
+        for panel, name in panels:
+            # add show/hide toggle to each panel
+            action = QAction(f"Show/Hide {name}", self)
+            action.setCheckable(True)
+            action.setChecked(panel.isVisible())
+            action.triggered.connect(lambda checked, p=panel: p.setVisible(checked))
+            view_menu.addAction(action)
 
         self._navigate_to_previous_graph_panel = QAction("Go to Graph Panel", self)
         self._navigate_to_previous_graph_panel.setShortcuts(["Esc"])
