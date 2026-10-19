@@ -70,14 +70,6 @@ class _GraphItemId(NamedTuple):
     kind: Literal['node', 'inlet', 'outlet', 'tail', 'head']
     item: NodeId | InletId | OutletId | DirectionalLinkId
 
-
-@dataclass
-class _LinkItemCache:
-    """Link geometry in the target node's coordinate system."""
-
-    bounding_rect: QRectF | None = None
-    shape: QPainterPath | None = None
-
 @dataclass
 class _NodeItemCache:
     """View-owned node state in local coordinates; labels stay in the delegate."""
@@ -85,6 +77,13 @@ class _NodeItemCache:
     bounding_rect: QRectF | None = None
     shape: QPainterPath | None = None
 
+
+@dataclass
+class _LinkItemCache:
+    """Link geometry in the target node's coordinate system."""
+
+    bounding_rect: QRectF | None = None
+    shape: QPainterPath | None = None
 
 @dataclass
 class _InletItemCache:
@@ -387,6 +386,7 @@ class DirectionalGraphView5(QFrame):
 
     # nodes delegate
     def _nodeItemCache(self, node: NodeName) -> _NodeItemCache:
+        """Lazy caching with explicit invalidation."""
         if node not in self._node_item_cache:
             self._node_item_cache[node] = _NodeItemCache()
         return self._node_item_cache[node]

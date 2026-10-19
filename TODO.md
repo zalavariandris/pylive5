@@ -1,5 +1,14 @@
 # TODO
-- [ ] create a smoke test for the insector. setting values, clear values, connect inputs, unconnect inputs, and the editor model binding. default values, empty values etc.
+- [ ] factor out the session and probably settings from the current Window.
+       window should be a document window. this will allow testing empty GUI (without loading the last session)
+       as well as opening multiple documents. The problem is, that the Window acstions are controlled by the document window for now.
+       probably we should have a DocumentsList model as well.
+       I like it when projectfiles open in another instance of the whole application, but also the session, and recent files in the menu
+       has a wider responsibility than a single document. So... maybe we could have tabs as well as opening document in multiple window, 
+       but in a single app.
+- [ ] consider implementing structural change notifications for inlets in DirectionalGraphView5
+- [x] GraphView now uses lazy caching with (signal driven) explicit invalidation
+- [ ] create a smoke test for the inspector. setting values, clear values, connect inputs, unconnect inputs, and the editor model binding. default values, empty values etc.
 - [ ] review NodeRTInputRole. I think (most of) it could be moved to QDAGEditor5
       also, the QDAGEditor5 NodeDataRole and SocketDataRole needs a UserRoel to allow extension.
 - [ ] consider *@vfxops* ImageRGBA using _Planar(CHW)_ channels layout instead of _Interleaved (HWC)_ layout
@@ -22,20 +31,15 @@
 - [ ] review how string and non string annotation is received by the editors.py. also vfxops forexample uses `from __future__ import annotations` that might turn annotations into strings.
 - [x] add execute duration and show it in the graphview
 - [ ] checkout https://pypi.org/project/Fileseq/ for file sequences instead inventing the wheel, as we do it now in vfxops
-- [ ] graph cache revision
+- [x] graph cache revision
       -> added a new graph evaluator suite. it should be reviewed.
 
 - [ ] Implement flags for GraphModel use it in the NodesList adapter. !!!!!!!!!!!!!!!!
       fésüld össze és gondold át, a GraphModel és a Az adapterek Roles-ait
 
-- [ ] factor out the session and probably settings from the current Window.
-       window should be a document window. this will allow testing empty GUI (without loading the last session)
-       as well as opening multiple documents. The problem is, that the Window acstions are controlled by the document window for now.
-       probably we should have a DocumentsList model as well.
-       I like it when projectfiles open in another instance of the whole application, but also the session, and recent files in the menu
-       has a wider responsibility than a single document. So... maybe we could have tabs as well as opening document in multiple window, 
-       but in a single app.
-- [ ] We also Need a NodeInletTree(+selection?)ModelAdapter for the inspector to work with standard qt models
+
+
+- [x] We also Need a NodeInletTree(+selection?)ModelAdapter for the inspector to work with standard qt models
 
 
 - [ ] Consider using AnyIO for async tasks, like
