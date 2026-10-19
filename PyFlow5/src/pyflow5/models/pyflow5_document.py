@@ -28,7 +28,7 @@ class PyFlowDocument(QObject):
     ):
         super().__init__(parent=parent)
         # RT
-        self._engine = engine or rt.GraphEvaluatorEngine()
+        self._engine = engine or rt.GraphEvaluatorEngine(backend=rt.InlineExecutionBackend())
 
         # Models
         ## Graph Model

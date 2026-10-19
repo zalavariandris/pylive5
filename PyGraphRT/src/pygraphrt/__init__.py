@@ -38,6 +38,7 @@ from .graph_serializer import GraphSerializer, GraphDeserializer
 from .abstract_module_rt import ParameterData
 
 from .graph_evaluator_engine import GraphEvaluatorEngine
+from .execution_backend import InlineExecutionBackend
 
 __all__ = [
     "GraphEvaluatorEngine",
@@ -62,4 +63,5 @@ __all__ = [
     "GraphDeserializer",
     "ParameterData",
     # "old_execution_plan"
+    "InlineExecutionBackend",
 ]
