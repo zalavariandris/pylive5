@@ -37,7 +37,7 @@ from .graph_invalidator import GraphInvalidator
 from .graph_serializer import GraphSerializer, GraphDeserializer
 from .abstract_module_rt import ParameterData
 
-from .graph_evaluator.graph_evaluator import GraphEvaluatorEngine
+from .graph_evaluator_engine import GraphEvaluatorEngine
 
 __all__ = [
     "GraphEvaluatorEngine",

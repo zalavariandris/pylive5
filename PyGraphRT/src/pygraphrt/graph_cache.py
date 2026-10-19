@@ -4,7 +4,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ..graph_definition_rt import NodeRef
+from .graph_definition_rt import NodeRef
 
 
 @dataclass(frozen=True)

@@ -20,6 +20,7 @@ class QPathEdit(QWidget):
 
         self._lineedit = QLineEdit(str(path))
         style = self.style()
+        
         assert style is not None, "Style is not set"
         folder_pixmap = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
         action = self._lineedit.addAction(folder_pixmap, QLineEdit.ActionPosition.TrailingPosition)

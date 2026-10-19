@@ -5,7 +5,7 @@ from typing import Annotated
 import numpy as np
 import pygraphrt as rt
 import pytest
-from pygraphrt.graph_evaluator import GraphEvaluatorEngine, InlineExecutionBackend
+from pygraphrt.graph_evaluator_engine import GraphEvaluatorEngine, InlineExecutionBackend
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, Qt
 from qtpy.QtWidgets import QApplication, QLineEdit, QSpinBox, QStyleOptionViewItem, QTreeView

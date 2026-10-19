@@ -4,22 +4,22 @@ from collections.abc import Iterable
 from concurrent.futures import Future
 from weakref import ref
 
-from pygraphrt.graph_evaluator.qt_threadpool_backend import QtThreadPoolExecutionBackend
+from .qt_threadpool_backend import QtThreadPoolExecutionBackend
 from qtpy.QtCore import QObject, Qt, Signal, Slot
 
-from ..graph_definition_rt import GraphDefinitionRT, NodeRef
-from ..core import (
+from .graph_definition_rt import GraphDefinitionRT, NodeRef
+from .core import (
     ExecutionBlocked,
     ExecutionFailure,
     ExecutionSuccess,
     NodeExecution,
 )
-from ..graph_invalidator import GraphInvalidator
-from . import execution_plan
+from .graph_invalidator import GraphInvalidator
 from .execution_backend import ExecutionBackend
+from . import execution_plan
 from .execution_plan import ExecutionPlan, ExecutionResults
 from .graph_cache import GraphCache
-from ..module_registry import ModuleRegistry
+from .module_registry import ModuleRegistry
 
 class GraphEvaluatorEngine(QObject):
     """Manage requests, cached results, and invalidation around an execution backend.

@@ -7,7 +7,7 @@ def exposure(img: ImageRGBA, ev:Annotated[float, Range(-10.0, 10.0)]=0.0) -> Ima
     """Adjust planar RGB exposure, preserving alpha and the input."""
     validate_image_data(img)
     result = img.copy(order="C")
-    result[:3] *= np.float32(2.0 ** ev)
+    result[..., :3] *= np.float32(2.0 ** ev)
     return result
 
 

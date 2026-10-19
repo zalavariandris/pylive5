@@ -8,9 +8,9 @@ from typing import Any
 
 from myutils.profiler import Profiler
 
-from ..abstract_operator import AbstractOperator
-from ..function_operator import FunctionOperator
-from ..graph_definition_rt import GraphDefinitionRT, NodeRef
+from .abstract_operator import AbstractOperator
+from .function_operator import FunctionOperator
+from .graph_definition_rt import GraphDefinitionRT, NodeRef
 
 
 @dataclass(frozen=True)

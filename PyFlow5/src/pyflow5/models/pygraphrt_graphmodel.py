@@ -1,4 +1,5 @@
 from collections import defaultdict
+from collections.abc import Mapping
 from enum import Enum
 from logging import warning
 from pathlib import Path
@@ -58,6 +59,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
 
         self._executions: dict[NodeName, rt.NodeExecution] = {}
+        self._operator_parameters_cache: dict[rt.AbstractOperator, Mapping[str, rt.ParameterData]] = {}
 
         # Adapters observe this model, including changes made directly to the RT.
         self._engine._graph.nodes_added.connect(self._on_rt_nodes_added)
@@ -70,7 +72,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             self._engine._registry.operators_removed,
             self._engine._registry.operators_changed,
         ):
-            signal.connect(lambda *_: self._on_rt_nodes_changed(self._engine._graph.nodes()))
+            signal.connect(self._on_registry_changed)
 
 
         self._engine.evaluated.connect(self._on_evaluated)
@@ -97,7 +99,25 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         if self._closed:
             return
         self._closed = True
+        self._operator_parameters_cache.clear()
         self._engine.evaluated.disconnect(self._on_evaluated)
+
+    @Slot(list)
+    def _on_registry_changed(self, _changes: list[object]) -> None:
+        if self._closed:
+            return
+        # Synchronous UI observers must see the new parameter definitions.
+        self._operator_parameters_cache.clear()
+        self._on_rt_nodes_changed(self._engine._graph.nodes())
+
+    def _get_operator_parameters(
+        self, operator: rt.AbstractOperator
+    ) -> Mapping[str, rt.ParameterData]:
+        """return operator parameters (using a cache"""
+        #Reuse parameter metadata across UI queries and input-value edits."""
+        if operator not in self._operator_parameters_cache:
+            self._operator_parameters_cache[operator] = operator.get_parameters()
+        return self._operator_parameters_cache[operator]
 
     def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
         if any(isinstance(msg, AddNodeMessage) for msg in self._message_queue):
@@ -138,6 +158,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         # Recovery deliberately abandons notifications left open by a failed edit.
         self._message_queue.clear()
         self._beginResetModel()
+        self._operator_parameters_cache.clear()
         self._positions = defaultdict(lambda: (0.0, 0.0), positions)
         self._endResetModel()
 
@@ -210,6 +231,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                         case rt.ExecutionSuccess() as success:
                             return success.result
                         case rt.ExecutionFailure() as failure:
+                            the_exception = failure.reason
                             return failure.reason
                         case _:
                             return None
@@ -229,7 +251,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def __node_inlets(self, node_ref: rt.NodeRef):
         """Return declared inlets and actual bindings, including invalid extras."""
         op = node_ref.get_operator()
-        parameters = list(op.get_parameters()) if op is not None else []
+        parameters = list(self._get_operator_parameters(op)) if op is not None else []
         args, kwargs = node_ref.get_inputs()
         bindings = []
         for i, value in enumerate(args):
@@ -258,7 +280,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             if operator_rt is None:
                 return None
 
-            param = operator_rt.get_parameters().get(str(inlet))
+            param = self._get_operator_parameters(operator_rt).get(str(inlet))
             if param is None:
                 return None
 
@@ -379,7 +401,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 if node_rt is not None:
                     operator_rt = node_rt.get_operator()
                     if operator_rt is not  None:
-                        if param := operator_rt.get_parameters().get(str(inlet)):
+                        if param := self._get_operator_parameters(operator_rt).get(str(inlet)):
                             return f"{param.name}: {param.annotation}"
                 # fallback
                 return f"{inlet}"
@@ -529,7 +551,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             target_rt:rt.NodeRef = self.mapToSource(target)
             args, kwargs = target_rt.get_inputs()
             op = target_rt.get_operator()
-            inlets = op.get_parameters().keys()
+            inlets = self._get_operator_parameters(op).keys()
             if inlet not in inlets:
                 continue
 
@@ -573,7 +595,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         op_ref = target_ref.get_operator()
 
         # if there are already positional arguments for this inlet, replace that otherwise add it to keyword arguments
-        inlets = [name for name in op_ref.get_parameters().keys()]
+        inlets = list(self._get_operator_parameters(op_ref))
         if inlet not in inlets:
             print(f"Inlet '{inlet}' not found in operator parameters")
             return

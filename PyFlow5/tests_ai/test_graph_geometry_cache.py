@@ -10,7 +10,7 @@ from qtpy.QtWidgets import QStyleOptionViewItem
 
 import pygraphrt as rt
 from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
-from pygraphrt.graph_evaluator import GraphEvaluatorEngine, InlineExecutionBackend
+from pygraphrt.graph_evaluator_engine import GraphEvaluatorEngine, InlineExecutionBackend
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.abstract_dag_model import AbstractDAGModel, NodeName
 from qdageditor5.models.graph_selection_model import GraphSelectionModel

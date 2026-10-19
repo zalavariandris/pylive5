@@ -9,7 +9,7 @@ from .core import (
     ExecutionBlocked,
     ExecutionFailure,
     ExecutionSuccess,
-    NodeExecution,
+    NodeExecution
 )
 
 
