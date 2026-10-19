@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from pyflow5.views.node_inspector_view import NodeInspectorView
 
 
-from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
+from pyflow5.views.node_input_delegate import NodeInputFieldDelegate, NodeInputLabelDelegate
 from PyFlow5.src.pyflow5.views.output_viewer import OutputViewer
 
 from pygraphrt.script_module import ScriptOperatorRef
@@ -87,11 +87,11 @@ class PyFlow5Window(QMainWindow):
         self._modules_listview.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._modules_listview.customContextMenuRequested.connect(self._show_modules_context_menu)
         self._modules_listview.setIconSize(QSize(14, 14))
+
         # - Setup modules details view -
         self._module_details_view = ModuleDetailsView(self)
         
-        # - Setup graphview -
-        # self._nodes_list_model = NodesListModelAdapter()
+        # - GraphView Panel -
         self._graph_view = DirectionalGraphView5(self)
         @self._graph_view.requestNode.connect
         def _on_request_node(scene_pos:QPointF, source:NodeName):
@@ -103,7 +103,6 @@ class PyFlow5Window(QMainWindow):
             self._document.graph_model.addLink(source, outlet, target, inlet)
 
         # - Setup node inspector -
-        # self._node_inspector_view = 
         self._node_tree_view = QTreeView(self)
         self._node_tree_view.setMouseTracking(True)
         node_tree_header = self._node_tree_view.header()
@@ -120,41 +119,15 @@ class PyFlow5Window(QMainWindow):
             self._node_input_delegate
         )
         self._node_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        # self._node_tree_view.hide()
-
-        # self._node_inspector = self._node_tree_view
 
         self._node_inspector = NodeInspectorView(self)
+        self._node_inspector.setFieldDelegate(NodeInputFieldDelegate(parent=self))
+        self._node_inspector.setLabelDelegate(NodeInputLabelDelegate(parent=self))
+
         # - Setup display widget -
         self._viewer = OutputViewer(self)
 
-        # - Settings
-        self._settings = QSettings(
-            QSettings.Format.IniFormat, # format
-            QSettings.Scope.UserScope, # scopetab
-            "BABLab", # organization
-            "PyFlow5" # application
-        )
 
-        app = QApplication.instance()
-        if app is None:
-            raise RuntimeError("PyFlow5Window requires a QApplication instance")
-        # style_keys = {key.casefold(): key for key in QStyleFactory.keys()}
-        # self._system_style_key = style_keys.get(
-        #     app.style().objectName().casefold(), "Fusion"
-        # )
-        # self._theme = self._settings.value("theme", "system", type=str)
-        # if self._theme not in {"system", "fusion", "dark"}:
-        #     self._theme = "system"
-        # self._applyTheme(self._theme, persist=False)
-
-        self._recent_graphs: list[str] = self._settings.value(
-            "recentGraphs", [], type=list
-        )
-
-        self._session_path = (
-            Path(self._settings.fileName()).parent / "session.json"
-        )
                 
         # - Overlay the selected node tree on the graph -
         self._graph_container = QWidget(self)
@@ -198,8 +171,22 @@ class PyFlow5Window(QMainWindow):
         # Setup Model
         self._document:PyFlowDocument|None = None
 
-        # Create a new document and connect it to the window
-        # Load the last session if it exists
+        # - Settings
+        self._settings = QSettings(
+            QSettings.Format.IniFormat, # format
+            QSettings.Scope.UserScope, # scopetab
+            "BABLab", # organization
+            "PyFlow5" # application
+        )
+
+        self._recent_graphs: list[str] = self._settings.value(
+            "recentGraphs", [], type=list
+        )
+
+        self._session_path = (
+            Path(self._settings.fileName()).parent / "session.json"
+        )
+
         if self._use_session and self._session_path.exists():
             try:
                 new_document = PyFlowDocument.fromfile(str(self._session_path))
@@ -209,6 +196,7 @@ class PyFlow5Window(QMainWindow):
         else:
             new_document = PyFlowDocument()
 
+        # menubar
         self.setupMenubar()
         self._connectDocument(new_document)
 

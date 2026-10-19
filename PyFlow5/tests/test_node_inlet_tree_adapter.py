@@ -193,7 +193,7 @@ def test_window_uses_the_value_adapter_in_tree_and_form(qtbot) -> None:
     window = PyFlow5Window()
     qtbot.addWidget(window)
     document = PyFlowDocument(graph)
-    window._connectDocument(document)
+    window.setDocument(document)
     model = document.node_inlet_tree_adapter
     assert window._node_tree_view.model() is model
     assert isinstance(window._node_tree_view.itemDelegateForColumn(1), NodeInputFieldDelegate)

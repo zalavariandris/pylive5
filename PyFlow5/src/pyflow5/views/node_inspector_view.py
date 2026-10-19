@@ -5,8 +5,6 @@ from qtpy.QtWidgets import QSizePolicy, QStyledItemDelegate, QWidget, QLabel, QP
 
 from .base_details_view import BaseDetailsView
 from .formview import FormView
-from .node_input_delegate import NodeInputFieldDelegate
-from .node_input_delegate import NodeInputLabelDelegate
 
 
 class NodeInspectorView(BaseDetailsView):
@@ -18,17 +16,16 @@ class NodeInspectorView(BaseDetailsView):
         self.setAutoFillBackground(True)
 
         self._form_view = FormView(self)
-        self._field_delegate = NodeInputFieldDelegate(parent=self)
-        self._form_view.setFieldDelegate(self._field_delegate)
-        self._labels_delegate = NodeInputLabelDelegate(parent=self)
-        self._form_view.setLabelDelegate(self._labels_delegate)
         self._form_view.hide()
 
         self.setBodyWidget(self._form_view)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
-    # def setFieldDelegate(self, delegate: NodeInputDelegate) -> None:
-    #     self._form_view.setFieldDelegate(delegate)
+    def setFieldDelegate(self, delegate: QStyledItemDelegate) -> None:
+        self._form_view.setFieldDelegate(delegate)
+
+    def setLabelDelegate(self, delegate: QStyledItemDelegate) -> None:
+        self._form_view.setLabelDelegate(delegate)
 
     def setModel(self, model: QAbstractItemModel | None) -> None:
         super().setModel(model)

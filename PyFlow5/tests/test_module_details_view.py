@@ -192,7 +192,7 @@ def test_window_connects_module_details(
     view._code_editor.setPlainText("def hello(): return 42")
     assert window._document._module_registry.modules()[0].get_source() == "def hello(): return 42"
 
-    window._connectDocument(PyFlowDocument())
+    window.setDocument(PyFlowDocument())
     assert not view.currentIndex().isValid()
     assert view._code_editor.toPlainText() == ""
     window._document.addEmbeddedModule()
