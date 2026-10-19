@@ -1,6 +1,7 @@
 from typing import *
-from qtpy.QtCore import Signal, Property
+from qtpy.QtCore import Signal, Property, Qt
 from qtpy.QtWidgets import QStyle, QLineEdit, QHBoxLayout, QWidget, QFileDialog
+from qtpy.QtWidgets import QAction
 
 import pathlib
 
@@ -29,7 +30,19 @@ class QPathEdit(QWidget):
         self._lineedit.textChanged.connect(
             lambda text: self.pathChanged.emit(pathlib.Path(text))
         )
-        
+
+        self._lineedit.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self._lineedit.customContextMenuRequested.connect(
+            self._show_context_menu
+        )
+
+    def sizeHint(self):
+        hint = self._lineedit.sizeHint()
+        hint.setWidth(200)  # Example adjustment, increase width by 50 pixels
+        return hint
+    
     def open(self):
         filename, _ = QFileDialog.getOpenFileName(self)
         if filename:
@@ -40,6 +53,37 @@ class QPathEdit(QWidget):
         
     def setPath(self, path:pathlib.Path|str):
         self._lineedit.setText(str(path))
+
+    def _set_relative_to_cwd(self):
+        self.setPath(self.getPath().relative_to(pathlib.Path.cwd()))
+
+    def _set_absolute(self):
+        self.setPath(self.getPath().absolute())
+
+    def _show_context_menu(self, pos):
+        menu = self._lineedit.createStandardContextMenu()
+        assert menu is not None, "Failed to create context menu"
+        
+        
+        make_relative_action = QAction("Make Path Relative", self._lineedit, 
+            triggered=lambda: self._set_relative_to_cwd()
+        )
+        menu.addAction(make_relative_action)
+
+        make_absolute_action = QAction("Make Path Absolute", self._lineedit, 
+            triggered=lambda: self._set_absolute()
+        )
+        menu.addAction(make_absolute_action)
+        if self.getPath().is_absolute():
+            make_relative_action.setEnabled(True)
+            make_absolute_action.setEnabled(False)
+        else:
+            make_relative_action.setEnabled(False)
+            make_absolute_action.setEnabled(True)
+
+        action_clear = QAction("Clear", self._lineedit, triggered=lambda: self._lineedit.clear())
+        menu.addAction(action_clear)
+        menu.exec(self._lineedit.mapToGlobal(pos))
 
 
 

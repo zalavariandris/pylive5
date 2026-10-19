@@ -18,12 +18,18 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
         index: QModelIndex,
     ) -> QWidget | None:
         datatype = index.data(InputDataRole.AnnotationRole)
+        print("choose editor for datatype:", datatype)
         if get_origin(datatype) is Annotated:
             datatype = get_args(datatype)[0]
         editor: QWidget | None = None
-        if datatype in (str, str | Path):
+        
+        if datatype ==str:
             editor = QLineEdit(parent)
             # editor.textChanged.connect(lambda: self.commitData.emit(editor))
+
+        elif datatype == Path:
+            editor = QPathEdit(parent=parent)
+            # editor.pathChanged.connect(lambda: self.commitData.emit(editor))
 
         elif datatype == bool:
             editor = QCheckBox(parent)
@@ -37,9 +43,7 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
             editor = QDoubleSpinBox(parent)
             # editor.valueChanged.connect(lambda: self.commitData.emit(editor))
 
-        elif datatype == Path:
-            editor = QPathEdit(parent=parent)
-            # editor.pathChanged.connect(lambda: self.commitData.emit(editor))
+        
 
         return editor
 

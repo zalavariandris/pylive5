@@ -52,6 +52,9 @@ class FormView(QWidget):
         self._layout.setLabelAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
+        self._layout.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint
+        )
 
         self._field_delegate = _FormFieldDelegate(self)
         self._label_delegate = None

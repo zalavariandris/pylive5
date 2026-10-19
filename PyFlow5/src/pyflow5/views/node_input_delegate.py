@@ -160,6 +160,9 @@ class NodeInputFieldDelegate(QStyledItemDelegate):
                     partial(self._show_plugin_error, plugin_path, traceback.format_exc()),
                 )
 
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        return QSize(300, 30)  # Example size, adjust as needed
+
     def _discover_providers(self) -> None:
         """Load shipped sidecars in a stable order during startup only."""
         plugin_directory = Path(__file__).parent.parent / "input_editor_plugins"
