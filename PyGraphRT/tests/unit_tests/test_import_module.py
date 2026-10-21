@@ -9,13 +9,13 @@ def test_import_loads_and_reloads_without_saving_in_memory_edits(tmp_path: Path)
     path.write_text(source, encoding="utf-8")
 
     module = ImportModuleRT("external", path=path)
-    module._evaluate()
+    module.evaluate()
     assert module.path() == path
     assert module.get_source() == source
     assert module.get_operator_by_name("value")() == 1
 
     module.set_script("def value() -> int: return 2\n")
-    module._evaluate()
+    module.evaluate()
     assert module.get_operator_by_name("value")() == 2
     assert path.read_text(encoding="utf-8") == source
 

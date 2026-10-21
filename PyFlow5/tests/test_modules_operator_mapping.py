@@ -56,7 +56,7 @@ def test_invalid_indexes(model: ModulesOperatorsTreeModel) -> None:
 def test_unknown_and_removed_sources(model: ModulesOperatorsTreeModel) -> None:
     foreign_module = ScriptModuleRT("local")
     foreign_module.set_script("def same() -> int: return 1")
-    foreign_module._evaluate()
+    foreign_module.evaluate()
     assert not model.mapFromSource(foreign_module).isValid()
     assert not model.mapFromSource(ScriptOperatorRef(foreign_module, "same")).isValid()
     assert not model.mapFromSource(None).isValid()
@@ -65,7 +65,7 @@ def test_unknown_and_removed_sources(model: ModulesOperatorsTreeModel) -> None:
     assert isinstance(module, ScriptModuleRT)
     removed_operator = ScriptOperatorRef(module, "same")
     module.set_script("def extra() -> int: return 2")
-    module._evaluate()
+    module.evaluate()
     assert not model.mapFromSource(removed_operator).isValid()
     assert not model.mapFromSource(ScriptOperatorRef(module, "missing")).isValid()
 

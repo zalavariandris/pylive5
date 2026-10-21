@@ -2,7 +2,8 @@
 ## Features
 - [x] indicate file and document modifications
 - [x] session now restore opened file, as well as unsaved modifications
-- [ ] Run ScriptModuleEvaluation in the background
+- [x] Run ScriptModuleEvaluation in the background
+      -> now it uses a QRunnable. scheduling is nothing fancy, might need a review later.
 - [ ] Tasks manager.
 - [ ] Task progressbar
 - [ ] create a method that compiles the graph into a native python script so its runnable without the app.

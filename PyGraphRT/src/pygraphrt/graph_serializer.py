@@ -229,7 +229,7 @@ class GraphDeserializer:
                 case 'embedded':
                     module = ScriptModuleRT(module_name)
                     module.set_script(module_data['source'])
-                    module._evaluate()
+                    module.evaluate()
                 case _:
                     raise ValueError(f"Unsupported module type: {module_data['type']}")
             registry.add_module(module)

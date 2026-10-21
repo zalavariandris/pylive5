@@ -15,7 +15,7 @@ def test_function_discovery_from_python_modules():
         return "Hello, world!"
 
     """))
-    sm._evaluate()
+    sm.evaluate()
 
     assert list([op.get_name() for op in sm.operators()]) == ["hello"]
 
@@ -31,7 +31,7 @@ def test_function_discovery_from_python_modules():
     ]
     
     """))
-    sm._evaluate()
+    sm.evaluate()
     assert list([op.get_name() for op in sm.operators()]) == ["hello", "sqrt"]
 
 if __name__ == "__main__":

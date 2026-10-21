@@ -19,7 +19,7 @@ from qdageditor5.models.graph_selection_model import GraphSelectionModel
 def module() -> rt.ScriptModuleRT:
     module = rt.ScriptModuleRT("example")
     module.set_script("def operation(first: int = 1, second: int = 2): return first + second")
-    module._evaluate()
+    module.evaluate()
     return module
 
 
@@ -125,7 +125,7 @@ def test_metadata_change_updates_inlet_without_reset(
     module: rt.ScriptModuleRT, events: list[tuple[object, ...]], parameters: str,
 ) -> None:
     module.set_script(f"def operation({parameters}): return first + second")
-    module._evaluate()
+    module.evaluate()
     assert events == [("inlets", "target", ("first",), [])]
 
 
@@ -137,7 +137,7 @@ def test_inlet_order_or_membership_change_resets_inlets(
     module: rt.ScriptModuleRT, events: list[tuple[object, ...]], parameters: str,
 ) -> None:
     module.set_script(f"def operation({parameters}): return first + second")
-    module._evaluate()
+    module.evaluate()
     assert events == [("inlets_reset", "target")]
 
 
@@ -145,7 +145,7 @@ def test_function_body_change_does_not_change_presentation(
     module: rt.ScriptModuleRT, events: list[tuple[object, ...]],
 ) -> None:
     module.set_script("def operation(first: int = 1, second: int = 2): return first - second")
-    module._evaluate()
+    module.evaluate()
     assert events == []
 
 

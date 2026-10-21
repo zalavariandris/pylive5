@@ -62,13 +62,17 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         match module:
             case rt.ScriptModuleRT():
                 self._module_connections[module] = [
-                    (module.state_changed, lambda: self.dataChanged.emit(self.mapFromSource(module), self.mapFromSource(module)))
+                    (module.state_changed, lambda: self.dataChanged.emit(self.mapFromSource(module), self.mapFromSource(module))),
+                    (module.operators_added, lambda: ...),
+                    (module.operators_removed, lambda: ...),
+                    (module.operators_changed, lambda: ...),
                 ]
                 for signal, slot in self._module_connections[module]:
                     signal.connect(slot)
             case _:
                 self._module_connections[module] = []
                 return
+
 
     def _disconnect_moduleconnections(self, module: rt.AbstractModule):
         if module not in self._module_connections:
@@ -294,7 +298,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             return False
 
         module.set_script(value)
-        module._evaluate()
+        module.request_evaluate()
         self.dataChanged.emit(index, index, [self.SourceRole])
         return True
 
@@ -307,7 +311,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         unique_name = generator("_local_")
         script_module = rt.ScriptModuleRT(name=unique_name)
         script_module.set_script("") 
-        script_module._evaluate()
+        script_module.evaluate()
         row = self.rowCount()
         self.beginInsertRows(QModelIndex(), row, row)
         self._registry.add_module(script_module)

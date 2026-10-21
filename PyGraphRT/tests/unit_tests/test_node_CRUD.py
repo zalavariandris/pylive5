@@ -15,7 +15,7 @@ import pygraphrt as rt
 def module() -> ScriptModuleRT:
     module = ScriptModuleRT()
     module.set_script("def hello(): return 'Hello'")
-    module._evaluate()
+    module.evaluate()
     return module
 
 
@@ -48,7 +48,7 @@ class Test_CreateNode:
     def test_create_node_with_op(self, graph: rt.GraphDefinitionRT) -> None:
         im = ScriptModuleRT()
         im.set_script("def identity(x): return x")
-        im._evaluate()
+        im.evaluate()
         op = im.get_operator_by_name("identity")
         
         node_ref = graph._create_node(op)
@@ -85,7 +85,7 @@ class Test_UpdateNode:
 
         im = ScriptModuleRT()
         im.set_script("def hello(): return 'Hello'")
-        im._evaluate()
+        im.evaluate()
         op = im.get_operator_by_name("hello")
         graph._update_node(node, op, [], {})
 
@@ -98,7 +98,7 @@ class Test_UpdateNode:
 
         im = ScriptModuleRT()
         im.set_script("def func(x): return x")
-        im._evaluate()
+        im.evaluate()
         op = im.get_operator_by_name("func")
         graph._update_node(node, op, [42], {})
 
@@ -112,7 +112,7 @@ class Test_UpdateNode:
 
         im = ScriptModuleRT()
         im.set_script("def func(x, y): return x + y")
-        im._evaluate()
+        im.evaluate()
         op = im.get_operator_by_name("func")
         graph._update_node(node, op, [1], {"y": 2})
 

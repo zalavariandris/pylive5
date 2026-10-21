@@ -31,12 +31,12 @@ def test_smoke_hello_world(subtests, tmp_path)->None:
 
     # with subtests.test(msg="Create and execute hello"):
     im.set_script("def hello( ") 
-    im._evaluate()
+    im.evaluate()
     assert 'hello' not in [op.get_name() for op in im.operators()], "The broken 'hello' operator should not exist yet."
 
     # with subtests.test("Finish the 'hello' operator"):
     im.set_script("def hello(): return 'Hello!'") 
-    im._evaluate()
+    im.evaluate()
     assert 'hello' in [op.get_name() for op in im.operators()], "The 'hello' operator should exist after a valid script was set."
 
     # with subtests.test("Add empty 'hello' node with the op"):
@@ -47,14 +47,14 @@ def test_smoke_hello_world(subtests, tmp_path)->None:
 
     # with subtests.test("Break the 'hello' operator"):
     im.set_script("def hello( ")
-    im._evaluate()
+    im.evaluate()
     assert 'hello' not in [op.get_name() for op in im.operators()], "The broken 'hello' operator should not exist yet."
     assert isinstance(executor.request(hello_node), ExecutionFailure)
     assert hello_node in nodes_invalidated_tracker[-1], "The 'hello' node should be tracked as invalidated after the operator is broken."
 
     # with subtests.test("fix the hello op"):
     im.set_script("def hello(): return 'Hello!'") 
-    im._evaluate()
+    im.evaluate()
     assert 'hello' in [op.get_name() for op in im.operators()], "The 'hello' operator should exist after being fixed."
     assert hello_node in nodes_invalidated_tracker[-1], "The 'hello' node should be tracked as invalidated after the operator is fixed."
     assert executor.request(hello_node).result == 'Hello!', "The 'hello' node should execute successfully after the operator is fixed."
@@ -70,7 +70,7 @@ def test_smoke_hello_world(subtests, tmp_path)->None:
         def hello():
             return 'Hello!'
     """))
-    im._evaluate()
+    im.evaluate()
     the_name_op =     im.get_operator_by_name("the_name")
     the_greeting_op = im.get_operator_by_name("the_greeting")
 
@@ -88,7 +88,7 @@ def test_smoke_hello_world(subtests, tmp_path)->None:
         def hello(name: str, greeting: str = 'Hello'):
             return f"{greeting} {name}!"
     """))
-    im._evaluate()
+    im.evaluate()
 
     assert hello_node in nodes_invalidated_tracker[-1], "The 'hello' node should be tracked as invalidated after the operator is updated."
     assert isinstance(executor.request(hello_node), ExecutionFailure)

@@ -26,7 +26,7 @@ def test_initialization():
     def mult(a, b):
         return a * b
     """))
-    sm._evaluate()
+    sm.evaluate()
     assert sm is not None
 
     assert set(op.name for op in sm.operators()) == {"one", "pow", "mult"}
@@ -44,13 +44,13 @@ def test_changing_all_updates_exports_and_signals():
     source = "def public(): return 1\ndef _private(): return 2\n"
     module = ScriptModuleRT("tools")
     module.set_script(source)
-    module._evaluate()
+    module.evaluate()
     added, removed = [], []
     module.operators_added.connect(added.append)
     module.operators_removed.connect(removed.append)
 
     module.set_script(source + "__all__ = ['_private']")
-    module._evaluate()
+    module.evaluate()
     assert [ref.name for ref in module.operators()] == ["_private"]
     assert added == [[OperatorRef(module, "_private")]]
     assert removed == [[OperatorRef(module, "public")]]
@@ -59,7 +59,7 @@ def test_changing_all_updates_exports_and_signals():
     added.clear()
     removed.clear()
     module.set_script(source)
-    module._evaluate()
+    module.evaluate()
     assert [ref.name for ref in module.operators()] == ["public"]
     assert added == [[OperatorRef(module, "public")]]
     assert removed == [[OperatorRef(module, "_private")]]
@@ -87,18 +87,18 @@ def test_invalid_all_records_failure_and_removes_operators(
     invalid_source = source + f"__all__ = {exports}"
     initial = ScriptModuleRT("tools")
     initial.set_script(invalid_source)
-    initial._evaluate()
+    initial.evaluate()
 
     assert isinstance(initial.get_status(), error_type)
     assert list(initial.operators()) == []
 
     module = ScriptModuleRT("tools")
     module.set_script(source)
-    module._evaluate()
+    module.evaluate()
     removed = []
     module.operators_removed.connect(removed.append)
     module.set_script(invalid_source)
-    module._evaluate()
+    module.evaluate()
     assert isinstance(module.get_status(), error_type)
     assert list(module.operators()) == []
     assert removed == [[OperatorRef(module, "public")]]
@@ -108,7 +108,7 @@ def test_invalid_all_records_failure_and_removes_operators(
 def test_explicit_exports_allow_private_names_and_empty_containers(exports: str) -> None:
     module = ScriptModuleRT()
     module.set_script("def _private(): return 1\n" + f"__all__ = {exports}")
-    module._evaluate()
+    module.evaluate()
     assert module.get_status() == "VALID"
     expected = ["_private"] if "_private" in exports else []
     assert [ref.name for ref in module.operators()] == expected
@@ -125,7 +125,7 @@ def test_export_discovery_does_not_call_module_getattr(exports: str) -> None:
         def __getattr__(name):
             raise RuntimeError('Export discovery must not call this')
     """) + exports)
-    module._evaluate()
+    module.evaluate()
     if "dynamic" in exports:
         assert isinstance(module.get_status(), AttributeError)
         assert "dynamic" in str(module.get_status())
@@ -155,7 +155,7 @@ def test_only_python_functions_become_operators(explicit: bool) -> None:
         source += "__all__ = ['CallableObject', 'instance', 'constant', 'builtin', 'dedent', 'op']"
     module = ScriptModuleRT()
     module.set_script(source)
-    module._evaluate()
+    module.evaluate()
     assert module.get_status() == "VALID"
     assert [ref.name for ref in module.operators()] == ["op"]
     assert OperatorRef(module, "op")() == 1
@@ -188,7 +188,7 @@ def test_updating_script():
     def mult(a, b):
         return a * b
     """))
-    sm._evaluate()
+    sm.evaluate()
 
     # Update the script
     sm.set_script(dedent("""\
@@ -201,7 +201,7 @@ def test_updating_script():
         def mult(a, b):
             return a * b
         """))
-    sm._evaluate()
+    sm.evaluate()
 
     assert set([op.name for op in sm.operators()]) == {"two", "pow", "mult"}
 
@@ -235,13 +235,13 @@ def test_updating_script_with_syntaxerror():
     
     sm = ScriptModuleRT("mathy")
     sm.set_script(source_without_syntaxerror)
-    sm._evaluate()
+    sm.evaluate()
     sm.set_script(source_with_syntaxerror)
-    sm._evaluate()
+    sm.evaluate()
 
     expected_sm = ScriptModuleRT("mathy")
     expected_sm.set_script(source_with_syntaxerror)
-    expected_sm._evaluate()
+    expected_sm.evaluate()
     expected_operators = expected_sm.operators()
     
     assert sm.operators() == expected_operators
@@ -260,7 +260,7 @@ def test_updating_script_signals():
     def mult(a, b):
         return a * b
     """))
-    sm._evaluate()
+    sm.evaluate()
 
     removed = []
     added = []
@@ -292,7 +292,7 @@ def test_updating_script_signals():
         def mult(a, b):
             return a * b
         """))
-    sm._evaluate()
+    sm.evaluate()
 
     assert added == [OperatorRef(sm, "two")]
     assert removed == [OperatorRef(sm, "one")]
@@ -309,7 +309,7 @@ def test_updating_script_signals():
 def test_initial_module_state(source, expected_state):
     module = ScriptModuleRT("tools")
     module.set_script(source)
-    module._evaluate()
+    module.evaluate()
     assert module.get_status() == expected_state, f"Expected state {expected_state}, but got {module.get_status()}"
 
 # REVIEW UNNECESSARY / REMOVE: the syntax-diagnostic test above already sets
@@ -317,7 +317,7 @@ def test_initial_module_state(source, expected_state):
 def test_initial_module_state_with_error():
     module = ScriptModuleRT("tools")
     module.set_script("broken(:")
-    module._evaluate()
+    module.evaluate()
     assert isinstance(module.get_status(), SyntaxError)
 
 from collections import Counter
@@ -329,7 +329,7 @@ def test_state_changed_reports_committed_state_only_on_transitions():
     valid_source = "def one(): return 1"
     module = ScriptModuleRT("tools")
     module.set_script(valid_source)
-    module._evaluate()
+    module.evaluate()
     assert module.get_status() == "VALID"
 
     counter = 0
@@ -339,27 +339,27 @@ def test_state_changed_reports_committed_state_only_on_transitions():
     module.state_changed.connect(increment_counter)
 
     module.set_script(valid_source + "\n# valid edit")
-    module._evaluate()
+    module.evaluate()
     assert module.get_status() == "VALID"
     assert counter == 0, f"valid to valid transition should not trigger state_changed"
 
     module.set_script(valid_source + "\n# another valid edit")
-    module._evaluate()
+    module.evaluate()
     assert module.get_status() == "VALID"
     assert counter == 0, f"valid to valid transition should not trigger state_changed"
 
     module.set_script("def broken(:")
-    module._evaluate()
+    module.evaluate()
     assert isinstance(module.get_status(), SyntaxError)
     assert counter == 1, f"valid to invalid transition should trigger state_changed"
 
     module.set_script("def broken(hello")
-    module._evaluate()
+    module.evaluate()
     assert isinstance(module.get_status(), SyntaxError)
     assert counter == 2, f"erros message of state has changed, therefor a state change should have been triggered"
 
     module.set_script(valid_source)
-    module._evaluate()
+    module.evaluate()
     assert module.get_status() == "VALID"
     assert counter == 3, f"Expected counter to be 2, but got {counter}"
 
@@ -368,11 +368,11 @@ def test_state_changed_reports_committed_state_only_on_transitions():
 def test_failed_script_emits_removed_operator_refs(invalid_script):
     module = ScriptModuleRT("tools")
     module.set_script("def one(): return 1")
-    module._evaluate()
+    module.evaluate()
     removed = []
     module.operators_removed.connect(removed.append)
     module.set_script(invalid_script)
-    module._evaluate()
+    module.evaluate()
     assert removed == [[OperatorRef(module, "one")]]
     assert removed[0][0].get_value() is None
 
@@ -391,7 +391,7 @@ def test_script_errors_notify_observers_after_committing(
 ) -> None:
     module = module_class()
     module.set_script("def one(): return 1")
-    module._evaluate()
+    module.evaluate()
     observed: list[tuple[str, str, object, list[OperatorRef]]] = []
 
     def record(signal: str) -> None:
@@ -401,14 +401,14 @@ def test_script_errors_notify_observers_after_committing(
     module.operators_removed.connect(lambda _: record("removed"))
     module.script_changed.connect(lambda: record("script"))
     module.set_script(source)
-    module._evaluate()
+    module.evaluate()
 
     error = module.get_status()
     assert isinstance(error, error_type)
     assert observed == [(signal, source, error, []) for signal in ("state", "removed", "script")]
 
     module.set_script("def recovered(): return 2")
-    module._evaluate()
+    module.evaluate()
     assert module.get_status() == "VALID"
     assert OperatorRef(module, "recovered")() == 2
 
@@ -422,13 +422,13 @@ def test_script_interrupts_propagate_without_committing(exception_name: str) -> 
     module = ScriptModuleRT()
     source = "def one(): return 1"
     module.set_script(source)
-    module._evaluate()
+    module.evaluate()
     exception_type = KeyboardInterrupt if exception_name == "KeyboardInterrupt" else SystemExit
 
     with pytest.raises(exception_type):
         module
         (f"raise {exception_name}()")
-        module._evaluate()
+        module.evaluate()
 
     assert module.get_source() == source
     assert module.get_status() == "VALID"

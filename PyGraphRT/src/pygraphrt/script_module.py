@@ -1,22 +1,17 @@
 """Runtime representation of a script module.
 """
 
-import sys
+
 from types import FunctionType, ModuleType
-from qtpy.QtCore import QRunnable
+import concurrent
+import weakref
+from qtpy.QtCore import QRunnable, QThreadPool
 from typing import Callable, Iterable, Literal, Any
 import inspect
 from pathlib import Path
-
 from qtpy.QtCore import Signal, QObject
-
-
 from myutils.source_diff import ast_functions_diff
-
-
-
 from .abstract_module_rt import AbstractModule
-
 from .errors import ModuleError, ScriptSyntaxError
 from .errors import ScriptEvaluationError
 
@@ -94,12 +89,13 @@ def _get_all_callables_from_script(
         return value.__module__ == name
 
     objects: Iterable[tuple[str, Any]] = namespace.items()
+    objects = filter(is_callable, objects)
     if "__all__" in namespace:
         objects = filter(is_exported, objects)
     else:
         objects = filter(is_public, objects)
         objects = filter(is_locally_defined, objects)
-    objects = filter(is_callable, objects)
+    
 
     # if defined_only:
     #     objects = filter(is_locally_defined, objects)
@@ -108,7 +104,7 @@ def _get_all_callables_from_script(
 
 from concurrent.futures import Future
 
-class _ScriptEvaluationJob(QRunnable):
+class _ScriptEvaluationRunnable(QRunnable):
     def __init__(self, script: str, name: str, future: Future[dict[str, FunctionType]]) -> None:
         super().__init__()
 
@@ -121,11 +117,30 @@ class _ScriptEvaluationJob(QRunnable):
             return
 
         try:
+            print(f"Evaluating script {self._name}...")
             results = _get_all_callables_from_script(self._script, name=self._name)
-        except BaseException as error:
+            print(f"Script {self._name} evaluated successfully.")
+        except Exception as error:
             self._future.set_exception(error)
         else:
             self._future.set_result(results)
+
+
+class FunctionRunnable(QRunnable):
+    def __init__(self, func: FunctionType) -> None:
+        super().__init__()
+        self._func = func
+
+    def run(self) -> None:
+        if not self._future.set_running_or_notify_cancel():
+            return
+        try:
+            result = self._func()
+        except BaseException as error:
+            self._future.set_exception(error)
+        else:
+            self._future.set_result(result)
+
 
 
 class ScriptModuleRT(AbstractModule):
@@ -165,32 +180,8 @@ class ScriptModuleRT(AbstractModule):
         
         self._script = script
         self.script_changed.emit()
-        
-    def _evaluate(self) -> None:
-        #todo: add a force replace all functions, to replace all functions.
-        #.   note: the current implementation might miss behavior changes in some situations.
-        """update operators based on the current script and emit relevant signals"""
-        name: str | None = self.get_display_name()
-        execution_name: str = name if name is not None else "<script>"
-        new_state: Literal["VALID"] | Exception
-        try:
-            all_functions_from_script = _get_all_callables_from_script(self._script, name=execution_name)
 
-        except ScriptEvaluationError as error:
-            new_state = error
-            all_functions_from_script = {}
-            # indicate error by setting the state to the caught exception
-            self._state = new_state
-
-        except ModuleError as error:
-            new_state = error
-            all_functions_from_script = {}
-            # indicate error by setting the state to the caught exception
-            self._state = new_state
-
-        else:
-            new_state = "VALID"
-
+    def __apply_functions(self, all_functions_from_script: dict[str, FunctionType], new_state: Literal["VALID"] | Exception) -> None:
         prev_names = self._functions_cache.keys()
         next_names = all_functions_from_script.keys()
         removed_names = sorted(prev_names - next_names)
@@ -231,9 +222,62 @@ class ScriptModuleRT(AbstractModule):
             self.operators_changed.emit([ScriptOperatorRef(self, name) for name in changed_names])
         self._evaluated_script = self._script
 
-    def request_evaluation(self) -> None:
-        """Request the module to evaluate its current script."""
-        raise NotImplementedError()
+    def evaluate(self) -> None:
+        #todo: add a force replace all functions, to replace all functions.
+        #.   note: the current implementation might miss behavior changes in some situations.
+        """update operators based on the current script and emit relevant signals"""
+        name: str | None = self.get_display_name()
+        execution_name: str = name if name is not None else "<script>"
+        new_state: Literal["VALID"] | Exception
+        try:
+            all_functions_from_script = _get_all_callables_from_script(self._script, name=execution_name)
+
+        except ScriptEvaluationError as error:
+            new_state = error
+            all_functions_from_script = {}
+            # indicate error by setting the state to the caught exception
+            self._state = new_state
+
+        except ModuleError as error:
+            new_state = error
+            all_functions_from_script = {}
+            # indicate error by setting the state to the caught exception
+            self._state = new_state
+
+        else:
+            new_state = "VALID"
+
+        self.__apply_functions(all_functions_from_script, new_state)
+
+    def request_evaluate(self) -> concurrent.futures.Future:
+        """Request the module to evaluate its current script.
+        returns """
+        self._pool:QThreadPool = QThreadPool.globalInstance()
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        name: str | None = self.get_display_name()
+        execution_name: str = name if name is not None else "<script>"
+        runnable = _ScriptEvaluationRunnable(self._script, execution_name, future)
+        self._pool.start(runnable)
+
+        weak_self = weakref.ref(self)
+        def on_done(fut: concurrent.futures.Future) -> None:
+            # this is running on the worker thread
+            try:
+                all_the_new_functions = fut.result()
+                self_ref = weak_self()
+                if self_ref is not None:
+                    self_ref.__apply_functions(all_the_new_functions, "VALID")
+                print(all_the_new_functions)
+            except Exception as e:
+                # fut.result will rerais the exception if occured during script evaluation
+                import traceback
+                traceback.print_exc()
+                self_ref = weak_self()
+                if self_ref is not None:
+                    self_ref._state = e
+                    self_ref.__apply_functions(dict(), "VALID")
+        future.add_done_callback(on_done)
+        return future
         
     def get_status(self) -> Literal["VALID"] | Exception:
         """Return 'VALID' or the stored compilation, execution, or export error."""

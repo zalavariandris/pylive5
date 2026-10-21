@@ -62,13 +62,13 @@ def test_edits_write_source_before_notifying_observers(tmp_path):
     module.script_changed.connect(lambda: observed.append(path.read_text(encoding="utf-8")))
     source = "def op(): return 'Mása'"
     module.set_script(source)
-    module._evaluate()
+    module.evaluate()
     assert path.read_text(encoding="utf-8") == source
     assert module.get_source() == source
     assert observed == [source]
 
     module.set_script("def op(:")
-    module._evaluate()
+    module.evaluate()
     assert path.read_text(encoding="utf-8") == "def op(:"
     assert isinstance(module.get_status(), SyntaxError)
 
@@ -106,7 +106,7 @@ def test_failed_write_does_not_change_runtime_or_emit_success(tmp_path, monkeypa
     monkeypatch.setattr(Path, "write_text", denied)
     with pytest.raises(PermissionError):
         module.set_script("def op(): return 2")
-        module._evaluate()
+        module.evaluate()
     assert module.get_source() == source
     assert path.read_text(encoding="utf-8") == source
     assert changes == []
@@ -121,7 +121,7 @@ def test_invalid_value_does_not_touch_file(tmp_path):
     module = ImportModuleRT(str(path))
     with pytest.raises(TypeError):
         module.set_script(None)
-        module._evaluate()
+        module.evaluate()
     assert path.read_text(encoding="utf-8") == "original"
 
 # REVIEW OUTDATED / MERGE: reload now wraps FileNotFoundError, and the title

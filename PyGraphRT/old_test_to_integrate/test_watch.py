@@ -12,7 +12,7 @@ def test_watch_triggers_when_scriptmodule_update():
     def foo() -> int:
         return 42
     """))
-    sm._evaluate()
+    sm.evaluate()
     op  =sm.get_operator_by_name("foo")
 
     G = GraphDefinitionRT()
@@ -30,7 +30,7 @@ def test_watch_triggers_when_scriptmodule_update():
     def foo(val) -> int:
         return val
     """))
-    sm._evaluate()
+    sm.evaluate()
 
     # assert
     assert counter == 1

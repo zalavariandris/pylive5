@@ -18,7 +18,7 @@ def view(qtbot: QtBot) -> ModuleDetailsView:
     for name in ("first", "second"):
         module = ScriptModuleRT(name)
         module.set_script(f"value = {name!r}")
-        module._evaluate()
+        module.evaluate()
         registry.add_module(module)
     model = ModulesOperatorsTreeModel()
     model.setSourceRegistry(registry)

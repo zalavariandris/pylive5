@@ -138,7 +138,7 @@ def test_operator_reload_updates_rows_defaults_and_annotations(qtmodeltester, ma
     registry = rt.ModuleRegistry()
     module = rt.ScriptModuleRT("test")
     module.set_script("def operation(first: int = 1, last: int = 3): return first + last")
-    module._evaluate()
+    module.evaluate()
     registry.add_module(module)
     graph = rt.GraphDefinitionRT()
     graph._create_node(ScriptOperatorRef(module, "operation"))
@@ -152,7 +152,7 @@ def test_operator_reload_updates_rows_defaults_and_annotations(qtmodeltester, ma
     module.set_script(
         "def operation(first: float = 1.5, middle: int = 2, last: int = 4): return first + middle + last"
     )
-    module._evaluate()
+    module.evaluate()
     assert model.rowCount(parent) == 3
     assert last.isValid() and last.row() == 2
     assert last.data() == "4"

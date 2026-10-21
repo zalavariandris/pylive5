@@ -80,13 +80,22 @@ class PyFlow5DocumentWindow(QWidget):
 
         # Modules Panel
         ## modules list
-        self._modules_listview = QListView(self)
-        self._modules_listview.setMouseTracking(True)
-        self._modules_listview.setFixedWidth(100)
-        self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._modules_listview.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._modules_listview.customContextMenuRequested.connect(self._show_modules_context_menu)
-        self._modules_listview.setIconSize(QSize(14, 14))
+        # self._modules_listview = QListView(self)
+        # self._modules_listview.setMouseTracking(True)
+        # self._modules_listview.setFixedWidth(100)
+        # self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        # self._modules_listview.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        # self._modules_listview.customContextMenuRequested.connect(self._show_modules_context_menu)
+        # self._modules_listview.setIconSize(QSize(14, 14))
+        # Module Operator Tree panel
+        self._module_operator_tree_view = QTreeView(self)
+        self._module_operator_tree_view.setFixedWidth(100)
+        self._module_operator_tree_view.setMouseTracking(True)
+        self._module_operator_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._module_operator_tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._module_operator_tree_view.customContextMenuRequested.connect(self._show_modules_context_menu)
+        self._module_operator_tree_view.setIconSize(QSize(14, 14))
+
 
         ## module details
         self._module_details_view = ModuleDetailsView(self)
@@ -95,7 +104,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._modules_panel = QWidget(self)
         module_panel_layout = QHBoxLayout()
         self._modules_panel.setLayout(module_panel_layout)
-        module_panel_layout.addWidget(self._modules_listview, 0)
+        module_panel_layout.addWidget(self._module_operator_tree_view, 0)
         module_panel_layout.addWidget(self._module_details_view, 1)
         
         # Graph View
@@ -118,6 +127,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._node_inlet_tree_view.setItemDelegateForColumn(1, self._node_input_delegate)
         self._node_inlet_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
+        
         # Node Inspector
         self._node_inspector = NodeInspectorView(self)
         self._node_inspector.setFieldDelegate(NodeInputFieldDelegate(parent=self))
@@ -188,7 +198,8 @@ class PyFlow5DocumentWindow(QWidget):
         document.isModifiedChanged.connect(self.updateWindowTitle)
         document.filePathChanged.connect(self.updateWindowTitle)
 
-        self._modules_listview.setModel(document.modules_model)
+        # self._modules_listview.setModel(document.modules_model)
+        self._module_operator_tree_view.setModel(document.modules_model)
         self._module_details_view.setModel(document.modules_model)
         self._graph_view.setModel(document.graph_model)
         self._node_inlet_tree_view.setModel(document.node_inlet_tree_adapter)
@@ -198,7 +209,8 @@ class PyFlow5DocumentWindow(QWidget):
 
         self.modulesselection_model = QItemSelectionModel(document.modules_model, self)
         self._selection_models.append(self.modulesselection_model)
-        self._modules_listview.setSelectionModel(self.modulesselection_model)
+        # self._modules_listview.setSelectionModel(self.modulesselection_model)
+        self._module_operator_tree_view.setSelectionModel(self.modulesselection_model)
         self._module_details_view.setSelectionModel(self.modulesselection_model)
         self.graphselection_model = GraphSelectionModel(document.graph_model, self)
         self._selection_models.append(self.graphselection_model)
@@ -213,6 +225,8 @@ class PyFlow5DocumentWindow(QWidget):
         self._node_inspector.setSelectionModel(self.node_inlet_tree_selection_adapter)
         self._graph_view.setSelectionModel(self.graphselection_model)
         self.updateWindowTitle()
+
+        
         # Fitting changes the viewport; automatic layout would overwrite saved positions.
         self._fit_timer.start(0)
 

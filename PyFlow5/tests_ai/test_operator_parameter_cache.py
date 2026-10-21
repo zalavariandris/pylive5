@@ -17,7 +17,7 @@ def model_and_module(qapp: object) -> Iterator[tuple[PyGraphRTGraphModel, rt.Scr
     registry = rt.ModuleRegistry()
     module = rt.ScriptModuleRT("example")
     module.set_script("def operation(value: int = 1):\n    return value\n")
-    module._evaluate()
+    module.evaluate()
     registry.add_module(module)
     operator = module.get_operator_by_name("operation")
     graph._create_node(operator, name="first")
@@ -69,7 +69,7 @@ def test_script_changes_refresh_parameters_before_notifying_observers(
 
     model.inletsReset.connect(read_parameters)
     module.set_script("def operation(amount: float = 2.5):\n    return amount\n")
-    module._evaluate()
+    module.evaluate()
     assert observed_defaults == [2.5, 2.5]
 
 
@@ -80,13 +80,13 @@ def test_removed_operator_and_empty_parameters_refresh_when_restored(
     assert list(model.inlets("first")) == ["value"]
 
     module.set_script("")
-    module._evaluate()
+    module.evaluate()
     assert list(model.inlets("first")) == []
     module.set_script("def operation():\n    return 1\n")
-    module._evaluate()
+    module.evaluate()
     assert list(model.inlets("first")) == []
     module.set_script("def operation(label: str = 'ready'):\n    return label\n")
-    module._evaluate()
+    module.evaluate()
     assert list(model.inlets("first")) == ["label"]
     assert model.inletData("first", "label", InputDataRole.DefaultValueRole) == "ready"
 

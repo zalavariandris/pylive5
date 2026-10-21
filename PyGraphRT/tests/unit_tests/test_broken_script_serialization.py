@@ -48,7 +48,7 @@ def test_saving_broken_operators_than_load_back(tmp_path)->None:
     module.set_script(dedent("""\
         def hello(): return "bbom"
     """))
-    module._evaluate()
+    module.evaluate()
     registry.add_module(module)
 
     graph = GraphDefinitionRT()
@@ -61,7 +61,7 @@ def test_saving_broken_operators_than_load_back(tmp_path)->None:
     module.set_script(dedent("""\
         def hello(
     """))
-    module._evaluate()
+    module.evaluate()
 
     assert len(module.operators()) == 0
     assert len(graph.nodes()) == 1

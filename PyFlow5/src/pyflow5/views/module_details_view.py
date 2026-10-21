@@ -145,6 +145,11 @@ class ModuleDetailsView(QWidget):
 
     def _update_display(self, *, reset_editor: bool = False) -> None:
         current = self.currentIndex()
+        if not current.isValid():
+            return
+        while current.parent().isValid(): # find the root module
+            current = current.parent()
+        
         title = current.data(Qt.ItemDataRole.DisplayRole) if current.isValid() else "<No Selection>"
         source = current.data(ModulesOperatorsTreeModel.SourceRole)
         read_only = bool(current.data(ModulesOperatorsTreeModel.ReadOnlyRole))

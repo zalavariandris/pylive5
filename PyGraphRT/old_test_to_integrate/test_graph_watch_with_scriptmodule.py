@@ -27,7 +27,7 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
     def unused():
         return 0
     """))
-    sm._evaluate()
+    sm.evaluate()
 
     G = rt.GraphDefinitionRT()
     E = rt.GraphExecutorRT(G)
@@ -60,7 +60,7 @@ def test_script_module_function_changed(a_value, b_value, unused_value, expected
         def unused():
             return {unused_value}
         """))
-        sm._evaluate()
+        sm.evaluate()
 
         assert len(track_changes) == expected_changes
         assert E.request(out) == a_value + b_value
@@ -75,7 +75,7 @@ def ancestor_graph():
     graph = rt.GraphDefinitionRT()
     module = ScriptModuleRT("source")
     module.set_script("def value(): return 1")
-    module._evaluate()
+    module.evaluate()
     ancestor = graph.node()(OperatorRef(module, "value"))
 
     @graph.node(value=ancestor)
@@ -143,11 +143,11 @@ def test_setting_ancestor_inputs_rewires_watched_modules(ancestor_graph):
     # Both scripts export the same name: matching must include module identity.
     other_module = ScriptModuleRT("other")
     other_module.set_script("def value(): return 4")
-    other_module._evaluate()
+    other_module.evaluate()
     other = graph.node()(OperatorRef(other_module, "value"))
     bridge_module = ScriptModuleRT("bridge")
     bridge_module.set_script("def identity(value): return value")
-    bridge_module._evaluate()
+    bridge_module.evaluate()
     bridge = graph.node(value=ancestor)(OperatorRef(bridge_module, "identity"))
     output.set_inputs(value=bridge)
     assert changes == [True]
@@ -165,15 +165,15 @@ def test_setting_ancestor_inputs_rewires_watched_modules(ancestor_graph):
     module._evaluate()
     assert changes == []
     other_module.set_script("def value(): return 5")
-    other_module._evaluate()
+    other_module.evaluate()
     assert changes == [True]
     assert E.request(output) == 50
     changes.clear()
     other_module.set_script("")
-    other_module._evaluate()
+    other_module.evaluate()
     assert changes == [True]
     other_module.set_script("def value(): return 6")
-    other_module._evaluate()
+    other_module.evaluate()
     assert changes == [True, True]
     assert E.request(output) == 60
     changes.clear()
@@ -183,5 +183,5 @@ def test_setting_ancestor_inputs_rewires_watched_modules(ancestor_graph):
     assert E.request(output) == 80
     changes.clear()
     other_module.set_script("def value(): return 9")
-    other_module._evaluate()
+    other_module.evaluate()
     assert changes == []

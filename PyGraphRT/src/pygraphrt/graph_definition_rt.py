@@ -94,9 +94,9 @@ class GraphDefinitionRT(QObject):
         self._out_links: dict[NodeRef, dict[NodeRef, set[int | str]]] = {}
         self._operator_to_nodes = ManyToOneRelation[NodeRef, AbstractOperator]()
 
-    def setLocalDefinitions(self, test: str) -> None:
-        self._local.set_script(test)
-        self._local._evaluate()
+    # def setLocalDefinitions(self, test: str) -> None:
+    #     self._local.set_script(test)
+    #     self._local.evaluate()
 
     def local(self) -> ScriptModuleRT:
         """Return the local script module containing user-defined functions."""

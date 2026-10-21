@@ -108,7 +108,7 @@ def test_required_tuple_and_tree_delegate_keep_values_unset_until_edited(
 ) -> None:
     module = rt.ScriptModuleRT("vfxops.vfxops")
     module.set_script("def operation(value: tuple[int, int]): return value")
-    module._evaluate()
+    module.evaluate()
     editors = EditorRegistry()
     register_vfxops_editors(editors)
     node, model, form = make_provider_form(module, editors)
@@ -160,13 +160,13 @@ def test_context_for_function_operators_and_connected_inputs(make_input_model, q
 def test_live_tuple_annotation_changes_refresh_component_count(make_provider_form) -> None:
     module = rt.ScriptModuleRT("vfxops.vfxops")
     module.set_script("def operation(value: tuple[float, float] = (1, 2)): return value")
-    module._evaluate()
+    module.evaluate()
     editors = EditorRegistry()
     register_vfxops_editors(editors)
     node, _, form = make_provider_form(module, editors)
     form._mapper.mappedWidgetAt(0).editor.findChildren(QDoubleSpinBox)[0].setValue(5.0)
     module.set_script("def operation(value: tuple[float, float, float] = (1, 2, 3)): return value")
-    module._evaluate()
+    module.evaluate()
     wrapper = form._mapper.mappedWidgetAt(0)
     assert len(wrapper.editor.findChildren(QDoubleSpinBox)) == 3
     assert wrapper.binding.get_value() == (5.0, 2.0, 0.0)
