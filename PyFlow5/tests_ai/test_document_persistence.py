@@ -57,6 +57,7 @@ def test_content_changes_mark_modified(make_document: Callable) -> None:
     assert document.isModified()
     document.setModified(False)
     document._engine._registry.modules()[0].set_script("# comment\ndef operation(value=42): return value\n")
+    document._engine._registry.modules()[0]._evaluate()
     assert document.isModified()
     document.setModified(False)
     document.modules_model.addEmbeddedModule()

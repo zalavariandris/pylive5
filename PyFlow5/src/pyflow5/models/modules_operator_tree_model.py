@@ -294,6 +294,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             return False
 
         module.set_script(value)
+        module._evaluate()
         self.dataChanged.emit(index, index, [self.SourceRole])
         return True
 
@@ -306,6 +307,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
         unique_name = generator("_local_")
         script_module = rt.ScriptModuleRT(name=unique_name)
         script_module.set_script("") 
+        script_module._evaluate()
         row = self.rowCount()
         self.beginInsertRows(QModelIndex(), row, row)
         self._registry.add_module(script_module)

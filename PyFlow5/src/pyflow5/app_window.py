@@ -214,6 +214,7 @@ class AppWindow(QMainWindow):
         if self._closed:
             event.accept()
             return
+                    
         if self._use_session:
             try:
                 self._session_path.parent.mkdir(parents=True, exist_ok=True)

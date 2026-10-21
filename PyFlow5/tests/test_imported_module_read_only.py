@@ -30,6 +30,7 @@ def test_import_stays_read_only_after_document_save_and_load(
 
     # Runtime edits are in memory; saving the document stores only the import path.
     module.set_script("def value() -> int: return 2\n")
+    module._evaluate()
     document_path = tmp_path / "graph.json"
     document.save(document_path)
     assert module_path.read_text(encoding="utf-8") == source

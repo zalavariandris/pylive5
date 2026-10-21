@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from concurrent.futures import Future
 from weakref import ref
 
-from .qt_threadpool_backend import QtThreadPoolExecutionBackend
+from .qtthreadpool_execution_backend import QtThreadPoolExecutionBackend
 from qtpy.QtCore import QObject, Qt, Signal, Slot
 
 from .graph_definition_rt import GraphDefinitionRT, NodeRef
@@ -15,13 +15,14 @@ from .core import (
     NodeExecution,
 )
 from .graph_invalidator import GraphInvalidator
-from .execution_backend import ExecutionBackend
+from .execution_backend_protocol import ExecutionBackend
 from . import execution_plan
 from .execution_plan import ExecutionPlan, ExecutionResults
 from .graph_cache import GraphCache
 from .module_registry import ModuleRegistry
 
-class GraphEvaluatorEngine(QObject):
+
+class GraphEngine(QObject):
     """Manage requests, cached results, and invalidation around an execution backend.
 
     Construct and use this object on the graph's owning thread. Requests are
@@ -58,6 +59,8 @@ class GraphEvaluatorEngine(QObject):
         self._registry = registry or ModuleRegistry(parent=self)
         self._backend = backend or QtThreadPoolExecutionBackend()
         self._cache = cache if cache is not None else GraphCache()
+
+        #
         self._invalidator = GraphInvalidator(
             self._graph, 
             self._registry, 
@@ -83,7 +86,7 @@ class GraphEvaluatorEngine(QObject):
     def graph(self) -> GraphDefinitionRT:
         return self._graph
 
-    def request(self, *targets: NodeRef) -> None:
+    def request_node(self, *targets: NodeRef) -> None:
         """Request outputs asynchronously, reusing valid cached values.
 
         Requesting again does not invalidate values or obsolete a running plan.
@@ -94,7 +97,7 @@ class GraphEvaluatorEngine(QObject):
         self._pending.update(targets)
         self._schedule()
 
-    def invalidate(self, *roots: NodeRef) -> None:
+    def invalidate_node(self, *roots: NodeRef) -> None:
         """Invalidate roots and their descendants without requesting new work.
 
         Use this for external changes that the graph invalidator cannot observe.
@@ -107,7 +110,7 @@ class GraphEvaluatorEngine(QObject):
             affected.update(self._graph.descendants(node))
         self._invalidate_nodes(affected)
 
-    def clear_cache(self) -> None:
+    def clear_node_cache(self) -> None:
         """Forget every output and obsolete in-flight work, without new requests."""
         self._ensure_open()
         self._revision += 1

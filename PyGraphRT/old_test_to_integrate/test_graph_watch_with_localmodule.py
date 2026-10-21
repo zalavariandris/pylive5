@@ -175,14 +175,17 @@ def test_script_operator_notifications():
 
     module = ScriptModuleRT("example")
     module.set_script("def output(): return 1")
+    module._evaluate()
     graph = rt.GraphDefinitionRT()
     node = graph.node()(OperatorRef(module, "output"))
     changes = []
     watcher = rt.watch(graph, node, lambda: changes.append(True))
     try:
         module.set_script("def output(): return 2")
+        module._evaluate()
         assert changes == [True]
         module.set_script("")
+        module._evaluate()
         assert watcher._running
         assert changes == [True, True]
     finally:

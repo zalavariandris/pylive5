@@ -96,6 +96,7 @@ class GraphDefinitionRT(QObject):
 
     def setLocalDefinitions(self, test: str) -> None:
         self._local.set_script(test)
+        self._local._evaluate()
 
     def local(self) -> ScriptModuleRT:
         """Return the local script module containing user-defined functions."""

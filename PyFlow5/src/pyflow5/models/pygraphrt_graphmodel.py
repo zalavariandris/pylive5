@@ -103,7 +103,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     EmptyInputValue = EmptyInletValue
 
     def __init__(self, 
-        engine: rt.GraphEvaluatorEngine,
+        engine: rt.GraphEngine,
         # graph: rt.GraphDefinitionRT, 
         # registry: rt.ModuleRegistry,
         # invalidator: rt.GraphInvalidator,

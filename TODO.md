@@ -2,16 +2,16 @@
 ## Features
 - [x] indicate file and document modifications
 - [x] session now restore opened file, as well as unsaved modifications
+- [ ] Run ScriptModuleEvaluation in the background
+- [ ] Tasks manager.
+- [ ] Task progressbar
 - [ ] create a method that compiles the graph into a native python script so its runnable without the app.
       also think about if we could compile it to a python app without using the PyGraphRT module.
       in case the graph processing library brakes, the graph will be still runnable.
 - [ ] Push+Pull node evaluation. pushing callables, than request image region or movie frame for example
-- [ ] Run ScriptModuleEvaluation in the background
 - [ ] allow hotreloading python modules
-- [ ] Tasks manager.
-- [ ] Task progressbar
 - [ ] node Execution progress (possibly as simply as using tqdl inside the operator code)
-- [ ]
+- [ ] Console, to interact with the nodegraph
 
 ## Tests
 - [ ] document open save saveAs, fileHandling
@@ -19,9 +19,9 @@
 - ...
 
 ## Architecture
+- [ ] consolidate ExecutionPlan items and GraphDefinition states
 - [x] now document is bound to a file.
 - [x] _Refactor documentwindow, document, and the appwindow_
-
       responsibilities:
       - AppWindow: document lifecycle and application/session state.
       - DocumentWindow: presentation, selection, and user interaction.

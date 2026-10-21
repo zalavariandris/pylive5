@@ -32,6 +32,7 @@ def broken_hello_world_script():
 def hello_world_graph(hello_world_script):
     module = rt.ScriptModuleRT()
     module.set_script(hello_world_script)
+    module._evaluate()
 
     graph = rt.GraphDefinitionRT()
 
@@ -46,6 +47,7 @@ def test_linkin_intermediate_nodes_invalidates_output_node():
     script_module = rt.ScriptModuleRT()
     script_module.operators_added
     script_module.set_script("dummy_script")
+    script_module._evaluate()
     module_registry = rt.ModuleRegistry()
     module_registry.add_module(script_module)
     graph = rt.GraphDefinitionRT()

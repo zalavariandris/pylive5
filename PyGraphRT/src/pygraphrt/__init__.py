@@ -37,11 +37,11 @@ from .graph_invalidator import GraphInvalidator
 from .graph_serializer import GraphSerializer, GraphDeserializer
 from .abstract_module_rt import ParameterData
 
-from .graph_evaluator_engine import GraphEvaluatorEngine
-from .execution_backend import InlineExecutionBackend
+from .graph_engine import GraphEngine
+from .inline_execution_backend import InlineExecutionBackend
 
 __all__ = [
-    "GraphEvaluatorEngine",
+    "GraphEngine",
     "AbstractOperator",
     "ParameterData",
     "AbstractModule",

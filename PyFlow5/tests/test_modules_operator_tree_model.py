@@ -20,6 +20,7 @@ import pygraphrt as rt
 def model(qtbot: QtBot, tmp_path: Path) -> ModulesOperatorsTreeModel:
     graph = rt.GraphDefinitionRT()
     graph.local().set_script("def same() -> int: return 1")
+    graph.local()._evaluate()
     model = ModulesOperatorsTreeModel()
     model.setGraph(graph)
     path = tmp_path / "operators.py"

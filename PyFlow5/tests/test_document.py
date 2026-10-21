@@ -10,6 +10,7 @@ import pygraphrt as rt
 #     document = PyFlowDocument()
 #     first = document._graph.local()
 #     first.set_script("def op(*args, **kwargs): return args, kwargs")
+#     first._evaluate()
 #     path = tmp_path / "tools.py"
 #     path.write_text("def op(): return 42", encoding="utf-8")
 #     document.importModule(str(path))

@@ -17,8 +17,10 @@ def test_restarted_watcher_tracks_rewired_dependencies(
     source = "def source(value: int) -> int: return value"
     old_module = ScriptModuleRT("old")
     old_module.set_script(source)
+    old_module._evaluate()
     new_module = ScriptModuleRT("new")
     new_module.set_script(source)
+    new_module._evaluate()
     old_node = graph.node(1)(OperatorRef(old_module, "source"), name="old_node")
     new_node = graph.node(2)(OperatorRef(new_module, "source"), name="new_node")
 
@@ -43,6 +45,7 @@ def test_restarted_watcher_tracks_rewired_dependencies(
 
         old_node.set_inputs(10)
         old_module.set_script(source.replace("return value", "return value * 10"))
+        old_module._evaluate()
         assert results == []
 
         # Test these independently: an input notification rebuilds subscriptions
@@ -51,11 +54,13 @@ def test_restarted_watcher_tracks_rewired_dependencies(
             new_node.set_inputs(20)
         else:
             new_module.set_script(source.replace("return value", "return value * 10"))
+            new_module._evaluate()
         assert results == [20]
 
         watcher.stop()
         new_node.set_inputs(30)
         new_module.set_script(source.replace("return value", "return value * 100"))
+        new_module._evaluate()
         assert results == [20]
     finally:
         watcher.stop()

@@ -9,11 +9,7 @@ from .execution_plan import ExecutionPlan, ExecutionResults
 
 
 class _ExecutionJob(QRunnable):
-    def __init__(
-        self,
-        plan: ExecutionPlan,
-        future: Future[ExecutionResults],
-    ) -> None:
+    def __init__( self, plan: ExecutionPlan, future: Future[ExecutionResults]) -> None:
         super().__init__()
         self._plan = plan
         self._future = future

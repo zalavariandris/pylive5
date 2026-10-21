@@ -40,7 +40,7 @@ class PyFlowDocument(QObject):
     filePathChanged = Signal(object)
 
     def __init__(self, 
-        engine: rt.GraphEvaluatorEngine|None=None,
+        engine: rt.GraphEngine|None=None,
         file: Path|None=None,
         parent:QObject|None=None
     ) -> None:
@@ -54,7 +54,7 @@ class PyFlowDocument(QObject):
             self._filestat = FileStamp.fromStat(self._filepath.stat())
 
         # RT
-        self._engine = engine or rt.GraphEvaluatorEngine(backend=rt.InlineExecutionBackend())
+        self._engine = engine or rt.GraphEngine(backend=rt.InlineExecutionBackend())
 
         # Models
         ## Graph Model
@@ -72,7 +72,7 @@ class PyFlowDocument(QObject):
         self.node_inlet_tree_adapter = PyGraphRTNodeInletTreeModelAdapter(self.graph_model)
         
         # Initial evaluation
-        self._engine.request(*self._engine._graph.nodes())
+        self._engine.request_node(*self._engine._graph.nodes())
 
         # Observe persisted content, not view refreshes or evaluation results.
         for signal in (
@@ -124,7 +124,7 @@ class PyFlowDocument(QObject):
     def requestNodeExecution(self, node_name: NodeName) -> None:
         node_rt = self.graph_model.mapToSource(node_name)
         if node_rt is not None:
-            self._engine.request(node_rt)
+            self._engine.request_node(node_rt)
 
     def close(self) -> None:
         """Stop evaluation and disconnect requests from the graph model."""
@@ -200,7 +200,7 @@ class PyFlowDocument(QObject):
             positions[name] = QPointF(*position)
         deserializer = rt.GraphDeserializer()
         registry, graph = deserializer.fromdict(data)
-        engine = rt.GraphEvaluatorEngine(graph=graph, registry=registry)
+        engine = rt.GraphEngine(graph=graph, registry=registry)
         doc = None
         try:
             doc = cls(engine=engine)

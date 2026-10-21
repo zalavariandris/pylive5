@@ -3,6 +3,7 @@
 
 import sys
 from types import FunctionType, ModuleType
+from qtpy.QtCore import QRunnable
 from typing import Callable, Iterable, Literal, Any
 import inspect
 from pathlib import Path
@@ -105,6 +106,27 @@ def _get_all_callables_from_script(
 
     return dict(objects)
 
+from concurrent.futures import Future
+
+class _ScriptEvaluationJob(QRunnable):
+    def __init__(self, script: str, name: str, future: Future[dict[str, FunctionType]]) -> None:
+        super().__init__()
+
+        self._script = script
+        self._name = name
+        self._future = future
+
+    def run(self) -> None:
+        if not self._future.set_running_or_notify_cancel():
+            return
+
+        try:
+            results = _get_all_callables_from_script(self._script, name=self._name)
+        except BaseException as error:
+            self._future.set_exception(error)
+        else:
+            self._future.set_result(results)
+
 
 class ScriptModuleRT(AbstractModule):
     """An editable script provides Operators
@@ -143,7 +165,6 @@ class ScriptModuleRT(AbstractModule):
         
         self._script = script
         self.script_changed.emit()
-        self._evaluate()
         
     def _evaluate(self) -> None:
         #todo: add a force replace all functions, to replace all functions.
@@ -154,16 +175,19 @@ class ScriptModuleRT(AbstractModule):
         new_state: Literal["VALID"] | Exception
         try:
             all_functions_from_script = _get_all_callables_from_script(self._script, name=execution_name)
+
         except ScriptEvaluationError as error:
             new_state = error
             all_functions_from_script = {}
             # indicate error by setting the state to the caught exception
             self._state = new_state
+
         except ModuleError as error:
             new_state = error
             all_functions_from_script = {}
             # indicate error by setting the state to the caught exception
             self._state = new_state
+
         else:
             new_state = "VALID"
 
@@ -206,6 +230,10 @@ class ScriptModuleRT(AbstractModule):
         if changed_names:
             self.operators_changed.emit([ScriptOperatorRef(self, name) for name in changed_names])
         self._evaluated_script = self._script
+
+    def request_evaluation(self) -> None:
+        """Request the module to evaluate its current script."""
+        raise NotImplementedError()
         
     def get_status(self) -> Literal["VALID"] | Exception:
         """Return 'VALID' or the stored compilation, execution, or export error."""

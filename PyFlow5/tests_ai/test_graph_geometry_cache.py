@@ -35,7 +35,7 @@ def make_model() -> PyGraphRTGraphModel:
         return value
 
     registry = rt.ModuleRegistry()
-    engine = rt.GraphEvaluatorEngine(graph, registry, backend=rt.InlineExecutionBackend())
+    engine = rt.GraphEngine(graph, registry, backend=rt.InlineExecutionBackend())
     model = PyGraphRTGraphModel(engine)
     for row, node in enumerate(model.nodes()):
         model.setNodePosition(node, QPointF(220, 80 + row * 120))
