@@ -1,6 +1,7 @@
 
 ## Features
-- [ ] indicate file and document modifications
+- [x] indicate file and document modifications
+- [x] session now restore opened file, as well as unsaved modifications
 - [ ] create a method that compiles the graph into a native python script so its runnable without the app.
       also think about if we could compile it to a python app without using the PyGraphRT module.
       in case the graph processing library brakes, the graph will be still runnable.
@@ -12,8 +13,14 @@
 - [ ] node Execution progress (possibly as simply as using tqdl inside the operator code)
 - [ ]
 
+## Tests
+- [ ] document open save saveAs, fileHandling
+- [ ] create a smoke test for the inspector. setting values, clear values, connect inputs, unconnect inputs, and the editor model binding. default values, empty values etc.
+- ...
+
 ## Architecture
-- [ ] _Refactor documentwindow, document, and the appwindow_
+- [x] now document is bound to a file.
+- [x] _Refactor documentwindow, document, and the appwindow_
 
       responsibilities:
       - AppWindow: document lifecycle and application/session state.
@@ -53,7 +60,7 @@
 - [ ] consider implementing structural change notifications for inlets in DirectionalGraphView5
 - [x] GraphView now uses lazy caching with (signal driven) explicit invalidation
 
-- [ ] create a smoke test for the inspector. setting values, clear values, connect inputs, unconnect inputs, and the editor model binding. default values, empty values etc.
+
 - [ ] review NodeRTInputRole. I think (most of) it could be moved to QDAGEditor5
       also, the QDAGEditor5 NodeDataRole and SocketDataRole needs a UserRoel to allow extension.
 - [x] consider *@vfxops* ImageRGBA using _Planar(CHW)_ channels layout instead of _Interleaved (HWC)_ layout

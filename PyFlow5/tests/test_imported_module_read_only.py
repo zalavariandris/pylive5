@@ -38,7 +38,7 @@ def test_import_stays_read_only_after_document_save_and_load(
         "type": "import", "path": str(module_path),
     }
 
-    restored = PyFlowDocument.fromfile(document_path)
+    restored = PyFlowDocument.open(document_path)
     restored_index = restored.modules_model.index(0, 0)
     assert restored_index.data(ModulesOperatorsTreeModel.ReadOnlyRole) is True
     assert restored_index.data(ModulesOperatorsTreeModel.SourceRole) == source

@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 import traceback
 from textwrap import dedent
 from typing import TYPE_CHECKING
@@ -11,7 +12,7 @@ from .node_input_delegate import NodeInputFieldDelegate, NodeInputLabelDelegate
 from .output_viewer import OutputViewer
 
 from pygraphrt.script_module import ScriptOperatorRef
-from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex, QSize
+from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex, QObject, QSize
 
 from qtpy.QtCore import (
     QPoint,
@@ -60,7 +61,7 @@ from qdageditor5.models.abstract_dag_model import (
     OutletName, 
     DirectionalLinkId
 )
-from ..models.pyflow5_document import PyFlowDocument
+from ..models.pyflow5_document import FileChangedError, PyFlowDocument
 from ..models.modules_operator_tree_model import ModulesOperatorsTreeModel
 
 # views
@@ -70,7 +71,10 @@ from .module_details_view import ModuleDetailsView
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 class PyFlow5DocumentWindow(QWidget):
-    def __init__(self, document: PyFlowDocument, parent=None) -> None:
+    fileOpened = Signal(object)
+    fileSaved = Signal(object)
+
+    def __init__(self, document: PyFlowDocument, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
 
@@ -162,52 +166,157 @@ class PyFlow5DocumentWindow(QWidget):
         # Connect the document to the views
         # private members
         self._document: PyFlowDocument | None = None
+        self._selection_models: list[QObject] = []
+        self._fit_timer = QTimer(self)
+        self._fit_timer.setSingleShot(True)
+        self._fit_timer.timeout.connect(self._graph_view.fitNodes)
         self._connectDocument(document)
+
+    def updateWindowTitle(self, *_args: object) -> None:
+        document = self._document
+        path = document.filePath() if document is not None else None
+        name = path.name if path is not None else "Untitled"
+        modified = document is not None and document.isModified()
+        self.setWindowTitle(f"PyFlow5 - {name}{'*' if modified else ''}")
 
     def _connectDocument(self, document: PyFlowDocument) -> None:
         if document is self._document:
             return
-        # Keep the old document alive until its views have disconnected.
-        if self._document is not None:
-            self._document.close()
-
-        if document:
-            self._modules_listview.setModel(document.modules_model)
-            self._module_details_view.setModel(document.modules_model)
-
-            self._graph_view.setModel(document.graph_model)
-            self._node_inlet_tree_view.setModel(document.node_inlet_tree_adapter)
-
-
-            self._viewer.setModel(document.node_inlet_tree_adapter)
-            
-            self._node_inspector.setModel(document.node_inlet_tree_adapter)
-            
-            self._node_inlet_tree_view.expandAll()
-
-            # selection
-            self.modulesselection_model = QItemSelectionModel(document.modules_model)
-            self._modules_listview.setSelectionModel(self.modulesselection_model)
-            self._module_details_view.setSelectionModel(self.modulesselection_model)
-            self.graphselection_model = GraphSelectionModel(document.graph_model)
-            self.graphselection_model.currentNodeChanged.connect(
-                lambda current, previous: self.document().requestNodeExecution(current)
-            )
-            self.node_inlet_tree_selection_adapter = NodeInletTreeSelectionModelAdapter(document.node_inlet_tree_adapter)
-            self.node_inlet_tree_selection_adapter.setSourceSelection(self.graphselection_model)
-            self._node_inlet_tree_view.setSelectionModel(self.node_inlet_tree_selection_adapter)
-            self._viewer.setSelectionModel(self.node_inlet_tree_selection_adapter)
-            self._node_inspector.setSelectionModel(self.node_inlet_tree_selection_adapter)
-            document.nodesInvalidated.connect(self._on_nodes_invalidated)
-
-            self._graph_view.setSelectionModel(self.graphselection_model)
-
+        self._disconnectDocument()
         self._document = document
-        def layout_and_fit_nodes():
-            self._graph_view.layout_nodes()
-            self._graph_view.fitNodes()
+        document.nodesInvalidated.connect(self._on_nodes_invalidated)
+        document.isModifiedChanged.connect(self.updateWindowTitle)
+        document.filePathChanged.connect(self.updateWindowTitle)
 
-        QTimer.singleShot(0, layout_and_fit_nodes)
+        self._modules_listview.setModel(document.modules_model)
+        self._module_details_view.setModel(document.modules_model)
+        self._graph_view.setModel(document.graph_model)
+        self._node_inlet_tree_view.setModel(document.node_inlet_tree_adapter)
+        self._viewer.setModel(document.node_inlet_tree_adapter)
+        self._node_inspector.setModel(document.node_inlet_tree_adapter)
+        self._node_inlet_tree_view.expandAll()
+
+        self.modulesselection_model = QItemSelectionModel(document.modules_model, self)
+        self._selection_models.append(self.modulesselection_model)
+        self._modules_listview.setSelectionModel(self.modulesselection_model)
+        self._module_details_view.setSelectionModel(self.modulesselection_model)
+        self.graphselection_model = GraphSelectionModel(document.graph_model, self)
+        self._selection_models.append(self.graphselection_model)
+        self.graphselection_model.currentNodeChanged.connect(self._onCurrentNodeChanged)
+        self.node_inlet_tree_selection_adapter = NodeInletTreeSelectionModelAdapter(
+            document.node_inlet_tree_adapter, self,
+        )
+        self._selection_models.append(self.node_inlet_tree_selection_adapter)
+        self.node_inlet_tree_selection_adapter.setSourceSelection(self.graphselection_model)
+        self._node_inlet_tree_view.setSelectionModel(self.node_inlet_tree_selection_adapter)
+        self._viewer.setSelectionModel(self.node_inlet_tree_selection_adapter)
+        self._node_inspector.setSelectionModel(self.node_inlet_tree_selection_adapter)
+        self._graph_view.setSelectionModel(self.graphselection_model)
+        self.updateWindowTitle()
+        # Fitting changes the viewport; automatic layout would overwrite saved positions.
+        self._fit_timer.start(0)
+
+    def _onCurrentNodeChanged(self, current: NodeName | None, previous: NodeName | None) -> None:
+        if self._document is not None and current is not None:
+            self._document.requestNodeExecution(current)
+
+    def _replaceDocument(self, document: PyFlowDocument) -> None:
+        previous = self._document
+        try:
+            self._connectDocument(document)
+        except Exception:
+            self._disconnectDocument()
+            document.close()
+            if previous is not None:
+                self._connectDocument(previous)
+            raise
+        if previous is not None:
+            previous.close()
+
+    def confirmSaveChanges(self) -> bool:
+        document = self.document()
+        if not document.isModified():
+            return True
+        name = document.filePath().name if document.filePath() is not None else "Untitled"
+        answer = QMessageBox.question(
+            self, "Unsaved changes", f"Save changes to '{name}'?",
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if answer == QMessageBox.StandardButton.Save:
+            return self.save()
+        return answer == QMessageBox.StandardButton.Discard
+
+    def confirmCloseWithoutSession(self, error: Exception) -> bool:
+        answer = QMessageBox.warning(
+            self, "Cannot save session",
+            f"The session could not be saved:\n{error}\n\n"
+            "Close the app anyway? Unsaved changes may be lost.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def newDocument(self) -> bool:
+        if not self.confirmSaveChanges():
+            return False
+        try:
+            self._replaceDocument(PyFlowDocument())
+        except Exception as error:
+            QMessageBox.warning(self, "Cannot create graph", str(error))
+            return False
+        return True
+
+    def open(self, path: str | Path = "") -> bool:
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(self, "Open graph", "", "JSON files (*.json)")
+        if not path or not self.confirmSaveChanges():
+            return False
+        try:
+            document = PyFlowDocument.open(path)
+            self._replaceDocument(document)
+        except Exception as error:
+            QMessageBox.warning(self, "Cannot open graph", str(error))
+            return False
+        self.fileOpened.emit(document.filePath())
+        return True
+
+    def save(self) -> bool:
+        document = self.document()
+        if document.filePath() is None:
+            return self.saveAs()
+        try:
+            try:
+                document.save()
+            except FileChangedError as error:
+                answer = QMessageBox.question(
+                    self, "File changed externally", f"{error}\nOverwrite it with this document?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return False
+                document.save(override=True)
+        except Exception as error:
+            QMessageBox.warning(self, "Cannot save graph", str(error))
+            return False
+        self.fileSaved.emit(document.filePath())
+        return True
+
+    def saveAs(self) -> bool:
+        document = self.document()
+        initial_path = str(document.filePath()) if document.filePath() is not None else "untitled.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Save graph as", initial_path, "JSON files (*.json)")
+        if not path:
+            return False
+        try:
+            # QFileDialog confirms replacement of an existing destination.
+            document.saveAs(path, override=True)
+        except Exception as error:
+            QMessageBox.warning(self, "Cannot save graph", str(error))
+            return False
+        self.fileSaved.emit(document.filePath())
+        return True
         
     def _on_nodes_invalidated(self, node_names: list[NodeName]) -> None:
         current_name = self.graphselection_model.currentNode()
@@ -220,6 +329,7 @@ class PyFlow5DocumentWindow(QWidget):
         self.document().requestNodeExecution(current_name)
 
     def document(self)->PyFlowDocument:
+        assert self._document is not None, "No document is connected."
         return self._document
 
     def _show_modules_context_menu(self, pos):
@@ -268,7 +378,7 @@ class PyFlow5DocumentWindow(QWidget):
         if self._document is None:
             return
         
-        current_node = self._document.graphselection_model.currentNode()
+        current_node = self.graphselection_model.currentNode()
         if not current_node:
             return
 
@@ -338,6 +448,27 @@ class PyFlow5DocumentWindow(QWidget):
             dialog.deleteLater()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._document is not None and not self.confirmSaveChanges():
+            event.ignore()
+            return
+        self.dispose()
+        event.accept()
+
+    def dispose(self) -> None:
+        """Release the editor after its owner has saved a session or confirmed closing."""
+        document = self._document
+        self._disconnectDocument()
+        if document is not None:
+            document.close()
+
+    def _disconnectDocument(self) -> None:
+        self._fit_timer.stop()
+        if self._document is None:
+            return
+        self._document.nodesInvalidated.disconnect(self._on_nodes_invalidated)
+        self._document.isModifiedChanged.disconnect(self.updateWindowTitle)
+        self._document.filePathChanged.disconnect(self.updateWindowTitle)
+        self._document = None
         # Destroy field editors while their delegates and models are still alive.
         self._node_inspector.setSelectionModel(None)
         self._node_inspector.setModel(None)
@@ -348,9 +479,11 @@ class PyFlow5DocumentWindow(QWidget):
         self._modules_listview.setModel(None)
         self._graph_view.setSelectionModel(None)
         self._graph_view.setModel(None)
-        if self._document is not None:
-            self._document.close()
-        event.accept()
+        for selection_model in self._selection_models:
+            if isinstance(selection_model, NodeInletTreeSelectionModelAdapter):
+                selection_model.setSourceSelection(None)
+            selection_model.deleteLater()
+        self._selection_models.clear()
 
     @Slot()
     def _on_script_module_state_changed(self):
