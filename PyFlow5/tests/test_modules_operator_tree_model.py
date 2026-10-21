@@ -10,7 +10,7 @@ from qtpy.QtTest import QSignalSpy
 from myqtx.selection_dialog_view import SelectionDialog
 from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
 from pyflow5.models.pyflow5_document import PyFlowDocument
-from pyflow5.views.pyflow5_window import ModuleDetailsView
+from pyflow5.views.pyflow5_documentwindow import ModuleDetailsView
 
 import pygraphrt as rt
 

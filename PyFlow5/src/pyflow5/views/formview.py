@@ -72,19 +72,22 @@ class FormView(QWidget):
         if model is self._model:
             return
 
-        self._disconnect_model()
-        self._clear()
-
-        self._model = model
-        self._root_index = QPersistentModelIndex()
-        self._root_removed = False
-
-        self._mapper.setModel(model)
-        self._mapper.setRootIndex(QModelIndex())
+        if self._model is not None:
+            self._disconnect_model()
+            self._clear()
 
         if model is not None:
+            self._model = model
+            self._root_index = QPersistentModelIndex()
+            self._root_removed = False
+
+            self._mapper.setModel(model)
+            self._mapper.setRootIndex(QModelIndex())
+
+
             self._connect_model()
 
+        self._model = model
         self._rebuild()
 
     def rootIndex(self):

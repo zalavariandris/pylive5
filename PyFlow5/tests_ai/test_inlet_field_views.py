@@ -249,7 +249,7 @@ def test_clear_buttons_follow_inlet_rows(qtbot: QtBot, make_model: Callable) -> 
 
 def test_window_shares_tree_fields_with_viewer_and_inspector(qtbot: QtBot) -> None:
     from pyflow5.models.pyflow5_document import PyFlowDocument
-    from pyflow5.views.pyflow5_window import PyFlow5Window
+    from pyflow5.views.pyflow5_documentwindow import PyFlow5DocumentWindow
 
     graph = rt.GraphDefinitionRT()
 
@@ -257,7 +257,7 @@ def test_window_shares_tree_fields_with_viewer_and_inspector(qtbot: QtBot) -> No
     def operation(count: int) -> int:
         return count * 2
 
-    window = PyFlow5Window(use_session=False)
+    window = PyFlow5DocumentWindow(use_session=False)
     qtbot.addWidget(window)
     document = PyFlowDocument(engine=rt.GraphEvaluatorEngine(graph=graph))
     window.setDocument(document)

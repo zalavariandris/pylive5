@@ -174,9 +174,9 @@ def test_live_tuple_annotation_changes_refresh_component_count(make_provider_for
 
 
 def test_window_registers_the_workspace_vfxops_file(qtbot) -> None:
-    from pyflow5.views.pyflow5_window import PyFlow5Window
+    from pyflow5.views.pyflow5_documentwindow import PyFlow5DocumentWindow
 
-    window = PyFlow5Window()
+    window = PyFlow5DocumentWindow()
     qtbot.addWidget(window)
     path = Path(__file__).resolve().parents[2] / "vfxops/src/vfxops/vfxops.py"
     module = window._document.importModule(path)

@@ -1,23 +1,58 @@
-# TODO
-- [ ] factor out the session and probably settings from the current Window.
-       window should be a document window. this will allow testing empty GUI (without loading the last session)
-       as well as opening multiple documents. The problem is, that the Window acstions are controlled by the document window for now.
-       probably we should have a DocumentsList model as well.
-       I like it when projectfiles open in another instance of the whole application, but also the session, and recent files in the menu
-       has a wider responsibility than a single document. So... maybe we could have tabs as well as opening document in multiple window, 
-       but in a single app.
-       
-- [ ] Consider using AnyIO for async tasks, like
-      graph execution. it support cancelling jobs.
 
+## Features
+- [ ] indicate file and document modifications
 - [ ] create a method that compiles the graph into a native python script so its runnable without the app.
       also think about if we could compile it to a python app without using the PyGraphRT module.
       in case the graph processing library brakes, the graph will be still runnable.
+- [ ] Push+Pull node evaluation. pushing callables, than request image region or movie frame for example
+- [ ] Run ScriptModuleEvaluation in the background
+- [ ] allow hotreloading python modules
+- [ ] Tasks manager.
+- [ ] Task progressbar
+- [ ] node Execution progress (possibly as simply as using tqdl inside the operator code)
+- [ ]
+
+## Architecture
+- [ ] _Refactor documentwindow, document, and the appwindow_
+
+      responsibilities:
+      - AppWindow: document lifecycle and application/session state.
+      - DocumentWindow: presentation, selection, and user interaction.
+      - Document: content, runtime, file binding, and explicit editing operations.
+
+      steps:
+      1. Move Selection from document to Window
+      1. ✓ move selection from document to the documentwindow
+      2.   refactor selection based editing methods in document, 
+      and move the selection based edits to the window
+      2. Move the filebinding to the document
+      1. _document_path into PyFlowDocument as _file_path
+
+      note: factor out the session and probably settings from the current Window.
+            window should be a document window. this will allow testing empty GUI (withoutloading the last session)
+            as well as opening multiple documents. The problem is, that the Window acstions arecontrolled by the document window for now.
+            probably we should have a DocumentsList model as well.
+            I like it when projectfiles open in another instance of the whole application, butalso the session, and recent files in the menu
+            has a wider responsibility than a single document. So... maybe we could have tabs aswell as opening document in multiple window, 
+            but in a single app.
+
+- [ ] Rename the ScriptModule to embedded modules!
+- [ ] Names become pretty problematic. 
+      - `PyGraphRtDagModel`
+      - `NodesListModelAdapter`
+      - `NodesListModelSelecitonAdapter`
+      - etc...
+      I think PyGraphRt could become PyGraphEngine
+- [ ] find a better name for graph modules, o distinguishe from standard python modules
+
+- [ ] Consider using AnyIO for async tasks, like
+      graph execution. it support cancelling jobs.
 
 - [ ] we have to solve the mutability problem in the graph processing
 
 - [ ] consider implementing structural change notifications for inlets in DirectionalGraphView5
 - [x] GraphView now uses lazy caching with (signal driven) explicit invalidation
+
 - [ ] create a smoke test for the inspector. setting values, clear values, connect inputs, unconnect inputs, and the editor model binding. default values, empty values etc.
 - [ ] review NodeRTInputRole. I think (most of) it could be moved to QDAGEditor5
       also, the QDAGEditor5 NodeDataRole and SocketDataRole needs a UserRoel to allow extension.
@@ -56,20 +91,8 @@
 
 - [x] cleanup myqtx file structure and class names.
 
-
-      
 - [?] FormView does not update when data changes.
       added a todo in the on_datachanged hook.
-
-- [ ] Rename the ScriptModule to embedded modules!
-- [ ] Names become pretty problematic. 
-      - `PyGraphRtDagModel`
-      - `NodesListModelAdapter`
-      - `NodesListModelSelecitonAdapter`
-      - etc...
-      I think PyGraphRt could become PyGraphEngine
-
-- [ ] find a better name for graph modules, o distinguishe from standard python modules
 
 - [ ] ImportModule should support importing from a file without specifying a name
 

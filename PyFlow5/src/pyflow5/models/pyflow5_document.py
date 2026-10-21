@@ -3,78 +3,92 @@ import math
 from pathlib import Path
 from textwrap import dedent
 import traceback
-
-
+from typing import Iterable
 
 from qdageditor5.models.abstract_dag_model import NodeName
-from qtpy.QtCore import QItemSelectionModel, QModelIndex, QObject, QPointF, Signal, Slot
+from qtpy.QtCore import QModelIndex, QObject, QPointF, Signal, Slot
 
 import pygraphrt as rt
-from qdageditor5.models.graph_selection_model import GraphSelectionModel
+
 
 from .modules_operator_tree_model import ModulesOperatorsTreeModel
 from .pygraphrt_graphmodel import PyGraphRTGraphModel
 from .pygraphrt_node_inlet_tree_model_adapter import PyGraphRTNodeInletTreeModelAdapter
 
-
-from qdageditor5.adapters.node_inlet_tree_selection_model_adapter import NodeInletTreeSelectionModelAdapter
-
-
 class PyFlowDocument(QObject):
+    nodesInvalidated = Signal(list)
+    isModifiedChanged = Signal(bool)
+
     def __init__(self, 
         engine: rt.GraphEvaluatorEngine|None=None,
+        file: Path|None=None,
         parent:QObject|None=None
     ):
         super().__init__(parent=parent)
+        self._file = file
+        self._modification_time = None
+        self._is_modified = False
+        if self._file is not None and self._file.exists():
+            self._modification_time = self._file.stat().st_mtime
+
         # RT
         self._engine = engine or rt.GraphEvaluatorEngine(backend=rt.InlineExecutionBackend())
 
         # Models
         ## Graph Model
         self.graph_model = PyGraphRTGraphModel(self._engine)
-        
-        self.graphselection_model = GraphSelectionModel(self.graph_model)
-        self._engine._invalidator.nodes_invalidated.connect(self._on_nodes_invalidated)
-        self.graphselection_model.currentNodeChanged.connect(
-            self._on_current_node_changed
+        self._engine._invalidator.nodes_invalidated.connect(
+            lambda nodes: self.nodesInvalidated.emit([self.graph_model.mapFromSource(node_ref) for node_ref in nodes])
         )
 
         ## Modules Model
         self.modules_model = ModulesOperatorsTreeModel()
         self.modules_model.setSourceRegistry(self._engine._registry)
-        self.modulesselection_model = QItemSelectionModel(self.modules_model)
 
         # Adapters
         ## Node inlet tree adapter
         self.node_inlet_tree_adapter = PyGraphRTNodeInletTreeModelAdapter(self.graph_model)
-        self.node_inlet_tree_selection_adapter = NodeInletTreeSelectionModelAdapter(self.node_inlet_tree_adapter)
-        self.node_inlet_tree_selection_adapter.setSourceSelection(self.graphselection_model)
         
         # Initial evaluation
         self._engine.request(*self._engine._graph.nodes())
 
-    @Slot(list)
-    def _on_nodes_invalidated(self, nodes: list[rt.NodeRef]) -> None:
-        current_name = self.graphselection_model.currentNode()
-        if current_name is None:
-            return
+        # track modification
+        modification_signals = [
+            self.graph_model.nodesAdded,
+            self.graph_model.nodesRemoved,
+            self.graph_model.nodesDataChanged,
+            self.graph_model.nodeMoved,
+            self.graph_model.inletsReset,
+            self.graph_model.inletDataChanged,
+            self.graph_model.outletsReset,
+            self.graph_model.linksAdded,
+            self.graph_model.linksRemoved,
+            self.graph_model.linksReset,
+            self.graph_model.modelReset,
+            self.graph_model.cellsInserted,
+            self.graph_model.cellsRemoved,
+            self.graph_model.cellsDataChanged,
 
-        current = self.graph_model.mapToSource(current_name)
-        if current is not None and current in nodes:
-            self._engine.request(current)
+            self.modules_model.modelReset,
+            self.modules_model.rowsInserted,
+            self.modules_model.rowsRemoved,
+            self.modules_model.rowsMoved,
+            self.modules_model.dataChanged
+        ]
+        for signal in modification_signals:
+            signal.connect(lambda: self._set_modified(True))
 
-    @Slot(object, object)
-    def _on_current_node_changed(
-        self,
-        current: NodeName | None,
-        previous: NodeName | None,
-    ) -> None:
-        if current is None:
-            return
+    def _set_modified(self, modified: bool) -> None:
+        self._is_modified = modified
+        self.isModifiedChanged.emit(modified)
 
-        node = self.graph_model.mapToSource(current)
-        if node is not None:
-            self._engine.request(node)
+    def file(self) -> Path|None:
+        return self._file
+
+    def requestNodeExecution(self, node_name: NodeName) -> None:
+        node_rt = self.graph_model.mapToSource(node_name)
+        if node_rt is not None:
+            self._engine.request(node_rt)
 
     def close(self) -> None:
         """Stop evaluation and disconnect requests from the graph model."""
@@ -100,11 +114,21 @@ class PyFlowDocument(QObject):
         data = json.loads(path.read_text(encoding="utf-8"))
         deserializer = rt.GraphDeserializer(base_dir=path.parent)
         registry, graph = deserializer.fromdict(data)
-        doc = cls(engine=rt.GraphEvaluatorEngine(graph=graph, registry=registry))
+        doc = cls(engine=rt.GraphEvaluatorEngine(graph=graph, registry=registry), file=path)
         return doc
 
-    def save(self, file_path: str | Path) -> None:
+    def save(self, *, file:Path|None=None, override: bool = True) -> None:
         """Save the runtime and node positions as UTF-8 JSON."""
+        if file is not None:
+            self._file = file
+            
+        if self._file is None:
+            raise ValueError("No file specified for saving the document.")
+
+        if not override and self._file.exists():
+            if self._modification_time != self._file.stat().st_mtime:
+                raise RuntimeError("The file has been modified externally.")
+        
         serializer = rt.GraphSerializer(self._engine._graph, self._engine._registry)
         data = serializer.todict()
 
@@ -114,33 +138,20 @@ class PyFlowDocument(QObject):
             record["position"] = [position.x(), position.y()]
 
         text = json.dumps(data, indent=4)
-        Path(file_path).write_text(text, encoding="utf-8")
+        Path(self._file).write_text(text, encoding="utf-8")
 
     # Editing
-    def addNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
+    def createNewNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
         assert operator_index.isValid(), "Operator index must be valid."
         assert operator_index.model() is self.modules_model, "Operator index must belong to the modules model."
         selected_op_ref = operator_index.data(ModulesOperatorsTreeModel.OperatorRole)
         if selected_op_ref:
             self.graph_model.addNode(selected_op_ref, scene_pos or QPointF(0, 0))
 
-    def deleteSelectedNodes(self):
-        selected_nodes = self.graphselection_model.selectedNodes()
-        self.graph_model.removeNodes(selected_nodes)
+    def deleteNodes(self, node_names: Iterable[NodeName]) -> None:
+        self.graph_model.removeNodes(node_names)
 
     def restart_graph(self):
         """Recover the model/view while preserving the current runtime and script."""
         # todo: this needs to be reimplemented
         self.graph_model.reset_graph_from_scratch()
-
-    def addEmbeddedModule(self, name="_local_") -> None:
-        if module_idx := self.modules_model.addEmbeddedModule(name):
-            self.modulesselection_model.setCurrentIndex(
-                module_idx, 
-                QItemSelectionModel.ClearAndSelect
-            )
-
-    def removeSelectedModule(self) -> None:
-        current_index = self.modulesselection_model.currentIndex()
-        if current_index:
-            self.modules_model.removeModule(current_index)

@@ -8,7 +8,7 @@ from qtpy.QtGui import QCloseEvent, QStandardItem, QStandardItemModel
 from pyflow5.views.module_details_view import ModuleDetailsView
 from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
 from pyflow5.models.pyflow5_document import PyFlowDocument
-from pyflow5.views import pyflow5_window
+from pyflow5.views import pyflow5_documentwindow
 from pygraphrt import ModuleRegistry, ScriptModuleRT
 
 
@@ -177,11 +177,11 @@ def test_window_connects_module_details(
         def __init__(self, *_args: object) -> None:
             super().__init__(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
 
-    class TestWindow(pyflow5_window.PyFlow5Window):
+    class TestWindow(pyflow5_documentwindow.PyFlow5DocumentWindow):
         def closeEvent(self, event: QCloseEvent) -> None:
             event.accept()
 
-    monkeypatch.setattr(pyflow5_window, "QSettings", TestSettings)
+    monkeypatch.setattr(pyflow5_documentwindow, "QSettings", TestSettings)
     window = TestWindow()
     qtbot.addWidget(window)
     window.addEmbeddedModule()
@@ -195,6 +195,6 @@ def test_window_connects_module_details(
     window.setDocument(PyFlowDocument())
     assert not view.currentIndex().isValid()
     assert view._code_editor.toPlainText() == ""
-    window._document.addEmbeddedModule()
+    window._document.createEmbeddedModule()
     assert view.currentIndex() == window._document.modules_model.index(0, 0)
     assert view._code_editor.isEnabled()

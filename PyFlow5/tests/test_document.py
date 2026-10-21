@@ -46,7 +46,7 @@ def test_user_flow(qtbot: QtBot) -> None:
     assert hello_operator_index.parent() == local_module_index
 
     # add node with operator
-    document.addNode(hello_operator_index)
+    document.createNewNode(hello_operator_index)
     assert list(document.graph_model.nodes()) == ["hello"]
     node = document.graph_model.mapToSource("hello")
     assert node is not None

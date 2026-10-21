@@ -1,10 +1,10 @@
-from pyflow5.views.pyflow5_window import PyFlow5Window
+from pyflow5.views.pyflow5_documentwindow import PyFlow5DocumentWindow
 
 def launch_pyflow5():
     from qtpy.QtWidgets import QApplication
     import sys
     app = QApplication(sys.argv)
-    window = PyFlow5Window()
+    window = PyFlow5DocumentWindow()
     window.setWindowTitle("PyFlow5 - DirectionalGraphView5")
     window.show()
     sys.exit(app.exec_())

@@ -18,7 +18,6 @@ class BuiltinInputEditorProvider(AbstractInputEditorProvider):
         index: QModelIndex,
     ) -> QWidget | None:
         datatype = index.data(InputDataRole.AnnotationRole)
-        print("choose editor for datatype:", datatype)
         if get_origin(datatype) is Annotated:
             datatype = get_args(datatype)[0]
         editor: QWidget | None = None

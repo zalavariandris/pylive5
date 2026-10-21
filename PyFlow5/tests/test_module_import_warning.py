@@ -6,20 +6,20 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QSettings, Qt
 from qtpy.QtWidgets import QDialog, QMessageBox
 
-from pyflow5.views import pyflow5_window
+from pyflow5.views import pyflow5_documentwindow
 from pygraphrt import ImportModuleRT
 
 
 @pytest.fixture
 def window(
     qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> pyflow5_window.PyFlow5Window:
+) -> pyflow5_documentwindow.PyFlow5DocumentWindow:
     class TestSettings(QSettings):
         def __init__(self, *_args: object) -> None:
             super().__init__(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
 
-    monkeypatch.setattr(pyflow5_window, "QSettings", TestSettings)
-    window = pyflow5_window.PyFlow5Window()
+    monkeypatch.setattr(pyflow5_documentwindow, "QSettings", TestSettings)
+    window = pyflow5_documentwindow.PyFlow5DocumentWindow()
     qtbot.addWidget(window)
     return window
 
@@ -32,7 +32,7 @@ def warnings(monkeypatch: pytest.MonkeyPatch) -> list[QMessageBox]:
         dialogs.append(dialog)
         return int(QMessageBox.StandardButton.Ok)
 
-    monkeypatch.setattr(pyflow5_window.QMessageBox, "exec", capture_warning)
+    monkeypatch.setattr(pyflow5_documentwindow.QMessageBox, "exec", capture_warning)
     return dialogs
 
 
@@ -53,7 +53,7 @@ def warnings(monkeypatch: pytest.MonkeyPatch) -> list[QMessageBox]:
     ],
 )
 def test_import_warns_only_when_evaluation_fails(
-    window: pyflow5_window.PyFlow5Window,
+    window: pyflow5_documentwindow.PyFlow5DocumentWindow,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     warnings: list[QMessageBox],
@@ -64,10 +64,10 @@ def test_import_warns_only_when_evaluation_fails(
     path = tmp_path / "external.py"
     path.write_text(source, encoding="utf-8")
     monkeypatch.setattr(
-        pyflow5_window.QFileDialog, "exec_", Mock(return_value=QDialog.DialogCode.Accepted),
+        pyflow5_documentwindow.QFileDialog, "exec_", Mock(return_value=QDialog.DialogCode.Accepted),
     )
     monkeypatch.setattr(
-        pyflow5_window.QFileDialog, "selectedFiles", Mock(return_value=[str(path)]),
+        pyflow5_documentwindow.QFileDialog, "selectedFiles", Mock(return_value=[str(path)]),
     )
     window.importModule()
 
@@ -113,12 +113,12 @@ def test_import_warns_only_when_evaluation_fails(
 
 
 def test_cancelled_import_does_not_warn(
-    window: pyflow5_window.PyFlow5Window,
+    window: pyflow5_documentwindow.PyFlow5DocumentWindow,
     monkeypatch: pytest.MonkeyPatch,
     warnings: list[QMessageBox],
 ) -> None:
     monkeypatch.setattr(
-        pyflow5_window.QFileDialog, "exec_", Mock(return_value=QDialog.DialogCode.Rejected),
+        pyflow5_documentwindow.QFileDialog, "exec_", Mock(return_value=QDialog.DialogCode.Rejected),
     )
     window.importModule()
 

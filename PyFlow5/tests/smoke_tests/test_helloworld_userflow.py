@@ -10,7 +10,7 @@ from qtpy.QtCore import QMimeData, QModelIndex, Qt, QTimer
 from qtpy.QtWidgets import QApplication, QDialogButtonBox
 
 from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
-from pyflow5.views.pyflow5_window import PyFlow5Window
+from pyflow5.views.pyflow5_documentwindow import PyFlow5DocumentWindow
 from pyflow5.models.pyflow5_document import PyFlowDocument
 
 
@@ -22,7 +22,7 @@ WAIT_TIME_MS = 1000
 def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     # - Open Appplication Window with new document
     print("opening window")
-    window = PyFlow5Window()
+    window = PyFlow5DocumentWindow()
     qtbot.addWidget(window)
     with qtbot.waitExposed(window):
         window.show()
@@ -41,7 +41,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     assert not window._module_details_view._code_editor.isEnabled()
 
     # - Create a new embedded module
-    document.addEmbeddedModule("_local_")
+    document.createEmbeddedModule("_local_")
     
     # - Click the local module in the modules view to select it
     modules_listview = window._modules_listview

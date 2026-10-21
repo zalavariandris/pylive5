@@ -182,7 +182,7 @@ def test_window_uses_the_value_adapter_in_tree_and_form(qtbot) -> None:
     from pyflow5.views.formview import FormView
     from pyflow5.views.node_input_delegate import NodeInputFieldDelegate
     from pyflow5.models.pyflow5_document import PyFlowDocument
-    from pyflow5.views.pyflow5_window import PyFlow5Window
+    from pyflow5.views.pyflow5_documentwindow import PyFlow5DocumentWindow
 
     graph = rt.GraphDefinitionRT()
 
@@ -190,7 +190,7 @@ def test_window_uses_the_value_adapter_in_tree_and_form(qtbot) -> None:
     def operation(value: int) -> int:
         return value
 
-    window = PyFlow5Window()
+    window = PyFlow5DocumentWindow()
     qtbot.addWidget(window)
     document = PyFlowDocument(graph)
     window.setDocument(document)
