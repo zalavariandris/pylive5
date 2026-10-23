@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 
 dependencies = [
     "pyflow5",
+    "PyGraphRT2",
     "rich>=15.0.0",
 ]
 
@@ -19,13 +20,15 @@ packages = []
 
 [tool.uv.sources]
 pyflow5 = { workspace = true }
+pygraphrt2 = {workspace = true}
 
 [tool.uv.workspace]
 members = [
     "myqtx", 
     "myutils",
     "PyFlow5", 
-    "PyGraphRT", 
+    "PyGraphRT",
+    "PyGraphRT2",
     "QDAGEditor5", 
     "QScriptEdit2",
     "QtScriptEditorAdvanced",
@@ -36,6 +39,7 @@ members = [
 dev = [
     "pytest",
     "pytest-qt>=4.5.0",
+    "pytest-asyncio",
     # "pytracy>=0.0.2",
 ]
 
