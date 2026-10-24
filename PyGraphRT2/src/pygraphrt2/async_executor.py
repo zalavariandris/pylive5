@@ -1,6 +1,6 @@
 from typing import Iterable, Tuple, Any, TYPE_CHECKING
-if TYPE_CHECKING:
-    from .graph import Graph, NodeRef
+
+from .graph import Graph, NodeRef
 
 from typing import Iterable, Tuple, Any
 

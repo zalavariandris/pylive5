@@ -48,6 +48,32 @@ def test_inline_executor(hello_world):
     outputs = executor.execute(hello)
 
     assert outputs[hello] == "Hello Mása!"
+    
+@pytest.mark.asyncio
+async def test_async_executor(hello_world):
+    from pygraphrt2.async_executor import AsyncExecutor
+    graph, (the_name, the_greeting, hello) = hello_world
+    executor = AsyncExecutor(graph)
+
+    future = executor.execute(hello)
+    print(future)
+    outputs = await future
+    assert outputs[hello] == "Hello Mása!"
+
+
+@pytest.mark.asyncio
+async def test_threaded_executor(hello_world):
+    from pygraphrt2.threaded_executor import ThreadedExecutor
+    graph, (the_name, the_greeting, hello) = hello_world
+    executor = ThreadedExecutor(graph)
+
+    future = executor.execute(hello)
+    print(future)
+    outputs = await future
+    assert outputs[hello] == "Hello Mása!"
+
+
+## SCRIPT MODULES
 
 def test_inline_scriptmodule():
     sm = InlineScriptModule()
@@ -100,28 +126,59 @@ def test_inline_scriptmodule():
     assert track_changes['added'] == []
     assert set(track_changes['removed']) == expected_operators
     assert track_changes['updated'] == []
-    
-@pytest.mark.asyncio
-async def test_async_executor(hello_world):
-    from pygraphrt2.async_executor import AsyncExecutor
-    graph, (the_name, the_greeting, hello) = hello_world
-    executor = AsyncExecutor(graph)
-
-    future = executor.execute(hello)
-    print(future)
-    outputs = await future
-    assert outputs[hello] == "Hello Mása!"
-
-
-## SCRIPT MODULES
 
 @pytest.mark.asyncio
 async def test_async_scriptmodule():
     sm = AsyncScriptModule()
     await sm.evaluate()
-    sm.operators_added(...)
-    sm.operators_removed(...)
-    sm.operators_updated(...)
+    assert list(sm.operators()) == []
+
+    sm.set_script(dedent("""\
+    def the_name():
+        return "Mása"
+
+    def the_greeting():
+        return "Hey"
+
+    def hello(name:str, greeting:str="Hello"):
+        return f"{greeting} {name}!"
+    """))
+    track_changes = dict(added=[], removed=[], updated=[])
+    sm.operators_added.connect(lambda ops: track_changes['added'].extend(ops))
+    sm.operators_removed.connect(lambda ops: track_changes['removed'].extend(ops))
+    sm.operators_changed.connect(lambda ops: track_changes['updated'].extend(ops))
+
+    await sm.evaluate()
+    expected_operators = set([
+        sm.get_operator_by_name("the_name"), 
+        sm.get_operator_by_name("the_greeting"), 
+        sm.get_operator_by_name("hello")
+    ])
+    assert set(list(sm.operators())) == set(expected_operators)
+
+    assert set(track_changes['added']) == expected_operators
+    assert track_changes['removed'] == []
+    assert track_changes['updated'] == []
+
+    # breake the script
+    sm.set_script(dedent("""\
+        ...SYNTAX ERROR...
+        def the_name():
+            return "Mása"
+    
+        def the_greeting():
+            return "Hey"
+    
+        def hello(name:str, greeting:str="Hello"):
+            return f"{greeting} {name}!"
+        """))
+
+    track_changes = dict(added=[], removed=[], updated=[])
+    await sm.evaluate()
+
+    assert track_changes['added'] == []
+    assert set(track_changes['removed']) == expected_operators
+    assert track_changes['updated'] == []
 
 
 # =================
