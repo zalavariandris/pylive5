@@ -3,6 +3,7 @@
 
 
 from types import FunctionType, ModuleType
+from dataclasses import dataclass
 import concurrent
 import weakref
 from qtpy.QtCore import QRunnable, QThreadPool
@@ -11,11 +12,10 @@ import inspect
 from pathlib import Path
 from qtpy.QtCore import Signal, QObject
 from myutils.source_diff import ast_functions_diff
-from .abstract_module_rt import AbstractModule
 from .errors import ModuleError, ScriptSyntaxError
 from .errors import ScriptEvaluationError
 
-from .registry import OperatorRef, Registry
+from .registry import Registry
 
 def _get_all_callables_from_script(
     script: str, *, name: str
@@ -142,16 +142,25 @@ class FunctionRunnable(QRunnable):
             self._future.set_result(result)
 
 
-class ScriptOperatorRef(OperatorRef):
-    def __init__(self, module: 'ScriptModuleRT', name: str):
-        super().__init__(module, name)
+@dataclass(frozen=True)
+class ScriptOperatorRef:
+    """A stable reference that can outlive a missing or broken script function."""
 
-    def __call__(self, *args, **kwargs):
+    _module: 'ScriptModule'
+    _name: str
+
+    def module(self) -> 'ScriptModule':
+        return self._module
+
+    def name(self) -> str:
+        return self._name
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         func = self._module._functions_cache[self._name]
         return func(*args, **kwargs)
 
 
-class ScriptModuleRT(Registry):
+class ScriptModule(Registry):
     """An editable script provides Operators
     """
     state_changed = Signal()
@@ -234,7 +243,7 @@ class ScriptModuleRT(Registry):
         #todo: add a force replace all functions, to replace all functions.
         #.   note: the current implementation might miss behavior changes in some situations.
         """update operators based on the current script and emit relevant signals"""
-        name: str | None = self.get_display_name()
+        name: str | None = self.name()
         execution_name: str = name if name is not None else "<script>"
         new_state: Literal["VALID"] | Exception
         try:
@@ -262,7 +271,7 @@ class ScriptModuleRT(Registry):
         returns """
         self._pool:QThreadPool = QThreadPool.globalInstance()
         future: concurrent.futures.Future = concurrent.futures.Future()
-        name: str | None = self.get_display_name()
+        name: str | None = self.name()
         execution_name: str = name if name is not None else "<script>"
         runnable = _ScriptEvaluationRunnable(self._script, execution_name, future)
         self._pool.start(runnable)
@@ -292,7 +301,7 @@ class ScriptModuleRT(Registry):
         return self._state
 
     @override
-    def operators(self) -> Iterable[OperatorRef]:
+    def operators(self) -> Iterable[ScriptOperatorRef]:
         return [
             ScriptOperatorRef(self, k) 
             for k in self._functions_cache.keys()

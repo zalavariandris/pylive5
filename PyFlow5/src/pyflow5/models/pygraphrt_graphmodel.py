@@ -103,17 +103,10 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     EmptyInputValue = EmptyInletValue
 
     def __init__(self, 
-        engine: rt.GraphEngine,
-        # graph: rt.GraphDefinitionRT, 
-        # registry: rt.ModuleRegistry,
-        # invalidator: rt.GraphInvalidator,
-        # evaluator: GraphEvaluator
+        engine: rt.GraphEngine
     ) -> None:
         super().__init__()
         self._engine = engine
-        # self._graph: rt.GraphDefinitionRT = graph
-        # self._registry: rt.ModuleRegistry = registry
-        # self._evaluator: GraphEvaluator = evaluator
         self._closed = False
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
 
@@ -289,9 +282,6 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         if operator not in self._operator_parameters_cache:
             self._operator_parameters_cache[operator] = operator.get_parameters()
         return self._operator_parameters_cache[operator]
-
-    def setRT(self, graph: rt.GraphDefinitionRT, positions=None):
-        raise NotImplementedError("setRT method is not implemented yet.")
 
     def reset_graph_from_scratch(self) -> None:
         """Recover presentation state from the current runtime without changing it.

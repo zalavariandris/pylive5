@@ -3,14 +3,7 @@ from pathlib import Path
 from typing import Callable
 from qtpy.QtCore import SignalInstance
 from qtpy.QtWidgets import QApplication, QStyle
-from pygraphrt import (
-    AbstractModule,
-    GraphDefinitionRT,
-    ImportModuleRT,
-    ScriptModuleRT
-)
-from pygraphrt.abstract_operator import AbstractOperator
-from pygraphrt.script_module import ScriptOperatorRef
+
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, QObject, Qt
 from qtpy.QtGui import QBrush
 
@@ -108,7 +101,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
 
     def mapToSource(
             self, index: QModelIndex
-        ) -> AbstractModule | AbstractOperator | None:
+        ) -> rt.AbstractModule | rt.AbstractOperator | None:
             if self._registry is None:
                 return None
     
@@ -137,12 +130,12 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             return operators[index.row()]
     
     def mapFromSource(
-        self, source: AbstractModule | AbstractOperator | None
+        self, source: rt.AbstractModule | rt.AbstractOperator | None
     ) -> QModelIndex:
         if self._registry is None:
             return QModelIndex()
 
-        if not isinstance(source, (AbstractModule, AbstractOperator)):
+        if not isinstance(source, (rt.AbstractModule, rt.AbstractOperator)):
             return QModelIndex()
 
         for module_row, module in enumerate(self._registry.modules()):
@@ -150,7 +143,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             if source is module:
                 return module_index
 
-            if isinstance(source, AbstractOperator):
+            if isinstance(source, rt.AbstractOperator):
                 for operator_row, operator in enumerate(module.operators()):
                     if operator == source:
                         return self.index(operator_row, 0, module_index)
@@ -182,23 +175,24 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
     def data(
         self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole
     ) -> object | None:
-        item:AbstractModule | AbstractOperator | None = self.mapToSource(index)
+        
+        item:rt.AbstractModule | rt.AbstractOperator | None = self.mapToSource(index)
         if item is None:
             return None
 
         if role == self.ReadOnlyRole:
-            return isinstance(item, ImportModuleRT)
+            return isinstance(item, rt.ImportModuleRT)
 
-        if role == self.SourceRole and isinstance(item, ScriptModuleRT):
+        if role == self.SourceRole and isinstance(item, rt.ScriptModuleRT):
             return item.get_source()
 
         if role == self.StatusRole:
-            if isinstance(item, ScriptModuleRT):
+            if isinstance(item, rt.ScriptModuleRT):
                 return item.get_status()
             return None
         
         match item:
-            case ImportModuleRT() as im:
+            case rt.ImportModuleRT() as im:
                 match role:
                     case Qt.ItemDataRole.DisplayRole:
                         return Path(im.get_display_name()).name
@@ -218,7 +212,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
                     case _:
                         return None
                     
-            case ScriptModuleRT() as sm:
+            case rt.ScriptModuleRT() as sm:
                 match role:
                     case Qt.ItemDataRole.DisplayRole:
                         return sm.get_display_name()
@@ -243,7 +237,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
                     case _:
                         return None
             
-            case ScriptOperatorRef() as operator:
+            case rt.ScriptOperatorRef() as operator:
                 match role:
                     case Qt.ItemDataRole.DisplayRole:
                         return operator.get_name()
@@ -262,7 +256,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         item = self.mapToSource(index)
         match item:
-            case AbstractModule() | AbstractOperator():
+            case rt.AbstractModule() | rt.AbstractOperator():
                 return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
             case _:
                 return Qt.ItemFlag.NoItemFlags
@@ -291,10 +285,10 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
             return False
 
         module = self.mapToSource(index)
-        if not isinstance(module, ScriptModuleRT):
+        if not isinstance(module, rt.ScriptModuleRT):
             return False
 
-        if isinstance(module, ImportModuleRT):
+        if isinstance(module, rt.ImportModuleRT):
             return False
 
         module.set_script(value)
@@ -321,7 +315,7 @@ class ModulesOperatorsTreeModel(QAbstractItemModel):
     def importModule(self, file_path: PathLike) -> QModelIndex|None:
         assert self._registry is not None, "Graph must be initialized before importing a module."
         file_path = Path(file_path)
-        module = ImportModuleRT(name=file_path.name, path=file_path)
+        module = rt.ImportModuleRT(name=file_path.name, path=file_path)
         row = self.rowCount()
         self.beginInsertRows(QModelIndex(), row, row)
         self._registry.add_module(module)

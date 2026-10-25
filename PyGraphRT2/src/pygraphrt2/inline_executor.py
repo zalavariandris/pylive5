@@ -7,7 +7,7 @@ class InlineExecutor:
         self.graph = graph
 
     def execute(self, node_ref:NodeRef)->dict[NodeRef, Any]:
-        sorted_nodes = self.graph.topological_sort()
+        sorted_nodes = self.graph.topological_sort(set([node_ref]))
 
         outputs: dict[NodeRef, Any] = {}
 
