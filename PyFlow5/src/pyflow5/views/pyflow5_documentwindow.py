@@ -198,7 +198,6 @@ class PyFlow5DocumentWindow(QWidget):
         document.isModifiedChanged.connect(self.updateWindowTitle)
         document.filePathChanged.connect(self.updateWindowTitle)
 
-        # self._modules_listview.setModel(document.modules_model)
         self._module_operator_tree_view.setModel(document.modules_model)
         self._module_details_view.setModel(document.modules_model)
         self._graph_view.setModel(document.graph_model)
@@ -209,7 +208,6 @@ class PyFlow5DocumentWindow(QWidget):
 
         self.modulesselection_model = QItemSelectionModel(document.modules_model, self)
         self._selection_models.append(self.modulesselection_model)
-        # self._modules_listview.setSelectionModel(self.modulesselection_model)
         self._module_operator_tree_view.setSelectionModel(self.modulesselection_model)
         self._module_details_view.setSelectionModel(self.modulesselection_model)
         self.graphselection_model = GraphSelectionModel(document.graph_model, self)
@@ -347,11 +345,11 @@ class PyFlow5DocumentWindow(QWidget):
         return self._document
 
     def _show_modules_context_menu(self, pos):
-        index = self._modules_listview.indexAt(pos)
-        global_pos = self._modules_listview.viewport().mapToGlobal(pos)
+        index = self._module_operator_tree_view.indexAt(pos)
+        global_pos = self._module_operator_tree_view.viewport().mapToGlobal(pos)
         
         # Create a fresh, local menu instance right here
-        menu = QMenu(self._modules_listview)
+        menu = QMenu(self._module_operator_tree_view)
         add_action = menu.addAction("Add Embedded Module")
         add_action.triggered.connect(self.addEmbeddedModule)
 
@@ -490,7 +488,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._viewer.setModel(None)
         self._node_inlet_tree_view.setModel(None)
         self._module_details_view.setModel(None)
-        self._modules_listview.setModel(None)
+        self._module_operator_tree_view.setModel(None)
         self._graph_view.setSelectionModel(None)
         self._graph_view.setModel(None)
         for selection_model in self._selection_models:

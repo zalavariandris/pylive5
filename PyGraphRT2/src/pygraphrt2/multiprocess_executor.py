@@ -7,6 +7,10 @@ from .graph import Graph, NodeRef
 
 from dataclasses import dataclass, field
 
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import cpu_count
+import time
+
 
 @dataclass(frozen=True)
 class NodeStateSnapshot:
@@ -16,12 +20,25 @@ class NodeStateSnapshot:
     kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-class ThreadedExecutor:
+import os
+import time
+import asyncio
+
+def cpu_intensive_task(duration: float) -> int:
+    time.sleep(duration)  # Stand-in for the actual computation.
+    return os.getpid()
+
+@dataclass(frozen=True)
+class NodeOutput:
+    node_id: str
+
+class MultiprocessExecutor:
     def __init__(self, graph:'Graph', cache:dict['NodeRef', Any]|None = None):
         self.graph = graph
         self.cache = cache
+        self.process_executor = ProcessPoolExecutor(max_workers=1)
 
-    async def prepare(self, targets: Iterable['NodeRef'])->dict['NodeRef', 'NodeStateSnapshot']:
+    async def prepare(self, targets: Iterable['NodeRef'])->tuple[dict[str, 'NodeStateSnapshot'], dict[str, 'NodeRef']]:
         all_targets = tuple(dict.fromkeys(targets))
         existing_nodes = set(self.graph.nodes())
         for target in all_targets:
@@ -57,45 +74,45 @@ class ThreadedExecutor:
             for node_ref in cached_nodes
         }
     
-        snapshots: dict['NodeRef', NodeStateSnapshot] = {}
+        plan: dict[str, NodeStateSnapshot] = {}
+        mapping: dict[str, NodeRef] = {}
         for node_ref in ordered_nodes:
             node_state = self.graph._nodes[node_ref]
             func = node_state.operator
             snapshot = NodeStateSnapshot(
                 operator=func,
                 args=[
-                    val if isinstance(val, NodeRef) else val
+                    NodeOutput(node_id=val.name()) if isinstance(val, NodeRef) else val
                     for val in node_state.args
                 ],
                 kwargs={
-                    key: val if isinstance(val, NodeRef) else val
+                    key: NodeOutput(node_id=val.name()) if isinstance(val, NodeRef) else val
                     for key, val in node_state.kwargs.items()
                 }
             )
-            snapshots[node_ref] = snapshot
-        return snapshots
+            plan[node_ref.name()] = snapshot
+            mapping[node_ref.name()] = node_ref
+        return plan, mapping
 
     async def execute(self, target:'NodeRef')->dict['NodeRef', Any]:
-        plan = await self.prepare([target])
+        plan, mapping = await self.prepare([target])
 
-        outputs: dict[NodeRef, Any] = {}
-        for node_ref, snapshot in plan.items():
+        outputs: dict[str, Any] = {}
+        for node_name, snapshot in plan.items():
             resolved_args = [
-                outputs[val] if isinstance(val, NodeRef) else val
+                outputs[val.node_id] if isinstance(val, NodeOutput) else val
                 for val in snapshot.args
             ]
             resolved_kwargs = {
-                key: outputs[val] if isinstance(val, NodeRef) else val
+                key: outputs[val.node_id] if isinstance(val, NodeOutput) else val
                 for key, val in snapshot.kwargs.items()
             }
             if snapshot.operator is None:
-                raise ValueError(f"Operator for node {node_ref} is not resolved.")
+                raise ValueError(f"Operator for node {node_name} is not resolved.")
             output = snapshot.operator(*resolved_args, **resolved_kwargs)
-            outputs[node_ref] = output
+            outputs[node_name] = output
 
-        return outputs
-
-
+        return {mapping[name]: value for name, value in outputs.items()}
 
 if __name__ == "__main__":
     import asyncio
@@ -103,17 +120,18 @@ if __name__ == "__main__":
     import asyncio
     import time
 
+    graph = Graph()
+
+    @graph.node()
+    def some_sleep():
+        print("Execute sleep for 1 second...")
+        time.sleep(1)
+        print("Awake now.")
+        return "Hello"
+
+    executor = MultiprocessExecutor(graph)
+    
     async def main():
-
-        graph = Graph()
-        @graph.node()
-        def some_sleep():
-            print("Execute sleep for 1 second...")
-            time.sleep(1)
-            print("Awake now.")
-            return "Hello"
-
-        executor = ThreadedExecutor(graph)
         outputs = await executor.execute(some_sleep)
         print(outputs)
 

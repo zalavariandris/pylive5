@@ -63,9 +63,9 @@ async def test_async_executor(hello_world):
 
 @pytest.mark.asyncio
 async def test_threaded_executor(hello_world):
-    from pygraphrt2.threaded_executor import ThreadedExecutor
+    from pygraphrt2.multiprocess_executor import MultiprocessExecutor
     graph, (the_name, the_greeting, hello) = hello_world
-    executor = ThreadedExecutor(graph)
+    executor = MultiprocessExecutor(graph)
 
     future = executor.execute(hello)
     print(future)
