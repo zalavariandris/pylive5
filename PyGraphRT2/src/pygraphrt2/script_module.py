@@ -2,12 +2,13 @@
 """
 
 
-from types import FunctionType, ModuleType
+from collections.abc import Mapping
+from types import FunctionType, MappingProxyType, ModuleType
 from dataclasses import dataclass
 import concurrent
 import weakref
 from qtpy.QtCore import QRunnable, QThreadPool
-from typing import Callable, Iterable, Literal, Any, override
+from typing import Callable, ClassVar, Iterable, Literal, Any, override
 import inspect
 from pathlib import Path
 from qtpy.QtCore import Signal, QObject
@@ -143,6 +144,18 @@ class FunctionRunnable(QRunnable):
 
 
 @dataclass(frozen=True)
+class ParameterData:
+    EMPTY: ClassVar[Any] = inspect.Parameter.empty
+    name:str
+    annotation: Any = EMPTY
+    default: Any = EMPTY
+
+    def __repr__(self):
+        return f"ParameterData(name='{self.name}', annotation={self.annotation}, default={self.default})"
+
+    
+
+@dataclass(frozen=True)
 class ScriptOperatorRef:
     """A stable reference that can outlive a missing or broken script function."""
 
@@ -155,9 +168,57 @@ class ScriptOperatorRef:
     def name(self) -> str:
         return self._name
 
+    def resolve(self) -> FunctionType:
+        return self._module._functions_cache[self._name]
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         func = self._module._functions_cache[self._name]
         return func(*args, **kwargs)
+
+    # equality and hashing
+    def __hash__(self) -> int:
+        return hash((self._module, self._name))
+    
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, ScriptOperatorRef):
+            return False
+        return self._module == other._module and self._name == other._name
+
+    # signature
+    def __func_sig(self)->inspect.Signature|None:
+        func = self._module._functions_cache.get(self._name, None)
+        if func is None:
+            return None
+
+        return inspect.signature(func)
+
+    def get_parameters(self) -> Mapping[str, ParameterData]:
+        sig = self.__func_sig()
+        if sig is None:
+            return MappingProxyType({})
+        params = {}
+        for name, param in sig.parameters.items():
+            param_data = ParameterData(
+                name, 
+                param.annotation if param.annotation is not inspect.Parameter.empty else ParameterData.EMPTY,
+                param.default if param.default is not inspect.Parameter.empty else ParameterData.EMPTY
+                )
+
+            params[name] = param_data
+        return MappingProxyType(params)
+
+    def get_line_number(self) -> int | None:
+        return self._module._line_numbers.get(self._name, None)
+
+    def get_return_type(self) -> type:
+        sig = self.__func_sig()
+        if sig:
+            if sig.return_annotation is not inspect.Signature.empty:
+                return sig.return_annotation
+            else:
+                return ParameterData.EMPTY #todo: this should be 'EMPTY', not 'Any' i think
+        else:
+            return ParameterData.EMPTY
 
 
 class ScriptModule(Registry):

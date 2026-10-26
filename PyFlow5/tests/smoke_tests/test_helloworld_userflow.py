@@ -9,7 +9,7 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QMimeData, QModelIndex, Qt, QTimer
 from qtpy.QtWidgets import QApplication, QDialogButtonBox
 
-from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.models.operators_model import OperatorsModel
 from pyflow5.views.pyflow5_documentwindow import PyFlow5DocumentWindow
 from pyflow5.models.pyflow5_document import PyFlowDocument
 
@@ -36,16 +36,16 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     assert not window._node_tree_view.isVisible()
 
     # - no module is selected now. check if the details view shows "<No Selection>", and disabled.
-    assert window._module_details_view.currentIndex() == QModelIndex()
-    code_editor = window._module_details_view._code_editor
-    assert not window._module_details_view._code_editor.isEnabled()
+    assert window._registry_panel.currentIndex() == QModelIndex()
+    code_editor = window._registry_panel._code_editor
+    assert not window._registry_panel._code_editor.isEnabled()
 
     # - Create a new embedded module
     document.createEmbeddedModule("_local_")
     
     # - Click the local module in the modules view to select it
     modules_listview = window._modules_listview
-    local_module_index = document.modules_model.index(0, 0)
+    local_module_index = document.registry_model.index(0, 0)
     qtbot.mouseClick(
         modules_listview.viewport(),
         Qt.MouseButton.LeftButton,
@@ -54,13 +54,13 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     qtbot.wait(WAIT_TIME_MS)
     assert document.modulesselection_model.currentIndex() == local_module_index
     assert document.modulesselection_model.isSelected(local_module_index)
-    assert window._module_details_view.currentIndex() == local_module_index
+    assert window._registry_panel.currentIndex() == local_module_index
 
     
     # - Edit the currently selected module through the code editor.
     # todo: do this with mouse and keyboard inputs
 
-    module_details_view = window._module_details_view
+    module_details_view = window._registry_panel
     qtbot.waitUntil(module_details_view._code_editor.isEnabled)
     qtbot.mouseClick(module_details_view._code_editor.viewport(), Qt.MouseButton.LeftButton)
     script = dedent("""\
@@ -69,7 +69,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     """)
 
     def set_code_editor_text(text, mode:Literal['direct', 'paste']='direct'):
-        code_editor = window._module_details_view._code_editor
+        code_editor = window._registry_panel._code_editor
         match mode:
             case 'direct':
                 code_editor.setPlainText(text)
@@ -91,7 +91,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
 
 
     set_code_editor_text(script)
-    assert local_module_index.data(ModulesOperatorsTreeModel.SourceRole) == script
+    assert local_module_index.data(OperatorsModel.SourceRole) == script
     qtbot.wait(WAIT_TIME_MS)
 
     # - open OperatorSelector dialog with a doublclick on the graphview
@@ -100,13 +100,13 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     # - Add helloworld through the operator picker.
     def add_node_using_the_operator_picker(operator_name) -> None:
         def find_operator_index(operator_name:str, module_idx:QModelIndex) -> QModelIndex:
-            for row in range(document.modules_model.rowCount(module_idx)):
-                operator_index = document.modules_model.index(row, 0, module_idx)
+            for row in range(document.registry_model.rowCount(module_idx)):
+                operator_index = document.registry_model.index(row, 0, module_idx)
                 if operator_index.data() == operator_name:
                     return operator_index
             return QModelIndex()
 
-        local_module_index = document.modules_model.index(0, 0)
+        local_module_index = document.registry_model.index(0, 0)
         operator_index = find_operator_index(operator_name, local_module_index)
         assert operator_index.isValid(), f"Operator '{operator_name}' not found in local module"
 
@@ -181,7 +181,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
         """))
     
     qtbot.wait(WAIT_TIME_MS)
-    current_excecution_data = document.graph_model.nodeData("helloworld", role=PyGraphRTGraphModel.ExecutionRole)
+    current_excecution_data = document.graph_model.nodeData("helloworld", role=PyGraphRTGraphModel.OutputRole)
     assert isinstance(current_excecution_data, Exception), f"Expected an Exception, got: {current_excecution_data}"
     qtbot.wait(WAIT_TIME_MS)
 

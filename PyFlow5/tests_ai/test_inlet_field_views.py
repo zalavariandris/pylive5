@@ -279,7 +279,7 @@ def test_window_shares_tree_fields_with_viewer_and_inspector(qtbot: QtBot) -> No
     editor = window._node_inspector._form_view._mapper.mappedWidgetAt(0)
     editor.setValue(9)
     assert window._viewer._body_widget._cached_data == 9
-    qtbot.waitUntil(lambda: root.data(PyGraphRTGraphModel.ExecutionRole) == 18)
+    qtbot.waitUntil(lambda: root.data(PyGraphRTGraphModel.OutputRole) == 18)
     assert root.siblingAtColumn(1).data(Qt.ItemDataRole.EditRole) is None
     assert window._viewer._body_widget._cached_data == 9
     window.close()

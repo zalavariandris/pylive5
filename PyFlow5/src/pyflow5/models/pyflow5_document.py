@@ -7,12 +7,13 @@ from typing import Iterable
 
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QModelIndex, QObject, QPointF, Signal
+from qtpy.QtGui import QTextDocument
 
-import pygraphrt as rt
+import pygraphrt2 as rt2
 
 from ..core.file_io import write_text_atomic
 
-from .modules_operator_tree_model import ModulesOperatorsTreeModel
+from .operators_model import OperatorsModel
 from .pygraphrt_graphmodel import PyGraphRTGraphModel
 from .pygraphrt_node_inlet_tree_model_adapter import PyGraphRTNodeInletTreeModelAdapter
 
@@ -38,9 +39,12 @@ class PyFlowDocument(QObject):
     modified = Signal()
     isModifiedChanged = Signal(bool)
     filePathChanged = Signal(object)
+    moduleScriptChanged = Signal()
+
+
 
     def __init__(self, 
-        engine: rt.GraphEngine|None=None,
+        engine: rt2.Engine|None=None,
         file: Path|None=None,
         parent:QObject|None=None
     ) -> None:
@@ -49,65 +53,67 @@ class PyFlowDocument(QObject):
         self._filestat: FileStamp | None = None
         self._is_modified = False
         self._closed = False
-        self._tracked_modules: set[rt.ScriptModuleRT] = set()
+
         if self._filepath is not None and self._filepath.exists():
             self._filestat = FileStamp.fromStat(self._filepath.stat())
 
         # RT
-        self._engine = engine or rt.GraphEngine(backend=rt.InlineExecutionBackend())
+        self._engine = engine or rt2.Engine()
 
         # Models
         ## Graph Model
         self.graph_model = PyGraphRTGraphModel(self._engine)
-        self._engine._invalidator.nodes_invalidated.connect(
-            lambda nodes: self.nodesInvalidated.emit([self.graph_model.mapFromSource(node_ref) for node_ref in nodes])
+        self._engine.nodes_invalidated.connect(
+            lambda nodes: self.nodesInvalidated.emit(
+                [
+                    self.graph_model.mapFromSource(node_ref) 
+                    for node_ref in nodes
+                ]
+            )
         )
 
         ## Modules Model
-        self.modules_model = ModulesOperatorsTreeModel()
-        self.modules_model.setSourceRegistry(self._engine._registry)
+        self.registry_model = OperatorsModel()
+        self.registry_model.setSourceRegistry(self._engine.registry)
 
         # Adapters
         ## Node inlet tree adapter
         self.node_inlet_tree_adapter = PyGraphRTNodeInletTreeModelAdapter(self.graph_model)
         
         # Initial evaluation
-        self._engine.request_node(*self._engine._graph.nodes())
+        self._engine.execute(*self._engine.graph.nodes())
 
         # Observe persisted content, not view refreshes or evaluation results.
         for signal in (
-            self._engine._graph.nodes_added,
-            self._engine._graph.nodes_removed,
-            self._engine._graph.nodes_changed,
+            self._engine.graph.nodes_added,
+            self._engine.graph.nodes_removed,
+            self._engine.graph.nodes_changed,
             self.graph_model.nodeMoved,
         ):
             signal.connect(self._markModified)
-        self._engine._registry.modules_added.connect(self._onModulesAdded)
-        self._engine._registry.modules_removed.connect(self._onModulesRemoved)
-        self._trackModules(self._engine._registry.modules())
+
+    def moduleScript(self)->str:
+        return self._engine.registry.module_script()
+
+    def setModuleScript(self, script: str) -> None:
+        if self._engine.registry.module_script() == script:
+            return
+        self._engine.registry.set_module_script(script)
+        self.moduleScriptChanged.emit()
 
     def _markModified(self, *_args: object) -> None:
+        """Mark the document as modified."""
         if not self._closed:
             self.setModified(True)
             self.modified.emit()
 
-    def _trackModules(self, modules: Iterable[rt.ScriptModuleRT]) -> None:
-        for module in modules:
-            if isinstance(module, rt.ImportModuleRT) or module in self._tracked_modules:
-                continue
-            module.script_changed.connect(self._markModified)
-            self._tracked_modules.add(module)
+    def isModified(self) -> bool:
+        return self._is_modified
 
-    def _onModulesAdded(self, modules: list[rt.ScriptModuleRT]) -> None:
-        self._trackModules(modules)
-        self._markModified()
-
-    def _onModulesRemoved(self, modules: list[rt.ScriptModuleRT]) -> None:
-        for module in modules:
-            if module in self._tracked_modules:
-                module.script_changed.disconnect(self._markModified)
-                self._tracked_modules.remove(module)
-        self._markModified()
+    def setModified(self, modified: bool) -> None:
+        if modified != self._is_modified:
+            self._is_modified = modified
+            self.isModifiedChanged.emit(modified)
 
     def filePath(self) -> Path|None:
         return self._filepath
@@ -131,11 +137,8 @@ class PyFlowDocument(QObject):
         if self._closed:
             return
         self._closed = True
-        for module in self._tracked_modules:
-            module.script_changed.disconnect(self._markModified)
-        self._tracked_modules.clear()
         self.graph_model.close()
-        self._engine.close()
+        # self._engine.close()
 
     def getNodeOperator(self, node_name: NodeName) -> QModelIndex:
         node_ref = self.graph_model.mapToSource(node_name)
@@ -146,16 +149,9 @@ class PyFlowDocument(QObject):
         if operator is None:
             return QModelIndex()
 
-        operator_index = self.modules_model.mapFromSource(operator)
+        operator_index = self.registry_model.mapFromSource(operator)
         return operator_index
 
-    def isModified(self) -> bool:
-        return self._is_modified
-
-    def setModified(self, modified: bool) -> None:
-        if modified != self._is_modified:
-            self._is_modified = modified
-            self.isModifiedChanged.emit(modified)
 
     # Serialization
     @classmethod
@@ -198,9 +194,9 @@ class PyFlowDocument(QObject):
             ):
                 raise ValueError(f"Invalid position for node {name!r}")
             positions[name] = QPointF(*position)
-        deserializer = rt.GraphDeserializer()
+        deserializer = rt2.GraphDeserializer()
         registry, graph = deserializer.fromdict(data)
-        engine = rt.GraphEngine(graph=graph, registry=registry)
+        engine = rt2.Engine(graph=graph, registry=registry)
         doc = None
         try:
             doc = cls(engine=engine)
@@ -216,7 +212,7 @@ class PyFlowDocument(QObject):
         return doc
 
     def serialize(self) -> str:
-        serializer = rt.GraphSerializer(self._engine._graph, self._engine._registry)
+        serializer = rt2.GraphSerializer(self._engine.graph, self._engine.registry)
         data = serializer.todict()
 
         # inject position
@@ -257,8 +253,8 @@ class PyFlowDocument(QObject):
     # Editing
     def createNewNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
         assert operator_index.isValid(), "Operator index must be valid."
-        assert operator_index.model() is self.modules_model, "Operator index must belong to the modules model."
-        selected_op_ref = operator_index.data(ModulesOperatorsTreeModel.OperatorRole)
+        assert operator_index.model() is self.registry_model, "Operator index must belong to the modules model."
+        selected_op_ref = operator_index.data(OperatorsModel.OperatorRole)
         if selected_op_ref:
             self.graph_model.addNode(selected_op_ref, scene_pos or QPointF(0, 0))
 

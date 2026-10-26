@@ -13,13 +13,16 @@ from qtpy.QtWidgets import QLabel, QVBoxLayout, QWidget
 import myqtx
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 
-from ..models.modules_operator_tree_model import ModulesOperatorsTreeModel
+from ..models.operators_model import OperatorsModel
+
+
+
 
 
 class ModuleDetailsView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._model: ModulesOperatorsTreeModel | None = None
+        self._model: OperatorsModel | None = None
         self._model_connections: list[tuple[Signal, Slot]] = []
         self._selection_model: QItemSelectionModel | None = None
         self._selection_model_connections: list[tuple[Signal, Slot]] = []
@@ -39,7 +42,7 @@ class ModuleDetailsView(QWidget):
             self._model.setData(
                 self.currentIndex(),
                 self._code_editor.toPlainText(),
-                ModulesOperatorsTreeModel.SourceRole,
+                OperatorsModel.SourceRole,
             )
         self._code_editor.textChanged.connect(_on_editor_text_changed)
 
@@ -49,10 +52,10 @@ class ModuleDetailsView(QWidget):
         layout.addWidget(self._code_status_label)
         self._update_display()
 
-    def model(self) -> ModulesOperatorsTreeModel | None:
+    def model(self) -> OperatorsModel | None:
         return self._model
 
-    def setModel(self, model: ModulesOperatorsTreeModel | None) -> None:
+    def setModel(self, model: OperatorsModel | None) -> None:
         if model is self._model:
             return
         self.setSelectionModel(None)
@@ -151,8 +154,8 @@ class ModuleDetailsView(QWidget):
             current = current.parent()
         
         title = current.data(Qt.ItemDataRole.DisplayRole) if current.isValid() else "<No Selection>"
-        source = current.data(ModulesOperatorsTreeModel.SourceRole)
-        read_only = bool(current.data(ModulesOperatorsTreeModel.ReadOnlyRole))
+        source = current.data(OperatorsModel.SourceRole)
+        read_only = bool(current.data(OperatorsModel.ReadOnlyRole))
         self._title_label.setText(title or "")
         text = source if isinstance(source, str) else ""
         with myqtx.utils.blockingSignals(self._code_editor):
@@ -162,5 +165,5 @@ class ModuleDetailsView(QWidget):
             if reset_editor or self._code_editor.toPlainText() != text:
                 self._code_editor.setPlainText(text)
 
-        status_data = current.data(ModulesOperatorsTreeModel.StatusRole)
+        status_data = current.data(OperatorsModel.StatusRole)
         self._code_status_label.setText(f"{status_data}")

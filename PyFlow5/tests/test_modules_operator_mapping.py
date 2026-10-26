@@ -2,24 +2,24 @@ import pytest
 from pytestqt.modeltest import ModelTester
 from qtpy.QtCore import QModelIndex, Qt
 
-from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.models.operators_model import OperatorsModel
 from pygraphrt import ImportModuleRT, ModuleRegistry, ScriptModuleRT
 from pygraphrt.script_module import ScriptOperatorRef
 
 
 @pytest.fixture
-def model() -> ModulesOperatorsTreeModel:
+def model() -> OperatorsModel:
     registry = ModuleRegistry()
     for module in [ScriptModuleRT("local"), ImportModuleRT("imported")]:
         module.set_script("def same() -> int: return 1\ndef extra() -> int: return 2")
         module._evaluate()
         registry.add_module(module)
-    model = ModulesOperatorsTreeModel()
+    model = OperatorsModel()
     model.setSourceRegistry(registry)
     return model
 
 
-def test_mapping_round_trips(model: ModulesOperatorsTreeModel) -> None:
+def test_mapping_round_trips(model: OperatorsModel) -> None:
     for module_row in range(model.rowCount()):
         module_index = model.index(module_row, 0)
         module = model.mapToSource(module_index)
@@ -38,8 +38,8 @@ def test_mapping_round_trips(model: ModulesOperatorsTreeModel) -> None:
         assert model.flags(module_index) & Qt.ItemFlag.ItemIsSelectable
 
 
-def test_invalid_indexes(model: ModulesOperatorsTreeModel) -> None:
-    foreign = ModulesOperatorsTreeModel()
+def test_invalid_indexes(model: OperatorsModel) -> None:
+    foreign = OperatorsModel()
     for index in [
         QModelIndex(),
         foreign.createIndex(0, 0, 0),
@@ -53,7 +53,7 @@ def test_invalid_indexes(model: ModulesOperatorsTreeModel) -> None:
         assert model.flags(index) == Qt.ItemFlag.NoItemFlags
 
 
-def test_unknown_and_removed_sources(model: ModulesOperatorsTreeModel) -> None:
+def test_unknown_and_removed_sources(model: OperatorsModel) -> None:
     foreign_module = ScriptModuleRT("local")
     foreign_module.set_script("def same() -> int: return 1")
     foreign_module.evaluate()
@@ -70,7 +70,7 @@ def test_unknown_and_removed_sources(model: ModulesOperatorsTreeModel) -> None:
     assert not model.mapFromSource(ScriptOperatorRef(module, "missing")).isValid()
 
 
-def test_mapping_without_registry(model: ModulesOperatorsTreeModel) -> None:
+def test_mapping_without_registry(model: OperatorsModel) -> None:
     index = model.index(0, 0)
     module = model.mapToSource(index)
     model.setSourceRegistry(None)
@@ -79,6 +79,6 @@ def test_mapping_without_registry(model: ModulesOperatorsTreeModel) -> None:
 
 
 def test_qt_model_contract(
-    model: ModulesOperatorsTreeModel, qtmodeltester: ModelTester
+    model: OperatorsModel, qtmodeltester: ModelTester
 ) -> None:
     qtmodeltester.check(model)

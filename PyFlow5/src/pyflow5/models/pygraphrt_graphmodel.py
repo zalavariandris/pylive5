@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from logging import warning
 from pathlib import Path
-from typing import Annotated, Iterable, override, Any, get_args, get_origin
+from typing import Annotated, Iterable, Literal, override, Any, get_args, get_origin
 import warnings
 
 from pygraphrt.graph_definition_rt import NodeRef
@@ -33,7 +33,8 @@ from qdageditor5.models.abstract_dag_model import (
 
 from ..core.input_roles import InputDataRole
 
-import pygraphrt as rt
+
+import pygraphrt2 as rt2
 
 from qdageditor5.core.item_data_roles import (
     NodeDataRole, SocketDataRole
@@ -51,12 +52,15 @@ def _same_value(previous: object, current: object) -> bool:
     """
     if type(previous) is not type(current):
         return False
-    if previous is EmptyInletValue or previous is rt.ParameterData.EMPTY:
+    
+    if previous is EmptyInletValue or previous is rt2.ParameterData.EMPTY:
         return previous is current
+    
     if isinstance(previous, tuple) and isinstance(current, tuple):
         return len(previous) == len(current) and all(
             _same_value(old, new) for old, new in zip(previous, current)
         )
+    
     if (
         isinstance(previous, (type(None), bool, int, float, str, bytes, Path, Enum, type))
         or get_origin(previous) is not None
@@ -97,64 +101,71 @@ class _NodeShadow:
 
 
 class PyGraphRTGraphModel(AbstractDAGModel):
-    ExecutionRole = Qt.ItemDataRole.UserRole+1
+    OutputRole = Qt.ItemDataRole.UserRole+1
     ResolutionRole = Qt.ItemDataRole.UserRole+2
 
     EmptyInputValue = EmptyInletValue
 
     def __init__(self, 
-        engine: rt.GraphEngine
+        engine: rt2.Engine
     ) -> None:
         super().__init__()
         self._engine = engine
         self._closed = False
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
 
-        self._executions: dict[NodeName, rt.NodeExecution] = {}
-        self._operator_parameters_cache: dict[rt.AbstractOperator, Mapping[str, rt.ParameterData]] = {}
+        self._outputs: dict[NodeName, object|None] = {}
+        self._errors: dict[NodeName, object|None] = {}
+        self._operator_parameters_cache: dict[rt2.ScriptOperatorRef, Mapping[str, rt2.ParameterData]] = {}
         self._nodes: dict[NodeName, _NodeShadow] = {
             node.get_name(): self._make_node_shadow(node)
-            for node in self._engine._graph.nodes()
+            for node in self._engine.graph.nodes()
         }
 
         # Adapters observe this model, including changes made directly to the RT.
-        self._engine._graph.nodes_added.connect(self._on_rt_nodes_added)
-        self._engine._graph.nodes_removed.connect(self._on_rt_nodes_removed)
-        self._engine._graph.nodes_changed.connect(self._on_rt_nodes_changed)
-        for signal in (
-            self._engine._registry.modules_added,
-            self._engine._registry.modules_removed,
-            self._engine._registry.operators_added,
-            self._engine._registry.operators_removed,
-            self._engine._registry.operators_changed,
-        ):
-            signal.connect(self._on_registry_changed)
+        self._engine.graph.nodes_added.connect(self._on_rt_nodes_added)
+        self._engine.graph.nodes_removed.connect(self._on_rt_nodes_removed)
+        self._engine.graph.nodes_changed.connect(self._on_rt_nodes_changed)
 
+        self._engine.registry.operators_added.connect(lambda operators: self._on_registry_changed('added', operators))
+        self._engine.registry.operators_removed.connect(lambda operators: self._on_registry_changed('removed', operators))
+        self._engine.registry.operators_changed.connect(lambda operators: self._on_registry_changed('changed', operators))
 
-        self._engine.evaluated.connect(self._on_evaluated)
+        self._engine.nodes_executed.connect(self._on_executed)
+        self._engine.execution_failed.connect(self._on_failed)
 
-    def _make_node_shadow(self, node: rt.NodeRef) -> _NodeShadow:
-        operator = node.get_operator()
-        parameters = self._get_operator_parameters(operator) if operator is not None else {}
-        inlet_names, bindings = self.__node_inlets(node)
-        args, kwargs = node.get_inputs()
+    def _on_registry_changed(self, change:Literal['added', 'removed', 'changed'], nodes: list[object]) -> None:
+        """Handle changes in the operator registry by clearing the cache and updating nodes."""
+        # todo: Implement more sophisticated handling based on the type of change and affected operators.
+        if self._closed:
+            return
+        # Synchronous UI observers must see the new parameter definitions.
+        #
+        self._operator_parameters_cache.clear()
+        self._on_rt_nodes_changed(self._engine.graph.nodes())
+
+    def _make_node_shadow(self, node_ref: rt2.NodeRef) -> _NodeShadow:
+        node_state = node_ref.resolve()
+        parameters = self._get_operator_parameters(node_state.operator) if node_state.operator is not None else {}
+        inlet_names, bindings = self.__node_inlets(node_ref)
         inlets: dict[InletName, _InletShadow] = {}
         for position, inlet in enumerate(inlet_names):
             parameter = parameters.get(str(inlet))
-            location, value = self._input_binding(inlet, position, args, kwargs)
+            location, value = self._input_binding(inlet, position, node_state.args, node_state.kwargs)
             inlets[inlet] = _InletShadow(
                 location=location,
                 parameter_name=parameter.name if parameter is not None else None,
-                annotation=parameter.annotation if parameter is not None else rt.ParameterData.EMPTY,
-                default=parameter.default if parameter is not None else rt.ParameterData.EMPTY,
+                annotation=parameter.annotation if parameter is not None else rt2.ParameterData.EMPTY,
+                default=parameter.default if parameter is not None else rt2.ParameterData.EMPTY,
                 input=self.EmptyInputValue if isinstance(value, NodeRef) else value,
                 connection=value.get_name() if isinstance(value, NodeRef) else None,
             )
+
         return _NodeShadow(
-            operator_name=operator.get_name() if operator is not None else None,
+            operator_name=node_state.operator.name() if node_state.operator is not None else None,
             inlets=inlets,
             links=frozenset(
-                (value.get_name(), 'out', node.get_name(), inlet)
+                (value.get_name(), 'out', node_ref.get_name(), inlet)
                 for inlet, value in bindings if isinstance(value, NodeRef)
             ),
         )
@@ -172,39 +183,41 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             return position, args[position]
         return str(inlet), self.EmptyInputValue
 
-    def _on_rt_nodes_added(self, nodes: list[rt.NodeRef]) -> None:
+    def _on_rt_nodes_added(self, nodes: list[rt2.NodeRef]) -> None:
         if self._closed:
             return
-        for node in nodes:
-            self._nodes[node.get_name()] = self._make_node_shadow(node)
         if any(isinstance(msg, AddNodeMessage) for msg in self._message_queue):
             return  # addNode already owns the source notification pair.
-        names = tuple(node.get_name() for node in nodes)
+        
+        names = tuple(node_ref.name() for node_ref in nodes)
         self.nodesAboutToBeAdded.emit(names)
+        for node_ref in nodes:
+            self._nodes[node_ref.name()] = self._make_node_shadow(node_ref)
         self.nodesAdded.emit(names)
 
-    def _on_rt_nodes_removed(self, nodes: list[rt.NodeRef]) -> None:
+    def _on_rt_nodes_removed(self, nodes: list[rt2.NodeRef]) -> None:
         if self._closed:
             return
+        if any(isinstance(msg, RemoveNodeMessage) for msg in self._message_queue):
+            return  # removeNodes already owns the source notification pair.
         names = tuple(node.get_name() for node in nodes)
+        
+        self.nodesAboutToBeRemoved.emit(names)
         for name in names:
             self._nodes.pop(name, None)
             self._positions.pop(name, None)
-            self._executions.pop(name, None)
-        if any(isinstance(msg, RemoveNodeMessage) for msg in self._message_queue):
-            return  # removeNodes already owns the source notification pair.
-        self.nodesAboutToBeRemoved.emit(names)
+            self._outputs.pop(name, None)
         self.nodesRemoved.emit(names)
 
-    def _on_rt_nodes_changed(self, nodes: list[rt.NodeRef]) -> None:
+    def _on_rt_nodes_changed(self, nodes: list[rt2.NodeRef]) -> None:
         if self._closed:
             return
         # Update the whole batch before notifying synchronous observers.
         changes: list[tuple[NodeName, _NodeShadow, _NodeShadow]] = []
-        for node in nodes:
-            name = node.get_name()
+        for node_ref in nodes:
+            name = node_ref.name()
             previous = self._nodes[name]
-            current = self._make_node_shadow(node)
+            current = self._make_node_shadow(node_ref)
             self._nodes[name] = current
             changes.append((name, previous, current))
 
@@ -243,20 +256,25 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             )
 
     @Slot(dict)
-    def _on_evaluated(self, executions: dict[rt.NodeRef, rt.NodeExecution]) -> None:
+    def _on_executed(self, outputs: dict[rt2.NodeRef, object|None]) -> None:
         if self._closed:
             return
 
         changed_nodenames: list[NodeName] = []
-        for node_ref, execution in executions.items():
+        for node_ref, execution in outputs.items():
             if node_name := self.mapFromSource(node_ref):
-                self._executions[node_name] = execution
+                self._outputs[node_name] = execution
                 changed_nodenames.append(node_name)
 
         self.nodesDataChanged.emit(
             tuple(changed_nodenames),
-            (self.ExecutionRole, NodeDataRole.TrailingRole, Qt.ItemDataRole.ForegroundRole),
+            (self.OutputRole, NodeDataRole.TrailingRole, Qt.ItemDataRole.ForegroundRole),
         )
+
+    def _on_failed(self, error: Exception) -> None:
+        if self._closed:
+            return
+        raise NotImplementedError("Execution failed handling not implemented.")
 
     def close(self) -> None:
         """Disconnect evaluation callbacks when the document is closed."""
@@ -265,19 +283,12 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._closed = True
         self._operator_parameters_cache.clear()
         self._nodes.clear()
-        self._engine.evaluated.disconnect(self._on_evaluated)
-
-    @Slot(list)
-    def _on_registry_changed(self, _changes: list[object]) -> None:
-        if self._closed:
-            return
-        # Synchronous UI observers must see the new parameter definitions.
-        self._operator_parameters_cache.clear()
-        self._on_rt_nodes_changed(self._engine._graph.nodes())
+        self._engine.nodes_executed.disconnect(self._on_executed)
+        self._engine.execution_failed.disconnect(self._on_failed)
 
     def _get_operator_parameters(
-        self, operator: rt.AbstractOperator
-    ) -> Mapping[str, rt.ParameterData]:
+        self, operator: rt2.ScriptOperatorRef
+    ) -> Mapping[str, rt2.ParameterData]:
         """Reuse parameter metadata across snapshots, UI queries, and input edits."""
         if operator not in self._operator_parameters_cache:
             self._operator_parameters_cache[operator] = operator.get_parameters()
@@ -288,7 +299,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         Call after a failed mutation has unwound, not from a mutation signal handler.
         """
-        node_names = {node.get_name() for node in self._engine._graph.nodes()}
+        node_names = {node.get_name() for node in self._engine.graph.nodes()}
         positions = {name: position for name, position in self._positions.items()
                      if name in node_names}
         # Recovery deliberately abandons notifications left open by a failed edit.
@@ -297,84 +308,78 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._operator_parameters_cache.clear()
         self._positions = defaultdict(lambda: (0.0, 0.0), positions)
         self._nodes = {
-            node.get_name(): self._make_node_shadow(node)
-            for node in self._engine._graph.nodes()
+            node_ref.name(): self._make_node_shadow(node_ref)
+            for node_ref in self._engine.graph.nodes()
         }
         self._endResetModel()
 
     # = Mapping Source =
-    def mapToSource(self, node_name:NodeName)->rt.NodeRef|None:
+    def mapToSource(self, node_name:NodeName)->rt2.NodeRef|None:
         # todo: consider caching node references by name for faster lookup
         # find noderef by the name
-        for node_ref in self._engine._graph.nodes():
-            if node_ref.get_name() == node_name:
+        for node_ref in self._engine.graph.nodes():
+            if node_ref.name() == node_name:
                 return node_ref
         return None
 
-    def mapFromSource(self, node_ref: rt.NodeRef) -> NodeName | None:
-        return node_ref.get_name() if node_ref is not None else None
+    def mapFromSource(self, node_ref: rt2.NodeRef) -> NodeName | None:
+        return node_ref.name() if node_ref is not None else None
 
     # OVERRIDES 
     # - READ
     @override
-    def nodes(self)->Iterable[NodeName]:
+    def nodes(self)->Iterable[NodeName]: # type: ignore
         return [
-            self.mapFromSource(node_ref)
-            for node_ref in self._engine._graph.nodes()
+            NodeName(self.mapFromSource(node_ref))
+            for node_ref in self._engine.graph.nodes()
         ]
 
     @override
-    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any: # type: ignore
         node_ref = self.mapToSource(node_name)
+        node_state = node_ref.resolve()
         if node_ref is None:
             return None
         
         match role:
             case Qt.ItemDataRole.DisplayRole:
-                if op:=node_ref.get_operator():
+                if op:=node_state.operator:
                     return op.get_name()
                 else:
                     return "-NoOp-"
 
             case Qt.ItemDataRole.BackgroundRole:
-                if op:=node_ref.get_operator():
+                if op:=node_state.operator:
                     return None
                 else:
                     return QColor(200,20,20)
 
             case Qt.ItemDataRole.ForegroundRole:
-                execution = self._executions.get(node_name)
-                if isinstance(execution, rt.ExecutionFailure):
+                if node_name in self._errors:
                     return QColor("red")
-                return None
+                else:
+                    return None
 
             case NodeDataRole.LeadingRole:
                 return f"{node_ref.get_name()}"
 
             case NodeDataRole.TrailingRole:
-                execution = self._executions.get(node_name)
-                if isinstance(execution, rt.ExecutionFailure):
-                    return str(execution.reason)
+                error = self._errors.get(node_name)
+                if error:=self._errors.get(node_name):
+                    return str(error)
 
-                if isinstance(execution, rt.ExecutionSuccess):
-                    duration_ms = execution.duration_ms
-                    if duration_ms is not None:
-                        text = f"{duration_ms:.2f} ms"
-                        return f"({text})" if execution.cached else text
+                # if isinstance(execution, rt.ExecutionSuccess):
+                #     duration_ms = execution.duration_ms
+                #     if duration_ms is not None:
+                #         text = f"{duration_ms:.2f} ms"
+                #         return f"({text})" if execution.cached else text
                 return None
 
-            case self.ExecutionRole:
-                if node_name in self._executions:
-                    match self._executions.get(node_name):
-                        case rt.ExecutionBlocked():
-                            return None
-                        case rt.ExecutionSuccess() as success:
-                            return success.result
-                        case rt.ExecutionFailure() as failure:
-                            the_exception = failure.reason
-                            return failure.reason
-                        case _:
-                            return None
+            case self.OutputRole:
+                if error:=self._errors.get(node_name):
+                    return str(error)
+                if node_name in self._outputs:
+                    return self._outputs[node_name]
                 else:
                     warnings.warn(f"No execution result for node: '{node_name}'")
                     return None
@@ -383,12 +388,12 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 return None
 
     @override
-    def inlets(self, node:NodeName)->Iterable[InletName]:
+    def inlets(self, node:NodeName)->Iterable[InletName]: # type: ignore
         if node_ref := self.mapToSource(node):
             inlets, _ = self.__node_inlets(node_ref)
             yield from inlets
 
-    def __node_inlets(self, node_ref: rt.NodeRef):
+    def __node_inlets(self, node_ref: rt2.NodeRef):
         """Return declared inlets and actual bindings, including invalid extras."""
         op = node_ref.get_operator()
         parameters = list(self._get_operator_parameters(op)) if op is not None else []
@@ -410,13 +415,13 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         return ['out']
     
     @override
-    def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
-        def get_parameter(node: NodeName, inlet: InletName) -> rt.ParameterData | None:
+    def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any: #type: ignore
+        def get_parameter(node: NodeName, inlet: InletName) -> rt2.ParameterData | None:
             node_rt = self.mapToSource(node)
             if node_rt is None:
                 return None
             
-            operator_rt = node_rt.get_operator()
+            operator_rt = node_rt.resolve().operator
             if operator_rt is None:
                 return None
 
@@ -454,13 +459,13 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
             case InputDataRole.AnnotationRole:
                 param = get_parameter(node, inlet)
-                annotation = param.annotation if param is not None else rt.ParameterData.EMPTY
+                annotation = param.annotation if param is not None else rt2.ParameterData.EMPTY
                 if isinstance(annotation, str):
                     return {
                         "int": int, "float": float, "str": str, "bool": bool,
                         "Path": Path, "pathlib.Path": Path,
                     }.get(annotation)
-                if annotation is not rt.ParameterData.EMPTY:
+                if annotation is not rt2.ParameterData.EMPTY:
                     return annotation
 
                 value = self.inletData(node, inlet, InputDataRole.InputValueRole)
@@ -472,7 +477,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
             case InputDataRole.HasAnnotationRole:
                 param = get_parameter(node, inlet)
-                return param is not None and param.annotation is not rt.ParameterData.EMPTY
+                return param is not None and param.annotation is not rt2.ParameterData.EMPTY
 
             case (
                 InputDataRole.InputLocationRole
@@ -486,9 +491,9 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 inlets = list(self.inlets(node))
                 if inlet not in inlets:
                     return None
-                args, kwargs = node_rt.get_inputs()
+                node_state = node_rt.resolve()
                 position = inlets.index(inlet)
-                location, value = self._input_binding(inlet, position, args, kwargs)
+                location, value = self._input_binding(inlet, position, node_state.args, node_state.kwargs)
 
                 if role == InputDataRole.InputLocationRole:
                     return location
@@ -530,7 +535,8 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 # -> str | None
                 node_rt = self.mapToSource(node)
                 if node_rt is not None:
-                    operator_rt = node_rt.get_operator()
+                    node_state = node_rt.resolve()
+                    operator_rt = node_state.operator
                     if operator_rt is not  None:
                         if param := self._get_operator_parameters(operator_rt).get(str(inlet)):
                             return f"{param.name}: {param.annotation}"
@@ -579,7 +585,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
     @override
     def links(self)->Iterable[DirectionalLinkId]:
-        for node_ref in self._engine._graph.nodes():
+        for node_ref in self._engine.graph.nodes():
             yield from self.__node_input_links(node_ref)
 
     @override
@@ -592,21 +598,15 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         source, outlet, target, inlet = link
         return target, inlet
 
-    def __node_input_links(self, node_ref: rt.NodeRef)->Iterable[DirectionalLinkId]:
+    def __node_input_links(self, node_ref: rt2.NodeRef)->Iterable[DirectionalLinkId]:
         _, bindings = self.__node_inlets(node_ref)
         for inlet, value in bindings:
-            if isinstance(value, rt.NodeRef):
+            if isinstance(value, rt2.NodeRef):
                 yield value.get_name(), 'out', node_ref.get_name(), inlet
 
     # - WRITES
     @override
-    def setInletData(
-        self,
-        node: NodeName,
-        inlet: InletName,
-        value: object,
-        role: int,
-    ) -> bool:
+    def setInletData( self, node: NodeName, inlet: InletName, value: object, role: int) -> bool: # type: ignore
         if role != InputDataRole.InputValueRole:
             return False
         node_rt = self.mapToSource(node)
@@ -616,9 +616,10 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         if not isinstance(location, (int, str)):
             return False
 
-        args, kwargs = node_rt.get_inputs()
+        node_state = node_rt.resolve()
+        args, kwargs = node_state.args, node_state.kwargs
         args, kwargs = list(args), dict(kwargs)
-        if value is rt.ParameterData.EMPTY or value is self.EmptyInputValue:
+        if value is rt2.ParameterData.EMPTY or value is self.EmptyInputValue:
             if isinstance(location, int):
                 args.pop(location)
             elif location in kwargs:
@@ -628,7 +629,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         else:
             if self.inletData(node, inlet, InputDataRole.ConnectionRole) is not None:
                 return False
-            if isinstance(value, NodeRef):
+            if isinstance(value, rt2.NodeRef):
                 return False  # Connections are edited through the graph's link API.
 
             annotation = self.inletData(node, inlet, InputDataRole.AnnotationRole)
@@ -677,33 +678,39 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
     # - MUTATIONS
     @override
-    def removeLinks(self, links:Iterable[DirectionalLinkId])->bool:
+    def removeLinks(self, links:Iterable[DirectionalLinkId])->bool: #type: ignore
         self._beginRemoveLinks(links)
         for link in list(links):
             source, outlet, target, inlet = link
-            target_rt:rt.NodeRef = self.mapToSource(target)
-            args, kwargs = target_rt.get_inputs()
+            target_rt:rt2.NodeRef = self.mapToSource(target)
+            target_state = target_rt.resolve()
             op = target_rt.get_operator()
             inlets = self._get_operator_parameters(op).keys()
             if inlet not in inlets:
                 continue
 
             inlet_idx = list(inlets).index(inlet)
-            if inlet_idx < len(args):
+            if inlet_idx < len(target_state.args):
                 new_args = [
                     arg 
-                    for arg in args 
+                    for arg in target_state.args
                     if not arg.get_name() == source
                 ]
-                target_rt.set_inputs(*new_args, **kwargs)
 
-            elif inlet in kwargs:
+                self._engine.graph._update_node(
+                    target_rt, 
+                    target_state.operator,
+                    new_args, 
+                    target_state.kwargs
+                )
+
+            elif inlet in target_state.kwargs:
                 new_kwargs = {
                     k: v 
-                    for k, v in kwargs.items() 
-                    if not (k == inlet and isinstance(v, rt.NodeRef) and v.get_name() == source)
+                    for k, v in target_state.kwargs.items() 
+                    if not (k == inlet and isinstance(v, rt2.NodeRef) and v.get_name() == source)
                 }
-                target_rt.set_inputs(*args, **new_kwargs)
+                target_rt.set_inputs(*target_state.args, **new_kwargs)
 
         self._endRemoveLinks() # todo: check if QAbstractItemModel return values for these kind of methods
         return True
@@ -714,7 +721,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             node_ref = self.mapToSource(node_name)
             assert node_ref is not None, f"Node '{node_name}' not found"
 
-            self._engine._graph._delete_node(node_ref)
+            self._engine.graph._delete_node(node_ref)
             self._positions.pop(node_name, None)
         self._endRemoveNodes()
 
@@ -724,19 +731,18 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         source_ref = self.mapToSource(source)
         assert target_ref is not None, f"Target node '{target}' not found"
         assert source_ref is not None, f"Source node '{source}' not found"
-        args, kwargs = target_ref.get_inputs()
-        op_ref = target_ref.get_operator()
+        target_state = target_ref.get_state()
 
         # if there are already positional arguments for this inlet, replace that otherwise add it to keyword arguments
-        inlets = list(self._get_operator_parameters(op_ref))
+        inlets = list(self._get_operator_parameters(target_state.operator))
         if inlet not in inlets:
             print(f"Inlet '{inlet}' not found in operator parameters")
             return
         inlet_idx = inlets.index(inlet)
 
-        new_args = list(args)
-        new_kwargs = dict(kwargs)
-        if inlet_idx < len(args):
+        new_args = list(target_state.args)
+        new_kwargs = dict(target_state.kwargs)
+        if inlet_idx < len(target_state.args):
             new_args[inlet_idx] = source_ref
         else:
             new_kwargs[inlet] = source_ref
@@ -745,15 +751,16 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         print(f"Updated inputs for target node '{target}': args={new_args}, kwargs={new_kwargs}")
         self._endAddLinks()
 
-    def addNode(self, operator:rt.AbstractOperator, position:QPointF|None=None)->bool:
+    def addNode(self, operator:rt2.ScriptOperatorRef, position:QPointF|None=None)->bool:
         """
         position: QPointF|None, in scene coordinates"""
-        assert isinstance(operator, rt.AbstractOperator), f"operator must be an instance of AbstractOperator, got: {operator}"
+        assert isinstance(operator, rt2.ScriptOperatorRef), f"operator must be an instance of AbstractOperator, got: {operator}"
         new_node_name = operator.get_name()
-        node_names = [ref.get_name() for ref in self._engine._graph.nodes()]
+        node_names = [ref.get_name() for ref in self._engine.graph.nodes()]
         unique_name = UniqueNameGenerator(existing_names=node_names)(new_node_name)
+        
         self._beginAddNodes([unique_name])
-        new_node_ref = self._engine._graph._create_node(operator, name=unique_name)
+        new_node_ref = self._engine.graph._create_node(operator, name=unique_name)
         if position:
             self._positions[new_node_ref.get_name()] = position.x(), position.y()
         self._endAddNodes()

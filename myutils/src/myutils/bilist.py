@@ -43,6 +43,9 @@ class BiList(Generic[T]):
     def inverse(self) -> Mapping[T, int]:
         return self._inverse
 
+    def index(self, item: T) -> int:
+        return self._index_by_item[item]
+
     def __len__(self) -> int:
         return len(self._items)
 

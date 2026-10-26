@@ -118,7 +118,7 @@ class AppWindow(QMainWindow):
         self.currentDocumentWindow()._graph_view.addAction(self._navigate_operator_action)
         view_menu.addAction(self._navigate_operator_action)
         panels = [
-            (self.currentDocumentWindow()._modules_panel, "Modules"),
+            (self.currentDocumentWindow()._registry_panel, "Modules"),
             (self.currentDocumentWindow()._graph_view, "Graph"),
             (self.currentDocumentWindow()._node_inlet_tree_view, "Tree"),
             (self.currentDocumentWindow()._viewer, "Viewer")
@@ -137,7 +137,7 @@ class AppWindow(QMainWindow):
             Qt.ShortcutContext.WidgetWithChildrenShortcut
         )
         self._navigate_to_previous_graph_panel.triggered.connect(self._showGraphPanel)
-        self.currentDocumentWindow()._modules_panel.addAction(self._navigate_to_previous_graph_panel)
+        self.currentDocumentWindow()._registry_panel.addAction(self._navigate_to_previous_graph_panel)
         view_menu.addAction(self._navigate_to_previous_graph_panel)
 
         view_menu.addSeparator()

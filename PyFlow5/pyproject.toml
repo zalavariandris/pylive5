@@ -20,6 +20,7 @@ dependencies = [
     "qdageditor5",
     "QtScriptEditorAdvanced",
     "vfxops",
+    "bidict"
 ]
 
 [tool.uv.sources]

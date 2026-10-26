@@ -8,7 +8,7 @@ from qtpy.QtCore import QItemSelectionModel, QModelIndex, Qt
 from qtpy.QtTest import QSignalSpy
 
 from myqtx.selection_dialog_view import SelectionDialog
-from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.models.operators_model import OperatorsModel
 from pyflow5.models.pyflow5_document import PyFlowDocument
 from pyflow5.views.pyflow5_documentwindow import ModuleDetailsView
 
@@ -17,11 +17,11 @@ import pygraphrt as rt
 
 
 @pytest.fixture
-def model(qtbot: QtBot, tmp_path: Path) -> ModulesOperatorsTreeModel:
+def model(qtbot: QtBot, tmp_path: Path) -> OperatorsModel:
     graph = rt.GraphDefinitionRT()
     graph.local().set_script("def same() -> int: return 1")
     graph.local().evaluate()
-    model = ModulesOperatorsTreeModel()
+    model = OperatorsModel()
     model.setGraph(graph)
     path = tmp_path / "operators.py"
     path.write_text(
@@ -37,7 +37,7 @@ def reject_mapping(*args: object) -> None:
 
 
 def test_model_without_mapping_helpers(
-    model: ModulesOperatorsTreeModel,
+    model: OperatorsModel,
     monkeypatch: pytest.MonkeyPatch,
     qtmodeltester: ModelTester,
 ) -> None:
@@ -61,7 +61,7 @@ def test_model_without_mapping_helpers(
 
 
 def test_mapping_round_trips_and_invalid_indexes(
-    model: ModulesOperatorsTreeModel,
+    model: OperatorsModel,
 ) -> None:
     for row in range(model.rowCount()):
         module_index = model.index(row, 0)
@@ -72,7 +72,7 @@ def test_mapping_round_trips_and_invalid_indexes(
             assert isinstance(operator, rt.AbstractOperator)
             assert model.mapFromSource(operator) == operator_index
 
-    foreign = ModulesOperatorsTreeModel()
+    foreign = OperatorsModel()
     foreign.setGraph(rt.GraphDefinitionRT())
     for index in [
         QModelIndex(),
@@ -89,7 +89,7 @@ def test_mapping_round_trips_and_invalid_indexes(
 
 
 def test_mutations_without_mapping_helpers(
-    model: ModulesOperatorsTreeModel, monkeypatch: pytest.MonkeyPatch
+    model: OperatorsModel, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(model, "mapToSource", reject_mapping)
     monkeypatch.setattr(model, "mapFromSource", reject_mapping)
@@ -108,7 +108,7 @@ def test_mutations_without_mapping_helpers(
 
 
 def test_failed_import_does_not_start_insertion(
-    model: ModulesOperatorsTreeModel, tmp_path: Path
+    model: OperatorsModel, tmp_path: Path
 ) -> None:
     about_to_insert = QSignalSpy(model.rowsAboutToBeInserted)
     with pytest.raises(OSError):

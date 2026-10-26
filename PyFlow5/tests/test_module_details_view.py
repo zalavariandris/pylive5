@@ -6,7 +6,7 @@ from qtpy.QtCore import QItemSelectionModel, QModelIndex, QSettings, Qt
 from qtpy.QtGui import QCloseEvent, QStandardItem, QStandardItemModel
 
 from pyflow5.views.module_details_view import ModuleDetailsView
-from pyflow5.models.modules_operator_tree_model import ModulesOperatorsTreeModel
+from pyflow5.models.operators_model import OperatorsModel
 from pyflow5.models.pyflow5_document import PyFlowDocument
 from pyflow5.views import pyflow5_documentwindow
 from pygraphrt import ModuleRegistry, ScriptModuleRT
@@ -20,7 +20,7 @@ def view(qtbot: QtBot) -> ModuleDetailsView:
         module.set_script(f"value = {name!r}")
         module.evaluate()
         registry.add_module(module)
-    model = ModulesOperatorsTreeModel()
+    model = OperatorsModel()
     model.setSourceRegistry(registry)
     view = ModuleDetailsView()
     qtbot.addWidget(view)
@@ -43,18 +43,18 @@ def test_select_edit_and_undo(view: ModuleDetailsView) -> None:
     assert view._title_label.text() == "first"
 
     editor.insertPlainText("# comment\n")
-    assert index.data(ModulesOperatorsTreeModel.SourceRole) == "# comment\nvalue = 'first'"
+    assert index.data(OperatorsModel.SourceRole) == "# comment\nvalue = 'first'"
     assert editor.textCursor().position() == len("# comment\n")
     assert editor.document().isUndoAvailable()
     editor.undo()
-    assert index.data(ModulesOperatorsTreeModel.SourceRole) == "value = 'first'"
+    assert index.data(OperatorsModel.SourceRole) == "value = 'first'"
 
 
 def test_model_changes_refresh_without_selection_model(view: ModuleDetailsView) -> None:
     view.setSelectionModel(None)
     index = view.model().index(0, 0)
     view.setCurrentIndex(index)
-    view.model().setData(index, "value = 42", ModulesOperatorsTreeModel.SourceRole)
+    view.model().setData(index, "value = 42", OperatorsModel.SourceRole)
     assert view._code_editor.toPlainText() == "value = 42"
 
 
@@ -128,7 +128,7 @@ def test_switch_models_disconnects_previous_model(view: ModuleDetailsView) -> No
     old_selection = view.selection()
     new_model = QStandardItemModel(view)
     item = QStandardItem("new")
-    item.setData("value = 3", ModulesOperatorsTreeModel.SourceRole)
+    item.setData("value = 3", OperatorsModel.SourceRole)
     new_model.appendRow(item)
     selection = QItemSelectionModel(new_model, view)
     selection.setCurrentIndex(new_model.index(0, 0), QItemSelectionModel.SelectionFlag.ClearAndSelect)
@@ -136,7 +136,7 @@ def test_switch_models_disconnects_previous_model(view: ModuleDetailsView) -> No
     view.setSelectionModel(selection)
     assert view._code_editor.toPlainText() == "value = 3"
 
-    old_model.setData(old_index, "value = 99", ModulesOperatorsTreeModel.SourceRole)
+    old_model.setData(old_index, "value = 99", OperatorsModel.SourceRole)
     old_selection.clear()
     old_model.setSourceRegistry(None)
     assert view._code_editor.toPlainText() == "value = 3"
@@ -149,7 +149,7 @@ def test_removal_tracks_current_item_and_clears_removed_item(view: ModuleDetails
     model = QStandardItemModel(view)
     for name in ("first", "second"):
         item = QStandardItem(name)
-        item.setData(name, ModulesOperatorsTreeModel.SourceRole)
+        item.setData(name, OperatorsModel.SourceRole)
         model.appendRow(item)
     view.setModel(model)
     view.setCurrentIndex(model.index(1, 0))
@@ -164,7 +164,7 @@ def test_removal_tracks_current_item_and_clears_removed_item(view: ModuleDetails
 
 def test_operator_without_source_disables_editor(view: ModuleDetailsView) -> None:
     module = select(view, 0)
-    view.model().setData(module, "def hello(): return 42", ModulesOperatorsTreeModel.SourceRole)
+    view.model().setData(module, "def hello(): return 42", OperatorsModel.SourceRole)
     view.setCurrentIndex(view.model().index(0, 0, module))
     assert view._title_label.text() == "hello"
     assert not view._code_editor.isEnabled()
@@ -186,8 +186,8 @@ def test_window_connects_module_details(
     window = TestWindow()
     qtbot.addWidget(window)
     window.addEmbeddedModule()
-    view = window._module_details_view
-    assert view.model() is window._document.modules_model
+    view = window._registry_panel
+    assert view.model() is window._document.registry_model
     assert view.currentIndex().isValid()
     assert view._code_editor.isEnabled()
     view._code_editor.setPlainText("def hello(): return 42")
@@ -197,5 +197,5 @@ def test_window_connects_module_details(
     assert not view.currentIndex().isValid()
     assert view._code_editor.toPlainText() == ""
     window._document.createEmbeddedModule()
-    assert view.currentIndex() == window._document.modules_model.index(0, 0)
+    assert view.currentIndex() == window._document.registry_model.index(0, 0)
     assert view._code_editor.isEnabled()

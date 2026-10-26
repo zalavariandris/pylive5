@@ -41,7 +41,7 @@ class GraphEngine(QObject):
     obsolete jobs cannot restore them.
     """
 
-    evaluated = Signal(dict)  # Accepted dict[NodeRef, NodeExecution], including hits.
+    nodes_evaluated = Signal(dict)  # Accepted dict[NodeRef, NodeExecution], including hits.
     _start_requested = Signal()
     _backend_finished = Signal(object, object)  # plan, Future[ExecutionResults]
 
@@ -97,7 +97,7 @@ class GraphEngine(QObject):
         self._pending.update(targets)
         self._schedule()
 
-    def invalidate_node(self, *roots: NodeRef) -> None:
+    def invalidate_descendants(self, *roots: NodeRef) -> None:
         """Invalidate roots and their descendants without requesting new work.
 
         Use this for external changes that the graph invalidator cannot observe.
@@ -192,7 +192,7 @@ class GraphEngine(QObject):
         except Exception as error:
             if revision == self._revision and not self._closed:
                 self._pending.difference_update(targets)
-                self.evaluated.emit({
+                self.nodes_evaluated.emit({
                     node: ExecutionFailure(node, error) for node in targets
                 })
             return
@@ -290,7 +290,7 @@ class GraphEngine(QObject):
             )
 
         # Observers can request again; the accepted values are already cached.
-        self.evaluated.emit(executions)
+        self.nodes_evaluated.emit(executions)
         self._schedule()
 
     def close(self) -> None:

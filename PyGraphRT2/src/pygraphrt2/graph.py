@@ -168,7 +168,7 @@ class Graph(QObject):
         self.nodes_added.emit([node_ref])
         return node_ref
 
-    def _update_node(self, node_ref: NodeRef, func:Callable|None=None, args: tuple=(), kwargs: dict={}) -> None:
+    def _update_node(self, node_ref: NodeRef, func:Callable|None=None, args: tuple=(), kwargs: Mapping={}) -> None:
         assert node_ref in self._nodes, "Node does not exist in the graph." # todo: Api misuse: raise standard python errors
         assert isinstance(node_ref, NodeRef), f"Expected a NodeRef, got: {node_ref}"
         assert func is None or callable(func), f"Expected a Callable or None, got: {func}"

@@ -30,18 +30,18 @@ def test_user_flow(qtbot: QtBot) -> None:
     document = PyFlowDocument()
 
     # set local module script
-    local_module_index = document.modules_model.index(0, 0)
-    document.modules_model.setData(
+    local_module_index = document.registry_model.index(0, 0)
+    document.registry_model.setData(
         local_module_index, 
         dedent("""\
         def hello():
             return "boom"
         """), 
-        document.modules_model.SourceRole
+        document.registry_model.SourceRole
     )
 
-    hello_operator_index = document.modules_model.index(0, 0, local_module_index)
-    operator = hello_operator_index.data(document.modules_model.OperatorRole)
+    hello_operator_index = document.registry_model.index(0, 0, local_module_index)
+    operator = hello_operator_index.data(document.registry_model.OperatorRole)
     assert isinstance(operator, rt.OperatorRef)
     assert operator.get_name() == "hello"
     assert hello_operator_index.parent() == local_module_index

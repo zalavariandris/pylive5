@@ -62,13 +62,14 @@ from qdageditor5.models.abstract_dag_model import (
     DirectionalLinkId
 )
 from ..models.pyflow5_document import FileChangedError, PyFlowDocument
-from ..models.modules_operator_tree_model import ModulesOperatorsTreeModel
+
 
 # views
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 from .module_details_view import ModuleDetailsView
 
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
+
 
 class PyFlow5DocumentWindow(QWidget):
     fileOpened = Signal(object)
@@ -98,14 +99,15 @@ class PyFlow5DocumentWindow(QWidget):
 
 
         ## module details
-        self._module_details_view = ModuleDetailsView(self)
-
-        ## panel layout
-        self._modules_panel = QWidget(self)
-        module_panel_layout = QHBoxLayout()
-        self._modules_panel.setLayout(module_panel_layout)
-        module_panel_layout.addWidget(self._module_operator_tree_view, 0)
-        module_panel_layout.addWidget(self._module_details_view, 1)
+        self._registry_panel = QWidget(self)
+        self._title_label = QLabel(self)
+        self._script_editor = ScriptEditAdvanced(completer=None, parent=self)
+        
+        self._script_status_label = QLabel(self)
+        self._registry_panel_layout = QVBoxLayout()
+        self._registry_panel.setLayout(self._registry_panel_layout)
+        self._registry_panel_layout.addWidget(self._script_editor)
+        self._registry_panel_layout.addWidget(self._script_status_label)
         
         # Graph View
         self._graph_view = DirectionalGraphView5(self)
@@ -151,7 +153,7 @@ class PyFlow5DocumentWindow(QWidget):
 
         ## Left tabs
         self._left_tabwidget = QTabWidget(self)
-        self._left_tabwidget.addTab(self._modules_panel, "Modules")
+        self._left_tabwidget.addTab(self._registry_panel, "Registry")
         self._left_tabwidget.addTab(self._graph_panel, "Graph")
         self._left_tabwidget.setCurrentIndex(1)
 
@@ -192,24 +194,26 @@ class PyFlow5DocumentWindow(QWidget):
     def _connectDocument(self, document: PyFlowDocument) -> None:
         if document is self._document:
             return
+        
         self._disconnectDocument()
         self._document = document
         document.nodesInvalidated.connect(self._on_nodes_invalidated)
         document.isModifiedChanged.connect(self.updateWindowTitle)
         document.filePathChanged.connect(self.updateWindowTitle)
 
-        self._module_operator_tree_view.setModel(document.modules_model)
-        self._module_details_view.setModel(document.modules_model)
+        # self._module_operator_tree_view.setModel(document.registry_model)
+        # self._script_editor.setDocument(document.script_document)
+        # self._registry_panel.setModel(document.registry_model)
         self._graph_view.setModel(document.graph_model)
         self._node_inlet_tree_view.setModel(document.node_inlet_tree_adapter)
         self._viewer.setModel(document.node_inlet_tree_adapter)
         self._node_inspector.setModel(document.node_inlet_tree_adapter)
         self._node_inlet_tree_view.expandAll()
 
-        self.modulesselection_model = QItemSelectionModel(document.modules_model, self)
-        self._selection_models.append(self.modulesselection_model)
-        self._module_operator_tree_view.setSelectionModel(self.modulesselection_model)
-        self._module_details_view.setSelectionModel(self.modulesselection_model)
+        # self.modulesselection_model = QItemSelectionModel(document.registry_model, self)
+        # self._selection_models.append(self.modulesselection_model)
+        # self._module_operator_tree_view.setSelectionModel(self.modulesselection_model)
+        # self._registry_panel.setSelectionModel(self.modulesselection_model)
         self.graphselection_model = GraphSelectionModel(document.graph_model, self)
         self._selection_models.append(self.graphselection_model)
         self.graphselection_model.currentNodeChanged.connect(self._onCurrentNodeChanged)
@@ -362,7 +366,7 @@ class PyFlow5DocumentWindow(QWidget):
             def remove_selected_modules():
                 selected_indexes = self.modulesselection_model.selectedIndexes()
                 for selected_index in selected_indexes:
-                    self._document.modules_model.removeRows(selected_index.row(), 1)
+                    self._document.registry_model.removeRows(selected_index.row(), 1)
             remove_action.triggered.connect(remove_selected_modules)
             
         # Execute the local menu (blocks until closed, then gets garbage collected)
@@ -374,7 +378,7 @@ class PyFlow5DocumentWindow(QWidget):
         self.document().deleteNodes(selected_nodes)
 
     def addEmbeddedModule(self, name="_local_") -> None:
-        if module_idx := self.document().modules_model.addEmbeddedModule(name):
+        if module_idx := self.document().registry_model.addEmbeddedModule(name):
             self.modulesselection_model.setCurrentIndex(
                 module_idx, 
                 QItemSelectionModel.ClearAndSelect
@@ -383,7 +387,7 @@ class PyFlow5DocumentWindow(QWidget):
     def removeSelectedModule(self) -> None:
         current_index = self.modulesselection_model.currentIndex()
         if current_index:
-            self.document().modules_model.removeModule(current_index)
+            self.document().registry_model.removeModule(current_index)
 
     @Slot()
     def _navigate_to_current_node_operator(self):
@@ -397,11 +401,11 @@ class PyFlow5DocumentWindow(QWidget):
         # get the node module, and select it in the module view
         operator_index = self._document.getNodeOperator(current_node)
         if operator_index.isValid():
-            self._left_tabwidget.setCurrentWidget(self._modules_panel)
+            self._left_tabwidget.setCurrentWidget(self._registry_panel)
             module_index = operator_index.parent()
             self.modulesselection_model.setCurrentIndex(module_index, QItemSelectionModel.ClearAndSelect)
 
-            self._module_details_view.goToOperator(operator_index)
+            self._registry_panel.goToOperator(operator_index)
 
     def importModule(self) -> None:
         # open file browser dialog
@@ -448,11 +452,11 @@ class PyFlow5DocumentWindow(QWidget):
             viewport_center = QPointF(self._graph_view.contentsRect().center())
             scene_pos = self._graph_view.mapToScene(viewport_center)
 
-        dialog = SelectionDialog(self._document.modules_model, self)
+        dialog = SelectionDialog(self._document.registry_model, self)
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
-                selected_op = self._document.modules_model.mapToSource(selected_index)
+                selected_op = self._document.registry_model.mapToSource(selected_index)
                 
                 if selected_op and isinstance(selected_op, ScriptOperatorRef):
                     self._document.graph_model.addNode(selected_op, scene_pos)
@@ -487,7 +491,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._viewer.setSelectionModel(None)
         self._viewer.setModel(None)
         self._node_inlet_tree_view.setModel(None)
-        self._module_details_view.setModel(None)
+        self._registry_panel.setModel(None)
         self._module_operator_tree_view.setModel(None)
         self._graph_view.setSelectionModel(None)
         self._graph_view.setModel(None)
@@ -500,20 +504,20 @@ class PyFlow5DocumentWindow(QWidget):
     @Slot()
     def _on_script_module_state_changed(self):
         # set code editor style to red border if the script module is in an error state
-        match self._code_editor:
+        match self._script_editor:
             case ScriptEditAdvanced():
                 state = self._document.scriptmodule().get_state()
                 match state:
                     case SyntaxError() as e:
-                        self._code_editor._linter.clear()
-                        self._code_editor._linter.lintException(e, 'underline')
+                        self._script_editor._linter.clear()
+                        self._script_editor._linter.lintException(e, 'underline')
                     case Exception() as e:
-                        self._code_editor._linter.clear()
-                        self._code_editor._linter.lintException(e, 'label')
+                        self._script_editor._linter.clear()
+                        self._script_editor._linter.lintException(e, 'label')
                     case "VALID":
-                        self._code_editor._linter.clear()
+                        self._script_editor._linter.clear()
                     case _:
                         print(f"Unknown script module state: {state}")
-                        self._code_editor._linter.clear()
+                        self._script_editor._linter.clear()
             case _:
                 assert False, f"Unknown code editor type {self._code_editor}"

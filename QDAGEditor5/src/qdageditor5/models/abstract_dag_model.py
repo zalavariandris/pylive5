@@ -145,7 +145,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         return node in self.nodes()
 
     @abstractmethod
-    def nodeData(self, node: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         """Return the header data for the given node and role."""
         pass
     
