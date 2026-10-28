@@ -422,9 +422,10 @@ name = "pyflow5"
 version = "0.1.0"
 source = { editable = "PyFlow5" }
 dependencies = [
+    { name = "bidict" },
     { name = "myqtx" },
     { name = "myutils" },
-    { name = "pygraphrt" },
+    { name = "pygraphrt2" },
     { name = "pyqt6" },
     { name = "qdageditor5" },
     { name = "qdarkstyle" },
@@ -435,9 +436,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bidict" },
     { name = "myqtx", editable = "myqtx" },
     { name = "myutils", editable = "myutils" },
-    { name = "pygraphrt", editable = "PyGraphRT" },
+    { name = "pygraphrt2", editable = "PyGraphRT2" },
     { name = "pyqt6" },
     { name = "qdageditor5", editable = "QDAGEditor5" },
     { name = "qdarkstyle" },
@@ -601,6 +603,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-qt" },
+    { name = "pytracy" },
 ]
 
 [package.metadata]
@@ -617,6 +620,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-qt", specifier = ">=4.5.0" },
+    { name = "pytracy", specifier = ">=0.0.2" },
 ]
 
 [[package]]
@@ -758,6 +762,28 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/41/07/ad213383d0733f9ccb88e05bb79ace967946009f8652a2394f845648aa38/pytools-2026.1.1.tar.gz", hash = "sha256:260e0d88c9a903c65cfe34fbe818764f44a3f96e722e1a3645ce4d596add22b1", size = 86006, upload-time = "2026-06-03T20:28:26.914Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/45/32a4b57ff351213094a533067db1846494db9bba5f3348b75223b94f3d22/pytools-2026.1.1-py3-none-any.whl", hash = "sha256:1f6d9a39c871b6dc761893373792f10b67886c83e38f2aa09b66e11f8c021436", size = 99212, upload-time = "2026-06-03T20:28:25.22Z" },
+]
+
+[[package]]
+name = "pytracy"
+version = "0.0.2"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/90/7e/dcf9fe9b7cb4a406b5d6e3c0b681c2c71d6e4d7e09deffbad70a0f046f1c/pytracy-0.0.2-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:ca9c7b0d1453c3b58322baaf8fa383f72d938ab15c2cb6a24ba231a72e6e752c", size = 1266509, upload-time = "2024-11-27T18:19:26.256Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/70/cb5468f882f2a6bf971127a904eb9c2cf80a68546fdf0d826fc80cc2b6b9/pytracy-0.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3b27d08b8fcf9cf331cc95e35a3a8144bbe897bc809d85cfd1c00ce4b6f49071", size = 1272264, upload-time = "2024-11-27T18:19:27.56Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/d9/c33b5e1b30b69d60bc7da9ca74aee93b01623f374721f182b08bbb053431/pytracy-0.0.2-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:6c5bde80640d7135ac8ce9b280f596f968d128ed6745deaed5cb6b0339cc4e33", size = 2275744, upload-time = "2024-11-27T18:19:29.416Z" },
+    { url = "https://files.pythonhosted.org/packages/87/e5/e4fd20ed7c172c2bcd6256e3a435b52a92a5cceee167ce556924267cf9b1/pytracy-0.0.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:fa737199fb1b6ceb50a14e52280e8f03b0e78220fa0526ad9f702c6b995a1da4", size = 2184333, upload-time = "2024-11-27T18:19:31.459Z" },
+    { url = "https://files.pythonhosted.org/packages/26/cd/f44d492ac9dbd90d4ddba1fa50253910861e0f8ecc43c843f1dd5a3fc8d3/pytracy-0.0.2-cp312-cp312-win_amd64.whl", hash = "sha256:b43ef7249e829b5baa9c8766e408a0af922c554ce739060b2a78059335258842", size = 117256, upload-time = "2024-11-27T18:19:33.211Z" },
+    { url = "https://files.pythonhosted.org/packages/53/6f/0dea40f187b0a91ef367e78859ce5fc862417ab0ee383dffaf6fae0d734d/pytracy-0.0.2-cp313-cp313-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:b88bab5aa374c32109f51e2e22cff1b4c2a200cb835fcf58018d33192b1939b5", size = 1266158, upload-time = "2024-11-27T18:19:34.297Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/33/066c7a70d841c3f4eff410b235e8184eb2bb6fdc86e07efbb949f41d53dc/pytracy-0.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:299f73f6db129c069fc5217aeeb3a60d202aad6bfb22a02835aab524e51a7431", size = 1271730, upload-time = "2024-11-27T18:19:36.26Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/7b/0c6d337cdfe7737d85a65883c6f48dc3abf507ef392cc5c0122a1490c2ff/pytracy-0.0.2-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:d22e9189584bf9079b90cbb97b542389c08860bd628c5b2049ad78cad42cfca5", size = 2275266, upload-time = "2024-11-27T18:19:38.085Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/d1/ea5ec327898c314e4043dee77c84b1d69e613f2e4a235fd1bc9656f5df6d/pytracy-0.0.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:0cfb3099bc43dd746c8e2556795740336337e94971d859f52f40713c78f084b1", size = 2183920, upload-time = "2024-11-27T18:19:39.348Z" },
+    { url = "https://files.pythonhosted.org/packages/54/27/8880e1a1fc59036d663c9c3d75bffd46fd3803dc673c2326eb8d211aacfc/pytracy-0.0.2-cp313-cp313-win_amd64.whl", hash = "sha256:b5d03562afc53d0b7644e9f64ce74ad8a9a0a0f1459db15867f6d859d4699679", size = 117265, upload-time = "2024-11-27T18:19:40.489Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/7d/c36a751adbfa151941749a873df81df78699719c5d16e97882cfe6c526c3/pytracy-0.0.2-cp313-cp313t-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:186ea486ee525155676117e677f4e8bb345cc05646a2578a4e614ea317ef3a68", size = 1297857, upload-time = "2024-11-27T18:19:41.473Z" },
+    { url = "https://files.pythonhosted.org/packages/77/4d/0d7ad54207f658253b13c3498a0d1c063b879d74a9aa55b30bf2cda037ec/pytracy-0.0.2-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6d1ed15f79f2ae717230ebe2080b5031bab3a7995fb43d7a5c0d9b1ca254c473", size = 1303426, upload-time = "2024-11-27T18:19:42.772Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/a5/e55b461bb70883bfcd8166bb43f67dbf24533cce418cb8525d30172ba609/pytracy-0.0.2-cp313-cp313t-musllinux_1_2_i686.whl", hash = "sha256:4e415fe6825ada475afd6cb1dd4f526ec840bf0a4ee7e14cb20a11b33d3682fd", size = 2295112, upload-time = "2024-11-27T18:19:44.798Z" },
+    { url = "https://files.pythonhosted.org/packages/53/71/8f13042b16ea5a2a599a591bbd6c37694ec541f928cbd1252363c7ffba96/pytracy-0.0.2-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:204567505dc807c61c91b83e8d62ede344b3adbe8f71e92bdada31875c291dec", size = 2202660, upload-time = "2024-11-27T18:19:46.134Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/23/a6449725a9ef0c45811a581292c145ba75bdf660cba6d97bb516b18533a9/pytracy-0.0.2-cp313-cp313t-win_amd64.whl", hash = "sha256:e00f5da2c20eb7448a957a8ad03173acb7fc7eb9d840cc82badb2ac57ece9066", size = 124311, upload-time = "2024-11-27T18:19:47.445Z" },
 ]
 
 [[package]]

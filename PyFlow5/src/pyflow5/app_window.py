@@ -216,6 +216,7 @@ class AppWindow(QMainWindow):
             try:
                 self._session_path.parent.mkdir(parents=True, exist_ok=True)
                 write_text_atomic(self._session_path, self.serializeSession())
+                print(f"session saved to {self._session_path}")
             except Exception as error:
                 if not self._document_window.confirmCloseWithoutSession(error):
                     event.ignore()

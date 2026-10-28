@@ -58,6 +58,7 @@ class PyFlowDocument(QObject):
 
         # RT
         self._engine = engine or rt2.Engine()
+        self._engine.set_auto_execute_targets([])
         self.script_document: QTextDocument = QTextDocument(self)
         self.script_document.setDocumentLayout(
             QPlainTextDocumentLayout(self.script_document)
@@ -77,7 +78,7 @@ class PyFlowDocument(QObject):
         
         self._connections = [
             (self.script_document.contentsChanged, self._onScriptChanged),
-            (self._engine.registry_invalidated, self._engine.evaluate_registry),
+            # (self._engine.registry_invalidated, self._engine.evaluate_registry),
             (self._engine.registry.stateChanged, self.scriptStateChanged.emit),
             (self._engine.nodes_invalidated, self._onNodesInvalidated),
             (self._engine.graph.nodes_added, self._markModified),
@@ -87,7 +88,7 @@ class PyFlowDocument(QObject):
         ]
         for signal, slot in self._connections:
             signal.connect(slot)
-        self._engine.execute(*self._engine.graph.nodes())
+        # self._engine.execute(*self._engine.graph.nodes())
 
         self._engine.nodes_executed.connect(lambda: print("nodes executed"))
 
@@ -129,6 +130,29 @@ class PyFlowDocument(QObject):
         self._filepath = path.resolve() if path is not None else None
         self._filestat = stat if path is not None else None
         self.filePathChanged.emit(self._filepath)
+
+    def setAutoExecuteTargets(
+        self, node_names: Iterable[NodeName] | None
+    ) -> None:
+        """Set the nodes to be automatically executed by the engine.
+        node_names: Iterable[NodeName] | None
+            if None, all nodes are watched automatically.
+            empty iterable disables auto-execution for all nodes.
+        """
+        if self._closed:
+            return
+
+        if node_names is None:
+            self._engine.set_auto_execute_targets(None)
+            return
+
+        targets: list[rt2.NodeRef] = []
+        for name in node_names:
+            node = self.graph_model.mapToSource(name)
+            if node is not None:
+                targets.append(node)
+
+        self._engine.set_auto_execute_targets(targets)
 
     def requestNodeExecution(self, node_name: NodeName) -> None:
         node_rt = self.graph_model.mapToSource(node_name)

@@ -1,3 +1,5 @@
+from typing import Iterable
+
 from qtpy.QtCore import QObject, Signal
 
 from .graph import Graph, NodeRef
@@ -28,14 +30,84 @@ class Engine(QObject):
             (self.graph.nodes_added, self._on_nodes_changed),
             (self.graph.nodes_changed, self._on_nodes_changed),
             (self.graph.nodes_removed, self._remove_node_operator_mappings),
+            (self.graph.nodes_removed, self._prune_auto_execution_targets),
             (self.registry.registry_invalidated, self.registry_invalidated.emit),
+            (self.registry.registry_invalidated, self._auto_evaluate_registry),
         ]
         for signal, slot in self._connections:
             signal.connect(slot)
 
+        # auto evaluate and execution flags
+        self._auto_execute = True
+        self._auto_execute_targets: set[NodeRef] | None = None
+
+    def auto_execute(self) -> bool:
+        return self._auto_execute
+
+    def set_auto_execute(self, value: bool) -> None:
+        """Toggle automatic execution, refreshing watched nodes when enabled."""
+        if self._auto_execute == value:
+            return
+
+        self._auto_execute = value
+        if value:
+            self.evaluate_registry()
+
+    def set_auto_execute_targets(
+        self, targets: Iterable[NodeRef] | None
+    ) -> None:
+        """Watch all nodes with None, or a selection; refresh newly watched nodes."""
+        previous = self._auto_execute_targets
+        updated = None if targets is None else set(targets)
+        if previous == updated:
+            return
+
+        self._auto_execute_targets = updated
+        if self._closed or not self._auto_execute:
+            return
+        if previous is None:
+            return  # Every node was already watched.
+
+        new_targets = [
+            node for node in self.graph.nodes()
+            if node not in previous and (updated is None or node in updated)
+        ]
+        if new_targets:
+            self.execute(*new_targets)
+
+    def _auto_evaluate_registry(self) -> None:
+        """Automatically evaluate the registry if auto-execute is enabled."""
+        if self._closed:
+            return
+
+        if not self._auto_execute:
+            return
+
+        self.evaluate_registry()
+
+    def _auto_execute_invalidated(
+        self, invalidated: list[NodeRef]
+    ) -> None:
+        """Automatically execute invalidated nodes if auto-execute is enabled."""
+        if self._closed or not self._auto_execute:
+            return
+
+        watched = self._auto_execute_targets
+        targets = [
+            node
+            for node in invalidated
+            if watched is None or node in watched
+        ]
+
+        if not targets:
+            return
+
+        self.execute(*targets)
+
     def evaluate_registry(self) -> None:
         if self._closed:
             return
+
         try:
             self.registry.evaluate()
         except Exception as error:
@@ -68,8 +140,19 @@ class Engine(QObject):
         affected: set[NodeRef] = set()
         for node in nodes:
             affected.update(self.graph.descendants(node))
-        if affected:
-            self.nodes_invalidated.emit([node for node in self.graph.nodes() if node in affected])
+
+        invalidated = [
+            node for node in self.graph.nodes()
+            if node in affected
+        ]
+
+        if not invalidated:
+            return
+
+        self.nodes_invalidated.emit(invalidated)
+        # Call directly after notifying observers so their invalidation handlers
+        # clear stale outputs before execution publishes fresh results.
+        self._auto_execute_invalidated(invalidated)
 
     def _sync_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
         # This is an index of the bindings stored on nodes, not separate state.
@@ -88,6 +171,10 @@ class Engine(QObject):
             operator = self._operator_to_nodes.parent_of(node)
             if operator is not None:
                 self._operator_to_nodes.delete(node, operator)
+
+    def _prune_auto_execution_targets(self, nodes: list[NodeRef]) -> None:
+        if self._auto_execute_targets is not None:
+            self._auto_execute_targets.difference_update(nodes)
 
     def close(self) -> None:
         if self._closed:

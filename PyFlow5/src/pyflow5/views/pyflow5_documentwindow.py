@@ -183,7 +183,7 @@ class PyFlow5DocumentWindow(QWidget):
         
         self._disconnectDocument()
         self._document = document
-        document.nodesInvalidated.connect(self._on_nodes_invalidated)
+        document.nodesInvalidated.connect(lambda: None)
         document.isModifiedChanged.connect(self.updateWindowTitle)
         document.filePathChanged.connect(self.updateWindowTitle)
         document.scriptStateChanged.connect(self._on_script_module_state_changed)
@@ -215,9 +215,16 @@ class PyFlow5DocumentWindow(QWidget):
         # Fitting changes the viewport; automatic layout would overwrite saved positions.
         self._fit_timer.start(0)
 
-    def _onCurrentNodeChanged(self, current: NodeName | None, previous: NodeName | None) -> None:
-        if self._document is not None and current is not None:
-            self._document.requestNodeExecution(current)
+    def _onCurrentNodeChanged(
+        self,
+        current: NodeName | None,
+        previous: NodeName | None,
+    ) -> None:
+        if self._document is None:
+            return
+
+        targets = [] if current is None else [current]
+        self._document.setAutoExecuteTargets(targets)
 
     def _replaceDocument(self, document: PyFlowDocument) -> None:
         previous = self._document
@@ -317,15 +324,7 @@ class PyFlow5DocumentWindow(QWidget):
         self.fileSaved.emit(document.filePath())
         return True
         
-    def _on_nodes_invalidated(self, node_names: list[NodeName]) -> None:
-        current_name = self.graphselection_model.currentNode()
-        if current_name is None:
-            return
 
-        if current_name not in node_names:
-            return
-
-        self.document().requestNodeExecution(current_name)
 
     def document(self)->PyFlowDocument:
         assert self._document is not None, "No document is connected."
@@ -391,7 +390,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._fit_timer.stop()
         if self._document is None:
             return
-        self._document.nodesInvalidated.disconnect(self._on_nodes_invalidated)
+        # self._document.nodesInvalidated.disconnect(self._on_nodes_invalidated)
         self._document.isModifiedChanged.disconnect(self.updateWindowTitle)
         self._document.filePathChanged.disconnect(self.updateWindowTitle)
         self._document.scriptStateChanged.disconnect(self._on_script_module_state_changed)

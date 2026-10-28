@@ -1,0 +1,42 @@
+{
+    "version": 4,
+    "script": {
+        "name": null,
+        "source": "def the_name():\n    return \"M\u00e1sa\"\n    \ndef the_greeting():\n    return \"Hey\"\n    \ndef hello(name:str, greeting:str=\"Hello\"):\n    return f\"{greeting} {name}!\""
+    },
+    "graph": {
+        "nodes": {
+            "hello": {
+                "operator": "hello",
+                "kwargs": {
+                    "name": {
+                        "type": "node",
+                        "name": "the_name"
+                    },
+                    "greeting": {
+                        "type": "node",
+                        "name": "the_greeting"
+                    }
+                },
+                "position": [
+                    368.0,
+                    304.0
+                ]
+            },
+            "the_greeting": {
+                "operator": "the_greeting",
+                "position": [
+                    384.0,
+                    181.0
+                ]
+            },
+            "the_name": {
+                "operator": "the_name",
+                "position": [
+                    207.0,
+                    186.0
+                ]
+            }
+        }
+    }
+}
