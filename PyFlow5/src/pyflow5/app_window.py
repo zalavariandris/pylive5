@@ -103,9 +103,6 @@ class AppWindow(QMainWindow):
         edit_menu.addAction("Duplicate Nodes", lambda: None)
         edit_menu.addSeparator()
 
-        edit_menu.addAction("Add Embedded Module", lambda: self.currentDocumentWindow().addEmbeddedModule())
-        edit_menu.addAction("Remove Selected Module", lambda: self.currentDocumentWindow().removeSelectedModule())
-
         view_menu = QMenu("View", menubar)
         view_menu.addAction(self.currentDocumentWindow()._graph_view._center_nodes_action)
         view_menu.addAction(self.currentDocumentWindow()._graph_view._layout_action)

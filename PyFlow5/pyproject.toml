@@ -16,7 +16,7 @@ dependencies = [
     "qdarkstyle",
     "myutils",
     "myqtx",
-    "pygraphrt",
+    "pygraphrt2",
     "qdageditor5",
     "QtScriptEditorAdvanced",
     "vfxops",
@@ -27,7 +27,7 @@ dependencies = [
 myutils = { workspace = true }
 myqtx = { workspace = true }
 vfxops = { workspace = true }
-pygraphrt = { workspace = true }
+pygraphrt2 = { workspace = true }
 qdageditor5 = { workspace = true }
 QtScriptEditorAdvanced = { workspace = true }
 

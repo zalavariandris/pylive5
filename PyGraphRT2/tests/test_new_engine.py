@@ -60,7 +60,6 @@ async def test_async_executor(hello_world):
     outputs = await future
     assert outputs[hello] == "Hello Mása!"
 
-
 @pytest.mark.asyncio
 async def test_threaded_executor(hello_world):
     from pygraphrt2.multiprocess_executor import MultiprocessExecutor
@@ -74,7 +73,6 @@ async def test_threaded_executor(hello_world):
 
 
 ## SCRIPT MODULES
-
 def test_inline_scriptmodule():
     sm = InlineScriptModule()
     sm.evaluate()
@@ -184,6 +182,63 @@ async def test_async_scriptmodule():
 # =================
 # INTEGRATION TESTS
 # =================
+from qtpy.QtTest import QSignalSpy
+def test_engine_registry_intergration():
+    engine = Engine()
+    invalidated_spy = QSignalSpy(engine.registry_invalidated)
+    failed_spy = QSignalSpy(engine.registry_failed)
+    evaluated_spy = QSignalSpy(engine.registry_evaluated)
+
+    engine.registry.set_script(dedent("""\
+    def the_name():
+        return "Mása"
+
+    def the_greeting():
+        return "Hey"
+
+    def hello(name:str, greeting:str="Hello"):
+        return f"{greeting} {name}!"
+    """))
+
+    assert len(invalidated_spy) == 1
+
+    engine.evaluate_registry()
+    assert set(list(engine.registry.operators())) == set([
+        engine.registry.get_operator_by_name("the_name"),
+        engine.registry.get_operator_by_name("the_greeting"),
+        engine.registry.get_operator_by_name("hello")
+    ])
+
+    assert len(invalidated_spy) == 1
+    assert len(failed_spy) == 0
+    assert len(evaluated_spy) == 1
+
+    engine.registry.set_script(dedent("""\
+    BROKEN SCRIPT
+    def the_name():
+        return "Mása"
+
+    def the_greeting():
+        return "Hey"
+
+    def hello(name:str, greeting:str="Hello"):
+        return f"{greeting} {name}!"
+    """))
+
+    assert len(invalidated_spy) == 2
+    assert len(failed_spy) == 0
+    assert len(evaluated_spy) == 1
+
+    engine.evaluate_registry()
+    assert len(invalidated_spy) == 2
+    assert len(failed_spy) == 1
+    assert len(evaluated_spy) == 1
+
+    # assert set(list(engine.registry.operators())) == set()
+
+    # the_name_node = engine.graph._create_node(engine.registry.get_operator_by_name("the_name"))
+    # the_greeting_node = engine.graph._create_node(engine.registry.get_operator_by_name("the_greeting"))
+    # hello_node = engine.graph._create_node(engine.registry.get_operator_by_name("hello"))
 
 @pytest.mark.asyncio
 async def test_engine_with_async_executor_and_scriptmodule():

@@ -45,10 +45,10 @@ def make_window(
 
 def write_graph(path: Path) -> None:
     path.write_text(json.dumps({
-        "version": 3,
-        "modules": {"local": {"type": "embedded", "source": "def operation(): return 42\n"}},
+        "version": 4,
+        "script": {"name": "local", "source": "def operation(): return 42\n"},
         "graph": {"nodes": {"example": {
-            "operator": {"module": "local", "name": "operation"}, "position": [123, 456],
+            "operator": "operation", "position": [123, 456],
         }}},
     }), encoding="utf-8")
 
@@ -75,11 +75,11 @@ def test_open_new_open_rebinds_views_and_closes_previous(
     loaded = editor.document()
     assert first._engine._closed
     assert editor._graph_view._model is loaded.graph_model
-    assert editor._modules_listview.model() is loaded.modules_model
+    assert editor._module_operator_tree_view.model() is loaded.operators_model
     assert editor._node_inlet_tree_view.model() is loaded.node_inlet_tree_adapter
     assert editor._viewer.model() is loaded.node_inlet_tree_adapter
     assert editor._node_inspector.model() is loaded.node_inlet_tree_adapter
-    with qtbot.waitSignal(loaded._engine.evaluated):
+    with qtbot.waitSignal(loaded._engine.nodes_executed):
         loaded.requestNodeExecution("example")
     assert loaded.graph_model.nodePosition("example") == QPointF(123, 456)
     assert not loaded.isModified()
@@ -105,7 +105,7 @@ def test_file_menu_delegates_to_editor(make_window: Callable, monkeypatch: pytes
         monkeypatch.setattr(editor, method, callback)
         action(window, "File", label).trigger()
         callback.assert_called_once_with(*arguments)
-    editor._left_tabwidget.setCurrentWidget(editor._modules_panel)
+    editor._left_tabwidget.setCurrentWidget(editor._registry_panel)
     action(window, "View", "Go to Graph Panel").trigger()
     assert editor._left_tabwidget.currentWidget() is editor._graph_panel
 
@@ -153,12 +153,12 @@ def test_save_and_save_as_update_binding_recents_and_title(
     first, second = tmp_path / "first.json", tmp_path / "second.json"
     dialog = Mock(return_value=(str(first), ""))
     monkeypatch.setattr(QFileDialog, "getSaveFileName", dialog)
-    document.modules_model.addEmbeddedModule()
+    document.script_document.setPlainText(document.script_document.toPlainText() + "\n# edit\n")
     assert window.windowTitle() == "PyFlow5 - Untitled*"
     assert window.saveCurrentDocument()
     assert document.filePath() == first
     assert window.windowTitle() == "PyFlow5 - first.json"
-    document.modules_model.addEmbeddedModule()
+    document.script_document.setPlainText(document.script_document.toPlainText() + "\n# edit\n")
     assert window.saveCurrentDocument()
     dialog.assert_called_once()
     first_contents = first.read_text(encoding="utf-8")
@@ -200,7 +200,7 @@ def test_external_change_prompt(
     monkeypatch.setattr(QMessageBox, "question", Mock(return_value=QMessageBox.StandardButton.Yes if accept else QMessageBox.StandardButton.No))
     assert window.saveCurrentDocument() == accept
     if accept:
-        assert json.loads(path.read_text(encoding="utf-8"))["version"] == 3
+        assert json.loads(path.read_text(encoding="utf-8"))["version"] == 4
     else:
         assert path.read_text(encoding="utf-8") == "external change"
 
@@ -213,7 +213,7 @@ def test_unsaved_prompt(
 ) -> None:
     window = make_window()
     document = window.currentDocumentWindow().document()
-    document.modules_model.addEmbeddedModule()
+    document.script_document.setPlainText(document.script_document.toPlainText() + "\n# edit\n")
     saved_path, opened_path = tmp_path / "saved.json", tmp_path / "opened.json"
     write_graph(opened_path)
     monkeypatch.setattr(QMessageBox, "question", Mock(return_value=answer))
@@ -265,8 +265,8 @@ def test_session_restores_unsaved_content_and_binding(make_window: Callable, tmp
         assert window.openDocument(path)
     document = window.currentDocumentWindow().document()
     stamp = document.fileStat()
-    document.modules_model.addEmbeddedModule()
-    module_count = document.modules_model.rowCount()
+    document.script_document.setPlainText(document.script_document.toPlainText() + "\n# edit\n")
+    saved_script = document.script_document.toPlainText()
     assert window.close()
     assert document._engine._closed
     assert path.read_text(encoding="utf-8") == original_contents
@@ -275,7 +275,7 @@ def test_session_restores_unsaved_content_and_binding(make_window: Callable, tmp
     assert restored.filePath() == (path if bound else None)
     assert restored.fileStat() == stamp
     assert restored.isModified()
-    assert restored.modules_model.rowCount() == module_count
+    assert restored.script_document.toPlainText() == saved_script
     assert restored_window.windowTitle().endswith("*")
     assert str(window._session_path) not in restored_window._recent_graphs
 
@@ -341,14 +341,14 @@ def test_replacing_selected_document_disconnects_old_views_and_signals(
     assert window.openDocument(path)
     editor = window.currentDocumentWindow()
     previous = editor.document()
-    with qtbot.waitSignal(previous._engine.evaluated):
+    with qtbot.waitSignal(previous._engine.nodes_executed):
         editor.graphselection_model.selectNode("example")
     editor._navigate_to_current_node_operator()
-    assert editor._module_details_view.currentIndex().isValid()
+    assert editor._module_operator_tree_view.currentIndex().isValid()
     assert window.newDocument()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     assert editor.graphselection_model.currentNode() is None
-    assert not editor._module_details_view.currentIndex().isValid()
+    assert not editor._module_operator_tree_view.currentIndex().isValid()
     previous.setModified(True)
     previous.filePathChanged.emit(path)
     assert window.windowTitle() == "PyFlow5 - Untitled"

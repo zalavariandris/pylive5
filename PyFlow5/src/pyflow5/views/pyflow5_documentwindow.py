@@ -11,7 +11,7 @@ from .node_inspector_view import NodeInspectorView
 from .node_input_delegate import NodeInputFieldDelegate, NodeInputLabelDelegate
 from .output_viewer import OutputViewer
 
-from pygraphrt.script_module import ScriptOperatorRef
+from pygraphrt2 import ScriptOperatorRef
 from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex, QObject, QSize
 
 from qtpy.QtCore import (
@@ -47,7 +47,8 @@ from qtpy.QtWidgets import (
     QTreeView,
     QVBoxLayout, 
     QWidget, 
-    QMainWindow
+    QMainWindow,
+    QPlainTextEdit
 )
 
 # widgets
@@ -66,7 +67,6 @@ from ..models.pyflow5_document import FileChangedError, PyFlowDocument
 
 # views
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
-from .module_details_view import ModuleDetailsView
 
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
@@ -79,35 +79,22 @@ class PyFlow5DocumentWindow(QWidget):
         super().__init__(parent)
         self.setWindowTitle("PyFlow5")
 
-        # Modules Panel
-        ## modules list
-        # self._modules_listview = QListView(self)
-        # self._modules_listview.setMouseTracking(True)
-        # self._modules_listview.setFixedWidth(100)
-        # self._modules_listview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        # self._modules_listview.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        # self._modules_listview.customContextMenuRequested.connect(self._show_modules_context_menu)
-        # self._modules_listview.setIconSize(QSize(14, 14))
-        # Module Operator Tree panel
+        # Registry Panel
+        self._registry_panel = QWidget(self)
+        self._title_label = QLabel(self)
+        self._script_editor = ScriptEditAdvanced(completer=None, parent=self)
         self._module_operator_tree_view = QTreeView(self)
         self._module_operator_tree_view.setFixedWidth(100)
         self._module_operator_tree_view.setMouseTracking(True)
         self._module_operator_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._module_operator_tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._module_operator_tree_view.customContextMenuRequested.connect(self._show_modules_context_menu)
-        self._module_operator_tree_view.setIconSize(QSize(14, 14))
 
 
-        ## module details
-        self._registry_panel = QWidget(self)
-        self._title_label = QLabel(self)
-        self._script_editor = ScriptEditAdvanced(completer=None, parent=self)
-        
         self._script_status_label = QLabel(self)
-        self._registry_panel_layout = QVBoxLayout()
+        self._registry_panel_layout = QGridLayout()
         self._registry_panel.setLayout(self._registry_panel_layout)
-        self._registry_panel_layout.addWidget(self._script_editor)
-        self._registry_panel_layout.addWidget(self._script_status_label)
+        self._registry_panel_layout.addWidget(self._script_editor, 0, 0)
+        self._registry_panel_layout.addWidget(self._script_status_label, 1, 0)
+        self._registry_panel_layout.addWidget(self._module_operator_tree_view, 0, 1, 2, 1)
         
         # Graph View
         self._graph_view = DirectionalGraphView5(self)
@@ -128,7 +115,6 @@ class PyFlow5DocumentWindow(QWidget):
         self._node_input_delegate = NodeInputFieldDelegate(self._node_inlet_tree_view)
         self._node_inlet_tree_view.setItemDelegateForColumn(1, self._node_input_delegate)
         self._node_inlet_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-
         
         # Node Inspector
         self._node_inspector = NodeInspectorView(self)
@@ -200,20 +186,16 @@ class PyFlow5DocumentWindow(QWidget):
         document.nodesInvalidated.connect(self._on_nodes_invalidated)
         document.isModifiedChanged.connect(self.updateWindowTitle)
         document.filePathChanged.connect(self.updateWindowTitle)
+        document.scriptStateChanged.connect(self._on_script_module_state_changed)
 
-        # self._module_operator_tree_view.setModel(document.registry_model)
-        # self._script_editor.setDocument(document.script_document)
-        # self._registry_panel.setModel(document.registry_model)
+        self._module_operator_tree_view.setModel(document.operators_model)
+        self._script_editor.setDocument(document.script_document)
         self._graph_view.setModel(document.graph_model)
         self._node_inlet_tree_view.setModel(document.node_inlet_tree_adapter)
         self._viewer.setModel(document.node_inlet_tree_adapter)
         self._node_inspector.setModel(document.node_inlet_tree_adapter)
         self._node_inlet_tree_view.expandAll()
 
-        # self.modulesselection_model = QItemSelectionModel(document.registry_model, self)
-        # self._selection_models.append(self.modulesselection_model)
-        # self._module_operator_tree_view.setSelectionModel(self.modulesselection_model)
-        # self._registry_panel.setSelectionModel(self.modulesselection_model)
         self.graphselection_model = GraphSelectionModel(document.graph_model, self)
         self._selection_models.append(self.graphselection_model)
         self.graphselection_model.currentNodeChanged.connect(self._onCurrentNodeChanged)
@@ -227,6 +209,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._node_inspector.setSelectionModel(self.node_inlet_tree_selection_adapter)
         self._graph_view.setSelectionModel(self.graphselection_model)
         self.updateWindowTitle()
+        self._on_script_module_state_changed()
 
         
         # Fitting changes the viewport; automatic layout would overwrite saved positions.
@@ -348,46 +331,10 @@ class PyFlow5DocumentWindow(QWidget):
         assert self._document is not None, "No document is connected."
         return self._document
 
-    def _show_modules_context_menu(self, pos):
-        index = self._module_operator_tree_view.indexAt(pos)
-        global_pos = self._module_operator_tree_view.viewport().mapToGlobal(pos)
-        
-        # Create a fresh, local menu instance right here
-        menu = QMenu(self._module_operator_tree_view)
-        add_action = menu.addAction("Add Embedded Module")
-        add_action.triggered.connect(self.addEmbeddedModule)
-
-        if self.modulesselection_model.hasSelection():
-            # Pass the specific index data directly into your deletion method
-            item_text = index.data()
-            remove_action = menu.addAction(f"Remove '{item_text}'")
-
-            #todo remove selection with batches using the .selection()->QItemSelection
-            def remove_selected_modules():
-                selected_indexes = self.modulesselection_model.selectedIndexes()
-                for selected_index in selected_indexes:
-                    self._document.registry_model.removeRows(selected_index.row(), 1)
-            remove_action.triggered.connect(remove_selected_modules)
-            
-        # Execute the local menu (blocks until closed, then gets garbage collected)
-        menu.exec(global_pos)
-
     def deleteSelectedNodes(self):
         assert self._document is not None, "Document must be available to delete selected nodes."
         selected_nodes = self.graphselection_model.selectedNodes()
         self.document().deleteNodes(selected_nodes)
-
-    def addEmbeddedModule(self, name="_local_") -> None:
-        if module_idx := self.document().registry_model.addEmbeddedModule(name):
-            self.modulesselection_model.setCurrentIndex(
-                module_idx, 
-                QItemSelectionModel.ClearAndSelect
-            )
-
-    def removeSelectedModule(self) -> None:
-        current_index = self.modulesselection_model.currentIndex()
-        if current_index:
-            self.document().registry_model.removeModule(current_index)
 
     @Slot()
     def _navigate_to_current_node_operator(self):
@@ -402,61 +349,24 @@ class PyFlow5DocumentWindow(QWidget):
         operator_index = self._document.getNodeOperator(current_node)
         if operator_index.isValid():
             self._left_tabwidget.setCurrentWidget(self._registry_panel)
-            module_index = operator_index.parent()
-            self.modulesselection_model.setCurrentIndex(module_index, QItemSelectionModel.ClearAndSelect)
-
-            self._registry_panel.goToOperator(operator_index)
-
-    def importModule(self) -> None:
-        # open file browser dialog
-        file_dialog = QFileDialog(self)
-        file_dialog.setOption(QFileDialog.DontUseNativeDialog, True)
-        file_dialog.setFileMode(QFileDialog.ExistingFile)
-        relative_path_option = QCheckBox("Import with relative path", file_dialog)
-        relative_path_option.setToolTip("Relative to the current working directory.")
-        layout = file_dialog.layout()
-        layout.addWidget(relative_path_option, layout.rowCount(), 0, 1, layout.columnCount())
-        if file_dialog.exec_():
-            selected_files = file_dialog.selectedFiles()
-            if selected_files:
-                file_path = selected_files[0]
-                if relative_path_option.isChecked():
-                    try:
-                        file_path = os.path.relpath(file_path)
-                    except ValueError:
-                        QMessageBox.warning(
-                            self,
-                            "Cannot import with relative path",
-                            "The file must be on the same drive as the current working directory.",
-                        )
-                        return
-                module = self._document.importModule(file_path)
-                if module is not None:
-                    state = module.get_status()
-                    if isinstance(state, Exception):
-                        error = state.__cause__ or state
-                        warning = QMessageBox(self)
-                        warning.setIcon(QMessageBox.Icon.Warning)
-                        warning.setWindowTitle("Script has issues")
-                        warning.setTextFormat(Qt.TextFormat.PlainText)
-                        warning.setText(f"{type(error).__name__}: {error}")
-                        warning.setInformativeText(
-                            f'The script "{file_path}" could not be evaluated.\n\n'
-                            "The source is available to view, but its operators are unavailable.",
-                        )
-                        warning.setDetailedText("".join(traceback.format_exception(error)))
-                        warning.exec()
+            self._module_operator_tree_view.setCurrentIndex(operator_index)
+            operator = self._document.operators_model.mapToSource(operator_index)
+            if operator is not None:
+                line = operator.get_line_number()
+                if line is not None:
+                    self._script_editor.moveCursorToLine(line)
+                    self._script_editor.setFocus()
 
     def openOperatorDialog(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None) -> None:
         if scene_pos is None:
             viewport_center = QPointF(self._graph_view.contentsRect().center())
             scene_pos = self._graph_view.mapToScene(viewport_center)
 
-        dialog = SelectionDialog(self._document.registry_model, self)
+        dialog = SelectionDialog(self._document.operators_model, self)
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
-                selected_op = self._document.registry_model.mapToSource(selected_index)
+                selected_op = self._document.operators_model.mapToSource(selected_index)
                 
                 if selected_op and isinstance(selected_op, ScriptOperatorRef):
                     self._document.graph_model.addNode(selected_op, scene_pos)
@@ -484,6 +394,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._document.nodesInvalidated.disconnect(self._on_nodes_invalidated)
         self._document.isModifiedChanged.disconnect(self.updateWindowTitle)
         self._document.filePathChanged.disconnect(self.updateWindowTitle)
+        self._document.scriptStateChanged.disconnect(self._on_script_module_state_changed)
         self._document = None
         # Destroy field editors while their delegates and models are still alive.
         self._node_inspector.setSelectionModel(None)
@@ -491,7 +402,6 @@ class PyFlow5DocumentWindow(QWidget):
         self._viewer.setSelectionModel(None)
         self._viewer.setModel(None)
         self._node_inlet_tree_view.setModel(None)
-        self._registry_panel.setModel(None)
         self._module_operator_tree_view.setModel(None)
         self._graph_view.setSelectionModel(None)
         self._graph_view.setModel(None)
@@ -502,22 +412,15 @@ class PyFlow5DocumentWindow(QWidget):
         self._selection_models.clear()
 
     @Slot()
-    def _on_script_module_state_changed(self):
-        # set code editor style to red border if the script module is in an error state
-        match self._script_editor:
-            case ScriptEditAdvanced():
-                state = self._document.scriptmodule().get_state()
-                match state:
-                    case SyntaxError() as e:
-                        self._script_editor._linter.clear()
-                        self._script_editor._linter.lintException(e, 'underline')
-                    case Exception() as e:
-                        self._script_editor._linter.clear()
-                        self._script_editor._linter.lintException(e, 'label')
-                    case "VALID":
-                        self._script_editor._linter.clear()
-                    case _:
-                        print(f"Unknown script module state: {state}")
-                        self._script_editor._linter.clear()
-            case _:
-                assert False, f"Unknown code editor type {self._code_editor}"
+    def _on_script_module_state_changed(self) -> None:
+        self._script_editor._linter.clear()
+        if self._document is None:
+            self._script_status_label.clear()
+            return
+        state = self._document.scriptState()
+        if isinstance(state, Exception):
+            self._script_status_label.setText(f"{type(state).__name__}: {state}")
+            style = "underline" if isinstance(state, SyntaxError) else "label"
+            self._script_editor._linter.lintException(state, style)
+        else:
+            self._script_status_label.clear()

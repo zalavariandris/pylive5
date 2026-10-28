@@ -1,5 +1,6 @@
 from collections import defaultdict, deque
 
+from pygraphrt2.inline_scriptmodule import ScriptOperatorRef
 from qtpy.QtCore import QObject, Signal
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -24,12 +25,10 @@ class NodeRef:
         return f"NodeRef('{self._name}')"
 
     def __call__(self) -> Any:
-        if operator_ref:=self.get_operator():
-            args, kwargs = self.get_inputs()
-            return operator_ref(*args, **kwargs)
-        else:
-            raise GraphExecutionError(f"Operator {self.get_operator()} is missing from the graph")
-        
+        from .inline_executor import InlineExecutor
+
+        return InlineExecutor(self._graph).execute(self)[self]
+
     def __hash__(self):
         return hash((self._graph, self._name))
 
@@ -146,7 +145,9 @@ class Graph(QObject):
         assert isinstance(func, Callable) or func is None, f"Expected a Callable or None, got: {func}"
         # derive name from the operator
         if name is None:
-            if isinstance(func, Callable):
+            if isinstance(func, ScriptOperatorRef):
+                name = func.name()
+            elif isinstance(func, Callable):
                 name = func.__name__
             else:
                 name = "node"
@@ -157,7 +158,6 @@ class Graph(QObject):
             from pytools import UniqueNameGenerator
             name = UniqueNameGenerator(existing_names)(name)
 
-        self._validate_inputs(args, kwargs)
 
         # create the node and store its data
         node_ref = NodeRef(self, name)
@@ -186,7 +186,7 @@ class Graph(QObject):
             if dependent_node_ref == node_ref:
                 continue
             dependend_node_state = self._nodes[dependent_node_ref]
-            dependent_func = dependend_node_state.func
+            dependent_func = dependend_node_state.operator
             remaining_args = tuple(
                 value for value in dependend_node_state.args
                 if not (isinstance(value, NodeRef) and value == node_ref)
@@ -287,27 +287,3 @@ class Graph(QObject):
             raise ValueError("Cycle detected in the graph.")
 
         return sorted_nodes
-
-
-if __name__ == "__main__":
-    G = GraphDefinitionRT()
-
-    @G.node()
-    def A():
-        print("Executing node A")
-        return 15
-
-    @G.node()
-    def B():
-        print("Executing node B")
-        return 20
-
-    @G.node(A, B)
-    def mult(x, y):
-        print("Executing node mult")
-        return x*y
-
-    executor = GraphExecutorRT(G)
-
-    result = executor.execute(mult)
-    print(result)

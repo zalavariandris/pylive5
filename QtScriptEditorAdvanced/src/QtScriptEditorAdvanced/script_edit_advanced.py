@@ -1,8 +1,8 @@
 from typing import *
 
 from qtpy.QtCore import Qt, QEvent, QObject
-from qtpy.QtGui import QColor, QContextMenuEvent, QKeyEvent, QPalette, QFont, QTextCursor, QTextOption
-from qtpy.QtWidgets import QMenu, QPlainTextEdit, QAction
+from qtpy.QtGui import QColor, QContextMenuEvent, QKeyEvent, QPalette, QFont, QTextCursor, QTextDocument, QTextOption
+from qtpy.QtWidgets import QMenu, QPlainTextDocumentLayout, QPlainTextEdit, QAction
 from qtpy.QtWidgets import QGraphicsOpacityEffect
 
 # components
@@ -89,6 +89,7 @@ class ScriptEditAdvanced(QPlainTextEdit):
         ### Syntax Highlighter ###
         
         self._highlighter = highlighter(self.document())
+        self._highlighter.setParent(self) # keep the highlighter alive with the editor
 
         # ### Autocomplete ###
         if completer is not None:
@@ -111,6 +112,29 @@ class ScriptEditAdvanced(QPlainTextEdit):
     # def sizeHint(self) -> QSize:
     #     width = self.fontMetrics().horizontalAdvance('O') * 70
     #     return QSize(width, int(width*8/7))
+
+    def setDocument(self, document: QTextDocument) -> None:
+        if document is self.document():
+            return
+
+        if not isinstance(
+            document.documentLayout(), QPlainTextDocumentLayout
+        ):
+            document.setDocumentLayout(
+                QPlainTextDocumentLayout(document)
+            )
+
+        self._highlighter.setDocument(None)
+        super().setDocument(document)
+
+        options = document.defaultTextOption()
+        options.setFlags(
+            options.flags() | QTextOption.Flag.ShowTabsAndSpaces
+        )
+        document.setDefaultTextOption(options)
+
+        self._highlighter.setDocument(document)
+        self._highlighter.rehighlight()
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)

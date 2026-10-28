@@ -3,7 +3,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Callable
 from unittest import case
-from qtpy.QtCore import SignalInstance
+from qtpy.QtCore import SignalInstance, Signal
 from qtpy.QtWidgets import QApplication, QStyle
 
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, QObject, Qt
@@ -22,16 +22,16 @@ class OperatorsModel(QAbstractItemModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._registry: rt2.ScriptModule | None = None
+        self._registry: rt2.InlineScriptModule | None = None
         self._registry_connections: list[tuple[SignalInstance, Callable]] = []
 
         self._shadows: BiList[_OperatorShadow] = BiList()
         self._mapping: bidict[rt2.ScriptOperatorRef, _OperatorShadow] = bidict()
 
-    def sourceRegistry(self) -> rt2.ScriptModule | None:
+    def sourceRegistry(self) -> rt2.InlineScriptModule | None:
         return self._registry
 
-    def setSourceRegistry(self, registry: rt2.ScriptModule | None) -> None:
+    def setSourceRegistry(self, registry: rt2.InlineScriptModule | None) -> None:
         """Replace the runtime used by this model."""
         if self._registry is registry:
             return

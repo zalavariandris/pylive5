@@ -45,7 +45,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     
     # - Click the local module in the modules view to select it
     modules_listview = window._modules_listview
-    local_module_index = document.registry_model.index(0, 0)
+    local_module_index = document.operators_model.index(0, 0)
     qtbot.mouseClick(
         modules_listview.viewport(),
         Qt.MouseButton.LeftButton,
@@ -100,13 +100,13 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     # - Add helloworld through the operator picker.
     def add_node_using_the_operator_picker(operator_name) -> None:
         def find_operator_index(operator_name:str, module_idx:QModelIndex) -> QModelIndex:
-            for row in range(document.registry_model.rowCount(module_idx)):
-                operator_index = document.registry_model.index(row, 0, module_idx)
+            for row in range(document.operators_model.rowCount(module_idx)):
+                operator_index = document.operators_model.index(row, 0, module_idx)
                 if operator_index.data() == operator_name:
                     return operator_index
             return QModelIndex()
 
-        local_module_index = document.registry_model.index(0, 0)
+        local_module_index = document.operators_model.index(0, 0)
         operator_index = find_operator_index(operator_name, local_module_index)
         assert operator_index.isValid(), f"Operator '{operator_name}' not found in local module"
 

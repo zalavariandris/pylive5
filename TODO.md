@@ -1,5 +1,7 @@
 
 ## Features
+- [ ] ScriptEditAdvanced should support .setDocument(document.script_document)
+- [ ] consider creating a special ScriptDocument sublcassing QTextDocument
 - [x] indicate file and document modifications
 - [x] session now restore opened file, as well as unsaved modifications
 - [x] Run ScriptModuleEvaluation in the background

@@ -72,7 +72,7 @@ def test_import_warns_only_when_evaluation_fails(
     window.importModule()
 
     document = window._document
-    model = document.registry_model
+    model = document.operators_model
     assert model.rowCount() == 1
     index = document.modulesselection_model.currentIndex()
     module = model.mapToSource(index)
@@ -123,4 +123,4 @@ def test_cancelled_import_does_not_warn(
     window.importModule()
 
     assert warnings == []
-    assert window._document.registry_model.rowCount() == 0
+    assert window._document.operators_model.rowCount() == 0

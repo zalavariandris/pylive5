@@ -16,7 +16,7 @@ def test_import_stays_read_only_after_document_save_and_load(
     module_path.write_text(source, encoding="utf-8")
     document = PyFlowDocument()
     document.importModule(module_path)
-    model = document.registry_model
+    model = document.operators_model
     index = model.index(0, 0)
     module = model.mapToSource(index)
     assert isinstance(module, ImportModuleRT)
@@ -40,10 +40,10 @@ def test_import_stays_read_only_after_document_save_and_load(
     }
 
     restored = PyFlowDocument.open(document_path)
-    restored_index = restored.registry_model.index(0, 0)
+    restored_index = restored.operators_model.index(0, 0)
     assert restored_index.data(OperatorsModel.ReadOnlyRole) is True
     assert restored_index.data(OperatorsModel.SourceRole) == source
-    assert not restored.registry_model.setData(
+    assert not restored.operators_model.setData(
         restored_index, "value = 3", model.SourceRole,
     )
     assert module_path.read_text(encoding="utf-8") == source

@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from unittest.mock import patch
 
-import pygraphrt as rt
+import pygraphrt2 as rt
 import pytest
 from qtpy.QtCore import Qt
 
@@ -12,17 +12,15 @@ from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
 
 
 @pytest.fixture
-def model_and_module(qapp: object) -> Iterator[tuple[PyGraphRTGraphModel, rt.ScriptModuleRT]]:
-    graph = rt.GraphDefinitionRT()
-    registry = rt.ModuleRegistry()
-    module = rt.ScriptModuleRT("example")
+def model_and_module(qapp: object) -> Iterator[tuple[PyGraphRTGraphModel, rt.InlineScriptModule]]:
+    graph = rt.Graph()
+    module = rt.InlineScriptModule("example")
     module.set_script("def operation(value: int = 1):\n    return value\n")
     module.evaluate()
-    registry.add_module(module)
     operator = module.get_operator_by_name("operation")
     graph._create_node(operator, name="first")
     graph._create_node(module.get_operator_by_name("operation"), name="second")
-    engine = rt.GraphEngine(graph=graph, registry=registry)
+    engine = rt.Engine(graph=graph, registry=module)
     model = PyGraphRTGraphModel(engine)
     yield model, module
     model.close()
@@ -30,15 +28,15 @@ def model_and_module(qapp: object) -> Iterator[tuple[PyGraphRTGraphModel, rt.Scr
 
 
 def test_repeated_queries_and_value_edits_share_parameters(
-    model_and_module: tuple[PyGraphRTGraphModel, rt.ScriptModuleRT],
+    model_and_module: tuple[PyGraphRTGraphModel, rt.InlineScriptModule],
 ) -> None:
     model, _ = model_and_module
     node = model.mapToSource("first")
     assert node is not None
-    operator = node.get_operator()
+    operator = node.resolve().operator
     assert operator is not None
 
-    with patch.object(operator, "get_parameters", wraps=operator.get_parameters) as get_parameters:
+    with patch.object(rt.ScriptOperatorRef, "get_parameters", autospec=True) as get_parameters:
         for name in ("first", "second"):
             assert list(model.inlets(name)) == ["value"]
             assert model.inletData(name, "value") == "value: int"
@@ -54,7 +52,7 @@ def test_repeated_queries_and_value_edits_share_parameters(
 
 
 def test_script_changes_refresh_parameters_before_notifying_observers(
-    model_and_module: tuple[PyGraphRTGraphModel, rt.ScriptModuleRT],
+    model_and_module: tuple[PyGraphRTGraphModel, rt.InlineScriptModule],
 ) -> None:
     model, module = model_and_module
     assert list(model.inlets("first")) == ["value"]
@@ -74,7 +72,7 @@ def test_script_changes_refresh_parameters_before_notifying_observers(
 
 
 def test_removed_operator_and_empty_parameters_refresh_when_restored(
-    model_and_module: tuple[PyGraphRTGraphModel, rt.ScriptModuleRT],
+    model_and_module: tuple[PyGraphRTGraphModel, rt.InlineScriptModule],
 ) -> None:
     model, module = model_and_module
     assert list(model.inlets("first")) == ["value"]
@@ -92,14 +90,14 @@ def test_removed_operator_and_empty_parameters_refresh_when_restored(
 
 
 def test_recovery_reset_refreshes_metadata(
-    model_and_module: tuple[PyGraphRTGraphModel, rt.ScriptModuleRT],
+    model_and_module: tuple[PyGraphRTGraphModel, rt.InlineScriptModule],
 ) -> None:
     model, module = model_and_module
     assert model.inletData("first", "value", InputDataRole.DefaultValueRole) == 1
     operator = module.get_operator_by_name("operation")
     assert operator is not None
     # Simulate a change that did not deliver its normal registry notification.
-    operator.get_callable().__defaults__ = (9,)
+    operator.resolve().__defaults__ = (9,)
 
     model.reset_graph_from_scratch()
 

@@ -1,4 +1,3 @@
-from pygraphrt.abstract_operator import ParameterData
 from qtpy.QtCore import QAbstractItemModel, QModelIndex, Qt
 from qtpy.QtWidgets import QSizePolicy, QStyledItemDelegate, QWidget, QLabel, QPushButton
 

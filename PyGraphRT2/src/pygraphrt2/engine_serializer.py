@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .graph import Graph, NodeRef
-from .script_module import ScriptModule, ScriptOperatorRef
+from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 
 
 def _encode_value(value: Any) -> Any:
@@ -80,7 +80,7 @@ def _decode_input(data: dict[str, Any], nodes: dict[str, NodeRef]) -> Any:
 
 
 class GraphSerializer:
-    def __init__(self, graph: Graph, registry: ScriptModule) -> None:
+    def __init__(self, graph: Graph, registry: InlineScriptModule) -> None:
         self.graph = graph
         self.registry = registry
 
@@ -123,7 +123,7 @@ class GraphSerializer:
             "version": 4,
             "script": {
                 "name": self.registry.name(),
-                "source": self.registry.get_source(),
+                "source": self.registry.get_script(),
             },
             "graph": {
                 "nodes": {
@@ -135,16 +135,26 @@ class GraphSerializer:
 
 
 class GraphDeserializer:
-    def fromdict(self, data: dict[str, Any]) -> tuple[ScriptModule, Graph]:
+    def fromdict(self, data: dict[str, Any]) -> tuple[InlineScriptModule, Graph]:
         """Restore the script module and graph, retaining missing operator names."""
         version = data.get("version")
         if type(version) is not int or version != 4:
             raise ValueError("Unsupported graph format; expected version 4")
 
         script = data["script"]
-        registry = ScriptModule(script.get("name"))
+        if not isinstance(script, dict) or not isinstance(script.get("source"), str):
+            raise ValueError("Script must contain a source string")
+        if script.get("name") is not None and not isinstance(script["name"], str):
+            raise ValueError("Script name must be a string or None")
+        registry = InlineScriptModule(script.get("name"))
         registry.set_script(script["source"])
-        registry.evaluate()
+        try:
+            registry.evaluate()
+        except Exception as error:
+            # A document with a broken script must still reopen for repair.
+            # Only tolerate errors recorded by script evaluation itself.
+            if registry.get_state() is not error:
+                raise
 
         graph = Graph()
         records = data["graph"].get("nodes", {})

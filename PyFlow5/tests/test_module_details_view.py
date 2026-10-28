@@ -187,7 +187,7 @@ def test_window_connects_module_details(
     qtbot.addWidget(window)
     window.addEmbeddedModule()
     view = window._registry_panel
-    assert view.model() is window._document.registry_model
+    assert view.model() is window._document.operators_model
     assert view.currentIndex().isValid()
     assert view._code_editor.isEnabled()
     view._code_editor.setPlainText("def hello(): return 42")
@@ -197,5 +197,5 @@ def test_window_connects_module_details(
     assert not view.currentIndex().isValid()
     assert view._code_editor.toPlainText() == ""
     window._document.createEmbeddedModule()
-    assert view.currentIndex() == window._document.registry_model.index(0, 0)
+    assert view.currentIndex() == window._document.operators_model.index(0, 0)
     assert view._code_editor.isEnabled()

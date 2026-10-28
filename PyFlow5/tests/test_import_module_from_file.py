@@ -24,16 +24,16 @@ def test_import_module_from_file(tmp_path):
     )
     document = PyFlowDocument()
     document.importModule(module_file)
-    assert document.registry_model.rowCount()>0
-    module_index = document.registry_model.index(0,0)
+    assert document.operators_model.rowCount()>0
+    module_index = document.operators_model.index(0,0)
     assert module_index.isValid()
     assert module_index.data(Qt.ItemDataRole.DisplayRole).endswith("module_v01.py")
 
     # get the operators from the imported module
-    assert document.registry_model.rowCount(module_index) ==2
+    assert document.operators_model.rowCount(module_index) ==2
     # oparator names match the functions defined in the module
-    operator_names = [document.registry_model.index(row, 0, module_index).data(Qt.ItemDataRole.DisplayRole)
-                      for row in range(document.registry_model.rowCount(module_index))]
+    operator_names = [document.operators_model.index(row, 0, module_index).data(Qt.ItemDataRole.DisplayRole)
+                      for row in range(document.operators_model.rowCount(module_index))]
     assert "is_this" in operator_names
     assert "buum" in operator_names
 
@@ -43,16 +43,16 @@ def test_import_vfxops():
 
     document = PyFlowDocument()
     document.importModule(module_file)
-    assert document.registry_model.rowCount()>0
-    module_index = document.registry_model.index(0,0)
+    assert document.operators_model.rowCount()>0
+    module_index = document.operators_model.index(0,0)
     assert module_index.isValid()
     assert module_index.data(Qt.ItemDataRole.DisplayRole).endswith("vfxops.py")
 
     # get the operators from the imported module
-    assert document.registry_model.rowCount(module_index) > 0
+    assert document.operators_model.rowCount(module_index) > 0
     # oparator names match the functions defined in the module
-    operator_names = [document.registry_model.index(row, 0, module_index).data(Qt.ItemDataRole.DisplayRole)
-                      for row in range(document.registry_model.rowCount(module_index))]
+    operator_names = [document.operators_model.index(row, 0, module_index).data(Qt.ItemDataRole.DisplayRole)
+                      for row in range(document.operators_model.rowCount(module_index))]
     assert "is_this" in operator_names
     assert "buum" in operator_names
 

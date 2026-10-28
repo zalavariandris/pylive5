@@ -1,3 +1,4 @@
+from PyFlow5.tests_ai.runtime_helpers import set_inputs
 """Regression checks for view-owned geometry during interactive node movement."""
 
 from collections.abc import Iterator
@@ -9,7 +10,8 @@ from qtpy.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
 from qtpy.QtGui import QColor, QImage, QMouseEvent, QPainter, QPainterPath, QPalette
 from qtpy.QtWidgets import QStyleOptionViewItem
 
-import pygraphrt as rt
+import pygraphrt2 as rt
+from pygraphrt2.inline_executor import ExecutionFailure
 from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
 from pyflow5.core.input_roles import InputDataRole
 from qdageditor5.core.item_data_roles import NodeDataRole
@@ -20,7 +22,7 @@ from qdageditor5.views.styled_node_delegate import StyledNodeDelegate
 
 
 def make_model() -> PyGraphRTGraphModel:
-    graph = rt.GraphDefinitionRT()
+    graph = rt.Graph()
 
     @graph.node()
     def first() -> int:
@@ -34,8 +36,7 @@ def make_model() -> PyGraphRTGraphModel:
     def third(value: int) -> int:
         return value
 
-    registry = rt.ModuleRegistry()
-    engine = rt.GraphEngine(graph, registry, backend=rt.InlineExecutionBackend())
+    engine = rt.Engine(graph)
     model = PyGraphRTGraphModel(engine)
     for row, node in enumerate(model.nodes()):
         model.setNodePosition(node, QPointF(220, 80 + row * 120))
@@ -150,7 +151,7 @@ def test_result_label_change_remeasures_only_the_changed_node(
     render(view)
     old_cache = dict(view._node_item_cache)
     node = model.mapToSource("second")
-    model._on_executed({node: rt.ExecutionFailure(node, ValueError("A much longer error label"))})
+    model._on_failed(ExecutionFailure(node, ValueError("A much longer error label")))
 
     rect = view._nodeSceneRect(view._nodeStyleOption("second"), "second")
     assert rect.width() > old_cache["second"].bounding_rect.width()
@@ -294,7 +295,7 @@ def test_changed_ports_reposition_without_stale_node_bounds(
     view, model = graph_view
     previous = view._inletPos("second", "value")
     second = model.mapToSource("second")
-    second.set_inputs(model.mapToSource("first"), extra=2, another=3)
+    set_inputs(second, model.mapToSource("first"), extra=2, another=3)
     assert view._inletPos("second", "value") != previous
     assert view._inletPos("second", "extra").x() > view._inletPos("second", "value").x()
 
@@ -391,7 +392,7 @@ def test_inlet_value_can_resize_node_and_move_its_outlet_and_link(
 ) -> None:
     view, model = graph_view
     second = model.mapToSource("second")
-    second.set_inputs(value=40)
+    set_inputs(second, value=40)
 
     class ValueSizedDelegate(StyledNodeDelegate):
         def _nodeLocalShape(
@@ -407,7 +408,7 @@ def test_inlet_value_can_resize_node_and_move_its_outlet_and_link(
     view._nodes_delegate = ValueSizedDelegate()
     link = ("second", "out", "third", "value")
     before = view._linkSceneShape(link)
-    second.set_inputs(value=120)
+    set_inputs(second, value=120)
     after = view._linkSceneShape(link)
     assert after.pointAtPercent(0).x() == before.pointAtPercent(0).x() + 40
     assert after.pointAtPercent(0) == view._outletPos("second", "out")

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from qdageditor5.models.abstract_dag_model import NodeName
-from qtpy.QtCore import QModelIndex, QObject, QPointF, Signal
+from qtpy.QtCore import QModelIndex, QObject, QPointF, Signal, Property
 from qtpy.QtGui import QTextDocument
 
 import pygraphrt2 as rt2
@@ -16,7 +16,7 @@ from ..core.file_io import write_text_atomic
 from .operators_model import OperatorsModel
 from .pygraphrt_graphmodel import PyGraphRTGraphModel
 from .pygraphrt_node_inlet_tree_model_adapter import PyGraphRTNodeInletTreeModelAdapter
-
+from qtpy.QtWidgets import QPlainTextDocumentLayout
 
 @dataclass(frozen=True)
 class FileStamp:
@@ -34,14 +34,13 @@ class FileChangedError(RuntimeError):
     """Saving requires confirmation because the bound file changed."""
 
 
+
 class PyFlowDocument(QObject):
     nodesInvalidated = Signal(list)
     modified = Signal()
     isModifiedChanged = Signal(bool)
     filePathChanged = Signal(object)
-    moduleScriptChanged = Signal()
-
-
+    scriptStateChanged = Signal()
 
     def __init__(self, 
         engine: rt2.Engine|None=None,
@@ -59,47 +58,51 @@ class PyFlowDocument(QObject):
 
         # RT
         self._engine = engine or rt2.Engine()
+        self.script_document: QTextDocument = QTextDocument(self)
+        self.script_document.setDocumentLayout(
+            QPlainTextDocumentLayout(self.script_document)
+        )
+        self.script_document.setPlainText(self._engine.registry.get_script())
 
         # Models
         ## Graph Model
         self.graph_model = PyGraphRTGraphModel(self._engine)
-        self._engine.nodes_invalidated.connect(
-            lambda nodes: self.nodesInvalidated.emit(
-                [
-                    self.graph_model.mapFromSource(node_ref) 
-                    for node_ref in nodes
-                ]
-            )
-        )
-
         ## Modules Model
-        self.registry_model = OperatorsModel()
-        self.registry_model.setSourceRegistry(self._engine.registry)
+        self.operators_model = OperatorsModel()
+        self.operators_model.setSourceRegistry(self._engine.registry)
 
         # Adapters
         ## Node inlet tree adapter
         self.node_inlet_tree_adapter = PyGraphRTNodeInletTreeModelAdapter(self.graph_model)
         
-        # Initial evaluation
+        self._connections = [
+            (self.script_document.contentsChanged, self._onScriptChanged),
+            (self._engine.registry_invalidated, self._engine.evaluate_registry),
+            (self._engine.registry.stateChanged, self.scriptStateChanged.emit),
+            (self._engine.nodes_invalidated, self._onNodesInvalidated),
+            (self._engine.graph.nodes_added, self._markModified),
+            (self._engine.graph.nodes_removed, self._markModified),
+            (self._engine.graph.nodes_changed, self._markModified),
+            (self.graph_model.nodeMoved, self._markModified),
+        ]
+        for signal, slot in self._connections:
+            signal.connect(slot)
         self._engine.execute(*self._engine.graph.nodes())
 
-        # Observe persisted content, not view refreshes or evaluation results.
-        for signal in (
-            self._engine.graph.nodes_added,
-            self._engine.graph.nodes_removed,
-            self._engine.graph.nodes_changed,
-            self.graph_model.nodeMoved,
-        ):
-            signal.connect(self._markModified)
+        self._engine.nodes_executed.connect(lambda: print("nodes executed"))
 
-    def moduleScript(self)->str:
-        return self._engine.registry.module_script()
+    def _onScriptChanged(self) -> None:
+        source = self.script_document.toPlainText()
+        if not self._closed and source != self._engine.registry.get_script():
+            self._markModified()
+            self._engine.registry.set_script(source)
 
-    def setModuleScript(self, script: str) -> None:
-        if self._engine.registry.module_script() == script:
-            return
-        self._engine.registry.set_module_script(script)
-        self.moduleScriptChanged.emit()
+    def _onNodesInvalidated(self, nodes: list[rt2.NodeRef]) -> None:
+        if not self._closed:
+            self.nodesInvalidated.emit([node.name() for node in nodes])
+
+    def scriptState(self) -> str | Exception | None:
+        return self._engine.registry.get_state()
 
     def _markModified(self, *_args: object) -> None:
         """Mark the document as modified."""
@@ -130,26 +133,31 @@ class PyFlowDocument(QObject):
     def requestNodeExecution(self, node_name: NodeName) -> None:
         node_rt = self.graph_model.mapToSource(node_name)
         if node_rt is not None:
-            self._engine.request_node(node_rt)
+            self._engine.execute(node_rt)
 
     def close(self) -> None:
         """Stop evaluation and disconnect requests from the graph model."""
         if self._closed:
             return
         self._closed = True
+        for signal, slot in self._connections:
+            signal.disconnect(slot)
+        self._connections.clear()
+        self.operators_model.setSourceRegistry(None)
         self.graph_model.close()
-        # self._engine.close()
+        self._engine.close()
 
     def getNodeOperator(self, node_name: NodeName) -> QModelIndex:
         node_ref = self.graph_model.mapToSource(node_name)
         if node_ref is None:
             return QModelIndex()
-        
-        operator = node_ref.get_operator()
+
+        node_state = node_ref.resolve()
+        operator = node_state.operator
         if operator is None:
             return QModelIndex()
 
-        operator_index = self.registry_model.mapFromSource(operator)
+        operator_index = self.operators_model.mapFromSource(operator)
         return operator_index
 
 
@@ -167,16 +175,15 @@ class PyFlowDocument(QObject):
     @classmethod
     def deserialize(cls, jsontext: str) -> "PyFlowDocument":
         data = json.loads(jsontext)
-        if (
-            not isinstance(data, dict)
-            or type(data.get("version")) is not int or data["version"] != 3
-        ):
-            raise ValueError("Unsupported graph format; expected version 3.")
+        if not isinstance(data, dict):
+            raise ValueError("A graph document must be an object.")
+        if type(data.get("version")) is not int or data["version"] != 4:
+            raise ValueError(f"Unsupported graph format; expected version 4. got: {data.get('version')!r}")
         if (
             not isinstance(data.get("graph"), dict)
-            or not isinstance(data.get("modules", {}), dict)
+            or not isinstance(data.get("script"), dict)
         ):
-            raise ValueError("A graph document must contain graph and module objects.")
+            raise ValueError("A graph document must contain graph and script objects.")
         records = data["graph"].get("nodes", {})
         if not isinstance(records, dict):
             raise ValueError("Graph nodes must be an object.")
@@ -251,17 +258,17 @@ class PyFlowDocument(QObject):
 
 
     # Editing
-    def createNewNode(self, operator_index:QModelIndex, scene_pos:QPointF|None=None):
+    def createNewNode(self, operator_index: QModelIndex, scene_pos: QPointF | None = None) -> None:
         assert operator_index.isValid(), "Operator index must be valid."
-        assert operator_index.model() is self.registry_model, "Operator index must belong to the modules model."
-        selected_op_ref = operator_index.data(OperatorsModel.OperatorRole)
+        assert operator_index.model() is self.operators_model, "Operator index must belong to the operators model."
+        selected_op_ref = self.operators_model.mapToSource(operator_index)
         if selected_op_ref:
             self.graph_model.addNode(selected_op_ref, scene_pos or QPointF(0, 0))
 
     def deleteNodes(self, node_names: Iterable[NodeName]) -> None:
         self.graph_model.removeNodes(node_names)
 
-    def restart_graph(self):
+    def restart_graph(self) -> None:
         """Recover the model/view while preserving the current runtime and script."""
-        # todo: this needs to be reimplemented
         self.graph_model.reset_graph_from_scratch()
+        self._engine.evaluate_registry()

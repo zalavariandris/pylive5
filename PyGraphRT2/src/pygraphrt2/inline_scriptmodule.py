@@ -1,38 +1,121 @@
 from types import FunctionType, ModuleType
 
-from myutils.source_diff import ast_functions_diff
-
 from .registry import Registry
-from typing import Any, Iterable, Callable
+from typing import Any, ClassVar, Iterable, Callable
 from qtpy.QtCore import Signal
 from typing import Literal
 
+import inspect
+from types import MappingProxyType
+from dataclasses import dataclass
+from typing import Mapping
 
-class _ScriptOperatorRef:
-    def __init__(self, module, name):
-        self._module = module
-        self._name = name
 
-    def __hash__(self):
+@dataclass(frozen=True)
+class ParameterData:
+    EMPTY: ClassVar[Any] = inspect.Parameter.empty
+    name:str
+    annotation: Any = EMPTY
+    default: Any = EMPTY
+
+    def __repr__(self):
+        return f"ParameterData(name='{self.name}', annotation={self.annotation}, default={self.default})"
+
+
+
+class OperatorUnavailableError(RuntimeError):
+    """The referenced operator is absent from the evaluated script namespace."""
+
+    def __init__(self, operator: "ScriptOperatorRef") -> None:
+        self.operator = operator
+        super().__init__(f"Operator {operator.name()!r} is unavailable")
+
+
+@dataclass(frozen=True)
+class ScriptOperatorRef:
+    """A binding whose identity survives function removal and script errors.
+
+    Availability follows the module's last evaluation. Nodes keep this reference
+    while it is unavailable; assigning None to a node explicitly unbinds it.
+    """
+
+    _module: 'InlineScriptModule'
+    _name: str
+
+    def module(self) -> 'InlineScriptModule':
+        return self._module
+
+    def name(self) -> str:
+        return self._name
+
+    def is_available(self) -> bool:
+        """Whether the last evaluated namespace contains this operator."""
+        return self._name in self._module._functions_cache
+
+    def resolve(self) -> Callable[..., Any]:
+        if not self.is_available():
+            state = self._module.get_state()
+            cause = state if isinstance(state, Exception) else None
+            raise OperatorUnavailableError(self) from cause
+        return self._module._functions_cache[self._name]
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self.resolve()(*args, **kwargs)
+
+    # equality and hashing
+    def __hash__(self) -> int:
         return hash((self._module, self._name))
-
-    def __eq__(self, other):
-        if not isinstance(other, _ScriptOperatorRef):
+    
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, ScriptOperatorRef):
             return False
         return self._module == other._module and self._name == other._name
 
-    def __call__(self, *args, **kwargs):
-        return self._module._functions_cache[self._name](*args, **kwargs)
+    # signature
+    def __func_sig(self)->inspect.Signature|None:
+        func = self._module._functions_cache.get(self._name, None)
+        if func is None:
+            return None
 
+        return inspect.signature(func)
+
+    def get_parameters(self) -> Mapping[str, ParameterData]:
+        sig = self.__func_sig()
+        if sig is None:
+            return MappingProxyType({})
+        params = {}
+        for name, param in sig.parameters.items():
+            param_data = ParameterData(
+                name, 
+                param.annotation if param.annotation is not inspect.Parameter.empty else ParameterData.EMPTY,
+                param.default if param.default is not inspect.Parameter.empty else ParameterData.EMPTY
+                )
+
+            params[name] = param_data
+        return MappingProxyType(params)
+
+    def get_line_number(self) -> int | None:
+        return self._module._line_numbers.get(self._name, None)
+
+    def get_return_type(self) -> type:
+        sig = self.__func_sig()
+        if sig:
+            if sig.return_annotation is not inspect.Signature.empty:
+                return sig.return_annotation
+            else:
+                return ParameterData.EMPTY #todo: this should be 'EMPTY', not 'Any' i think
+        else:
+            return ParameterData.EMPTY
 
 class InlineScriptModule(Registry):
     scriptChanged = Signal(str)
     stateChanged = Signal()
+    registry_invalidated = Signal()
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, name: str | None = None) -> None:
+        super().__init__(name=name)
         self._script = ""
-        self._state:Literal["VALID", "ERROR"] | Exception = None
+        self._state: Literal["VALID"] | Exception | None = None
         self._functions_cache: dict[str, Callable] = {}
         self._line_numbers: dict[str, int] = {}
         self._evaluated_script = ""
@@ -40,22 +123,22 @@ class InlineScriptModule(Registry):
     def set_script(self, script:str):
         self._script = script
         self.scriptChanged.emit(script)
+        self.registry_invalidated.emit()
+
+    def get_script(self) -> str:
+        return self._script
+
+    def get_state(self) -> Literal["VALID"] | Exception | None:
+        return self._state
 
     def evaluate(self) -> None:
-        #todo: add a force replace all functions, to replace all functions.
-        #.   note: the current implementation might miss behavior changes in some situations.
-        """update operators based on the current script and emit relevant signals"""
-        execution_name: str = "<script>"
-        new_state: Literal["VALID"] | Exception
+        """Commit a complete namespace, or expose the error with no stale operators."""
         try:
-            all_functions_from_script = _get_all_callables_from_script(self._script, name=execution_name)
-            new_state = "VALID"
+            functions = _get_all_callables_from_script(self._script, name="<script>")
         except Exception as error:
-            new_state = error
-            all_functions_from_script = {}
-            self._state = "ERROR"
-
-        self.__apply_functions(all_functions_from_script, new_state)
+            self.__apply_functions({}, error)
+            raise
+        self.__apply_functions(functions, "VALID")
 
     def __apply_functions(self, 
         all_functions_from_script: dict[str, Callable], 
@@ -65,11 +148,9 @@ class InlineScriptModule(Registry):
         next_names = all_functions_from_script.keys()
         removed_names = sorted(prev_names - next_names)
         added_names = sorted(next_names - prev_names)
-        changed_names: list[str] = []
-        if new_state == "VALID":
-            functions_diff = ast_functions_diff(self._evaluated_script, self._script)
-            # AST names can include nested functions; exports are actual bindings.
-            changed_names = sorted(prev_names & next_names & functions_diff.changed)
+        # Function bodies can depend on changed globals, imports, or helpers.
+        # Refresh every surviving binding from the same newly evaluated namespace.
+        changed_names = sorted(prev_names & next_names)
 
         # update line numbers
         self._line_numbers = {
@@ -79,38 +160,31 @@ class InlineScriptModule(Registry):
             if hasattr(func, "__code__")
         }
 
-        # Prepare the entire update before committing; runtime bugs propagate.
-        current_functions = self._functions_cache.copy()
-        for name in removed_names:
-            del current_functions[name]
-        for name in changed_names + added_names:
-            current_functions[name] = all_functions_from_script[name]
-
         state_changed = self._state != new_state
-        self._functions_cache = current_functions
+        self._functions_cache = all_functions_from_script.copy()
         
         self._state = new_state
 
         if state_changed:
             self.stateChanged.emit()
         if removed_names:
-            self.operators_removed.emit([_ScriptOperatorRef(self, name) for name in removed_names])
+            self.operators_removed.emit([ScriptOperatorRef(self, name) for name in removed_names])
         if added_names:
-            self.operators_added.emit([_ScriptOperatorRef(self, name) for name in added_names])
+            self.operators_added.emit([ScriptOperatorRef(self, name) for name in added_names])
         if changed_names:
-            self.operators_changed.emit([_ScriptOperatorRef(self, name) for name in changed_names])
+            self.operators_changed.emit([ScriptOperatorRef(self, name) for name in changed_names])
         self._evaluated_script = self._script
 
     def operators(self)->Iterable[Callable]:
         return [
-            _ScriptOperatorRef(self, name) 
+            ScriptOperatorRef(self, name) 
             for name in self._functions_cache.keys()
         ]
 
-    def get_operator_by_name(self, name: str) -> _ScriptOperatorRef:
+    def get_operator_by_name(self, name: str) -> ScriptOperatorRef:
         if name not in self._functions_cache:
             raise KeyError(f"Operator {name!r} not found")
-        return _ScriptOperatorRef(self, name)
+        return ScriptOperatorRef(self, name)
 
 def _get_all_callables_from_script(
     script: str, *, name: str

@@ -1,96 +1,98 @@
 from qtpy.QtCore import QObject, Signal
 
 from .graph import Graph, NodeRef
-from .registry import Registry
-from .script_module import ScriptModule, ScriptOperatorRef
+from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .relations import ManyToOneRelation
-from .inline_executor import InlineExecutor
-from .inline_executor import ExecutionFailure
+from .inline_executor import InlineExecutor, ExecutionFailure
 
 
 class Engine(QObject):
-    nodes_invalidated = Signal(list) # list[NodeRef]
-    nodes_executed = Signal(dict) # dict[NodeRef, object]
+    nodes_invalidated = Signal(list)
+    nodes_executed = Signal(dict)
     execution_failed = Signal(Exception)
+    registry_invalidated = Signal()
+    registry_evaluated = Signal()
+    registry_failed = Signal(Exception)
 
-    def __init__(self, 
-        graph: Graph|None=None,
-        registry: ScriptModule|None=None
-    ):
+    def __init__(
+        self, graph: Graph | None = None, registry: InlineScriptModule | None = None,
+    ) -> None:
         super().__init__()
-        self.graph:Graph = graph or Graph()
-        self.registry: ScriptModule = registry or ScriptModule()
+        self.graph = graph if graph is not None else Graph()
+        self.registry = registry if registry is not None else InlineScriptModule()
         self._executor = InlineExecutor(self.graph)
-
-        # 
-        self.graph.nodes_removed.connect(lambda nodes: self._invalidate_descendants(nodes))
-    
-        # keep track of node-operator mappings
+        self._closed = False
         self._operator_to_nodes = ManyToOneRelation[NodeRef, ScriptOperatorRef]()
-        self.graph.nodes_removed.connect(lambda nodes: self._remove_node_operator_mappings(nodes))
-        self.graph.nodes_changed.connect(lambda nodes: self._sync_node_operator_mappings(nodes))
-        self.registry.operators_removed.connect(lambda operators: self._clear_node_operators(operators))
-        self.registry.operators_changed.connect(lambda operators: self._refresh_node_operators(operators))
+        self._sync_node_operator_mappings(self.graph.nodes())
+        self._connections = [
+            (self.graph.nodes_added, self._on_nodes_changed),
+            (self.graph.nodes_changed, self._on_nodes_changed),
+            (self.graph.nodes_removed, self._remove_node_operator_mappings),
+            (self.registry.registry_invalidated, self.registry_invalidated.emit),
+        ]
+        for signal, slot in self._connections:
+            signal.connect(slot)
+
+    def evaluate_registry(self) -> None:
+        if self._closed:
+            return
+        try:
+            self.registry.evaluate()
+        except Exception as error:
+            self.registry_failed.emit(error)
+        else:
+            self.registry_evaluated.emit()
+        # Operator references stay on nodes even if their functions disappear.
+        # All bindings and presentation notifications are committed before execution.
+        self._invalidate_descendants(self.graph.nodes())
 
     def execute(self, *targets: NodeRef) -> None:
+        if self._closed:
+            return
         try:
             outputs = self._executor.execute(*targets)
+        except ExecutionFailure as error:
+            self.execution_failed.emit(error)
+        else:
             self.nodes_executed.emit(outputs)
-        except ExecutionFailure as e:
-            self.execution_failed.emit(e)
 
     def node_operator(self, node_ref: NodeRef) -> ScriptOperatorRef | None:
+        """Return the node's script binding, including unavailable references."""
         return self._operator_to_nodes.parent_of(node_ref)
 
-    def _invalidate_descendants(self, node_refs: list[NodeRef]) -> None:
-        all_descendants: set[NodeRef] = set()
-        for node_ref in node_refs:
-            all_descendants.update(self.graph.descendants(node_ref))
-        if all_descendants:
-            self.nodes_invalidated.emit(list(all_descendants))
+    def _on_nodes_changed(self, nodes: list[NodeRef]) -> None:
+        self._sync_node_operator_mappings(nodes)
+        self._invalidate_descendants(nodes)
 
-    def _clear_node_operators(self, operators: list[ScriptOperatorRef]) -> None:
-        # ... remove operator from node, but keep the realtaion
-        for operator in operators:
-            for node_ref in self._operator_to_nodes.children_of(operator):
-                node_state = node_ref.resolve()
-                args = node_state.args
-                kwargs = node_state.kwargs
-                self.graph._update_node(node_ref, None, args, kwargs)
+    def _invalidate_descendants(self, nodes: list[NodeRef]) -> None:
+        affected: set[NodeRef] = set()
+        for node in nodes:
+            affected.update(self.graph.descendants(node))
+        if affected:
+            self.nodes_invalidated.emit([node for node in self.graph.nodes() if node in affected])
 
-    def _refresh_node_operators(self, operators: list[ScriptOperatorRef]) -> None:
-        # ... if operator references are added, add back the resolved functions
-        for operator in operators:
-            for node_ref in self._operator_to_nodes.children_of(operator):
-                node_state = node_ref.resolve()
-                args = node_state.args
-                kwargs = node_state.kwargs
-                self.graph._update_node(node_ref, operator, args, kwargs)
+    def _sync_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
+        # This is an index of the bindings stored on nodes, not separate state.
+        # An unavailable reference remains bound; None or a plain callable does not.
+        for node in nodes:
+            operator = node.resolve().operator
+            previous = self._operator_to_nodes.parent_of(node)
+            if isinstance(operator, ScriptOperatorRef):
+                self._operator_to_nodes.set(node, operator)
+            elif previous is not None:
+                self._operator_to_nodes.delete(node, previous)
 
-    def _remove_node_operator_mappings(self, node_refs: list[NodeRef]) -> None:
-        # ... remove node from operator relation
-        for node_ref in node_refs:
-            operator_ref = self._operator_to_nodes.parent_of(node_ref)
-            if operator_ref is None:
-                continue
-            self._operator_to_nodes.delete(node_ref, operator_ref)
+    def _remove_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
+        # Graph emits nodes_changed for surviving consumers after removing links.
+        for node in nodes:
+            operator = self._operator_to_nodes.parent_of(node)
+            if operator is not None:
+                self._operator_to_nodes.delete(node, operator)
 
-    def _sync_node_operator_mappings(self, node_refs: list[NodeRef]) -> None:
-        # update operator relation for updated nodes
-        for node_ref in node_refs:
-            node_state = node_ref.resolve()
-            operator_ref = node_state.operator
-            if operator_ref is not None:
-                self._operator_to_nodes.add(node_ref, operator_ref)
-            # ... remove old operator relation
-            old_operator_ref = self._operator_to_nodes.parent_of(node_ref)
-            if old_operator_ref is not None:
-                self._operator_to_nodes.delete(node_ref, old_operator_ref)
-            
-            # ... add new operator relation if available
-            new_operator_ref = node_ref.resolve().operator
-            if not isinstance(new_operator_ref, ScriptOperatorRef):
-                raise NotImplementedError("Only ScriptOperatorRef is supported for now.")
-            if new_operator_ref is not None:
-                self._operator_to_nodes.set(node_ref, new_operator_ref)
-        
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for signal, slot in self._connections:
+            signal.disconnect(slot)
+        self._connections.clear()

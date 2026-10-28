@@ -8,10 +8,10 @@ import pytest
 from pygraphrt2.engine_serializer import GraphDeserializer, GraphSerializer
 from pygraphrt2.graph import Graph
 from pygraphrt2.inline_executor import InlineExecutor
-from pygraphrt2.script_module import ScriptModule, ScriptOperatorRef
+from pygraphrt2 import InlineScriptModule, OperatorUnavailableError, ScriptOperatorRef
 
 
-def roundtrip(graph: Graph, registry: ScriptModule) -> tuple[ScriptModule, Graph]:
+def roundtrip(graph: Graph, registry: InlineScriptModule) -> tuple[InlineScriptModule, Graph]:
     data = GraphSerializer(graph, registry).todict()
     text = json.dumps(data, allow_nan=False)
     return GraphDeserializer().fromdict(json.loads(text))
@@ -23,7 +23,7 @@ def test_roundtrip_restores_forward_links_and_execution(module_name: str | None)
         "def number(): return 6\n"
         "def combine(left, extra, *, right): return left + extra + right\n"
     )
-    registry = ScriptModule(module_name)
+    registry = InlineScriptModule(module_name)
     registry.set_script(source)
     registry.evaluate()
     graph = Graph()
@@ -40,7 +40,7 @@ def test_roundtrip_restores_forward_links_and_execution(module_name: str | None)
     restored_result, restored_number = restored_graph.nodes()
 
     assert restored_registry.name() == module_name
-    assert restored_registry.get_source() == source
+    assert restored_registry.get_script() == source
     assert restored_graph.in_links(restored_result) == {restored_number: {0, "right"}}
     assert restored_graph.out_links(restored_number) == {restored_result: {0, "right"}}
     assert restored_result.resolve().args == (restored_number, 3)
@@ -59,7 +59,7 @@ def test_roundtrip_preserves_literal_types_and_nonfinite_floats() -> None:
     graph = Graph()
     graph._create_node(args=values, kwargs={"path": Path("example.py")}, name="values")
 
-    _, restored_graph = roundtrip(graph, ScriptModule())
+    _, restored_graph = roundtrip(graph, InlineScriptModule())
     state = restored_graph.nodes()[0].resolve()
 
     assert state.args[:-1] == values[:-1]
@@ -69,10 +69,10 @@ def test_roundtrip_preserves_literal_types_and_nonfinite_floats() -> None:
 
 @pytest.mark.parametrize("explicit", [False, True])
 def test_empty_nodes_and_modules_roundtrip(explicit: bool) -> None:
-    registry = ScriptModule()
+    registry = InlineScriptModule()
     graph = Graph()
     restored_registry, restored_graph = roundtrip(graph, registry)
-    assert restored_registry.get_source() == ""
+    assert restored_registry.get_script() == ""
     assert restored_graph.nodes() == []
 
     graph._create_node(name="empty")
@@ -89,9 +89,13 @@ def test_empty_nodes_and_modules_roundtrip(explicit: bool) -> None:
 
 @pytest.mark.parametrize("source", ["def answer(:", "raise RuntimeError('broken')", ""])
 def test_missing_operator_reference_survives_roundtrip_and_script_repair(source: str) -> None:
-    registry = ScriptModule()
+    registry = InlineScriptModule()
     registry.set_script(source)
-    registry.evaluate()
+    if source:
+        with pytest.raises((SyntaxError, RuntimeError)):
+            registry.evaluate()
+    else:
+        registry.evaluate()
     graph = Graph()
     graph._create_node(ScriptOperatorRef(registry, "answer"), name="answer")
 
@@ -100,10 +104,10 @@ def test_missing_operator_reference_survives_roundtrip_and_script_repair(source:
     assert isinstance(operator, ScriptOperatorRef)
     assert operator.name() == "answer"
     assert operator.module() is restored_registry
-    assert restored_registry.get_source() == source
+    assert restored_registry.get_script() == source
     if source:
-        assert isinstance(restored_registry.get_status(), Exception)
-    with pytest.raises(KeyError, match="answer"):
+        assert isinstance(restored_registry.get_state(), Exception)
+    with pytest.raises(OperatorUnavailableError, match="answer"):
         operator()
 
     restored_registry.set_script("def answer(): return 42\n")
@@ -118,14 +122,14 @@ def test_roundtrip_preserves_cycles() -> None:
     second = graph._create_node(args=(first,), name="second")
     graph._update_node(first, args=(second,))
 
-    _, restored_graph = roundtrip(graph, ScriptModule())
+    _, restored_graph = roundtrip(graph, InlineScriptModule())
     restored_first, restored_second = restored_graph.nodes()
     assert restored_first.resolve().args == (restored_second,)
     assert restored_second.resolve().args == (restored_first,)
 
 
 def test_operator_references_use_flat_names_and_require_the_same_module() -> None:
-    registry = ScriptModule("local")
+    registry = InlineScriptModule("local")
     graph = Graph()
     node = graph._create_node(ScriptOperatorRef(registry, "answer"), name="answer")
     data = GraphSerializer(graph, registry).todict()
@@ -134,7 +138,7 @@ def test_operator_references_use_flat_names_and_require_the_same_module() -> Non
     assert data["graph"]["nodes"]["answer"]["operator"] == "answer"
     assert "modules" not in data
 
-    other_registry = ScriptModule("local")
+    other_registry = InlineScriptModule("local")
     graph._update_node(node, ScriptOperatorRef(other_registry, "answer"))
     with pytest.raises(ValueError, match="different script module"):
         GraphSerializer(graph, registry).todict()
@@ -151,14 +155,14 @@ def test_rejects_unsupported_versions(version: Any) -> None:
 
 
 def test_rejects_invalid_operator_names() -> None:
-    data = GraphSerializer(Graph(), ScriptModule()).todict()
+    data = GraphSerializer(Graph(), InlineScriptModule()).todict()
     data["graph"]["nodes"]["invalid"] = {"operator": {"module": "local", "name": "answer"}}
     with pytest.raises(ValueError, match="Invalid operator name"):
         GraphDeserializer().fromdict(data)
 
 
 def test_rejects_unknown_input_types_and_dangling_connections() -> None:
-    data = GraphSerializer(Graph(), ScriptModule()).todict()
+    data = GraphSerializer(Graph(), InlineScriptModule()).todict()
     record = {"args": [{"type": "unknown"}]}
     data["graph"]["nodes"]["invalid"] = record
     with pytest.raises(ValueError, match="Unsupported input type"):

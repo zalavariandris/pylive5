@@ -1,3 +1,4 @@
+from PyFlow5.tests_ai.runtime_helpers import set_inputs
 import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -14,10 +15,10 @@ from pyflow5.models.pyflow5_document import FileChangedError, PyFlowDocument
 
 def graph_text() -> str:
     return json.dumps({
-        "version": 3,
-        "modules": {"local": {"type": "embedded", "source": "def operation(value=42): return value\n"}},
+        "version": 4,
+        "script": {"name": "local", "source": "def operation(value=42): return value\n"},
         "graph": {"nodes": {"example": {
-            "operator": {"module": "local", "name": "operation"},
+            "operator": "operation",
             "args": [{"type": "literal", "value": 12}], "position": [123, -456],
         }}},
     })
@@ -43,7 +44,7 @@ def test_roundtrip_and_evaluation_are_clean(make_document: Callable, qtbot: QtBo
     assert json.loads(document.serialize()) == json.loads(graph_text())
     assert document.filePath() is None
     assert document.fileStat() is None
-    with qtbot.waitSignal(document._engine.evaluated):
+    with qtbot.waitSignal(document._engine.nodes_executed):
         document.requestNodeExecution("example")
     assert not document.isModified()
 
@@ -53,14 +54,13 @@ def test_content_changes_mark_modified(make_document: Callable) -> None:
     document.graph_model.setNodePosition("example", QPointF(1, 2))
     assert document.isModified()
     document.setModified(False)
-    document.graph_model.mapToSource("example").set_inputs(99)
+    set_inputs(document.graph_model.mapToSource("example"), 99)
     assert document.isModified()
     document.setModified(False)
-    document._engine._registry.modules()[0].set_script("# comment\ndef operation(value=42): return value\n")
-    document._engine._registry.modules()[0]._evaluate()
+    document.script_document.setPlainText("# comment\ndef operation(value=42): return value\n")
     assert document.isModified()
     document.setModified(False)
-    document.modules_model.addEmbeddedModule()
+    document.script_document.setPlainText(document.script_document.toPlainText() + "\n# edit\n")
     assert document.isModified()
 
 
@@ -99,7 +99,7 @@ def test_external_changes_require_override(make_document: Callable, tmp_path: Pa
     with pytest.raises(FileChangedError):
         document.save()
     document.save(override=True)
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 3
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 4
 
 
 @pytest.mark.parametrize("failure", ["serialize", "write"])
@@ -148,7 +148,7 @@ def test_serialize_preserves_binding_and_modified_state(make_document: Callable,
 
 @pytest.mark.parametrize("payload", [
     [], {}, {"version": 999, "graph": {}}, {"version": True, "graph": {}},
-    {"version": 3, "graph": []}, {"version": 3, "graph": {"nodes": []}},
+    {"version": 4, "graph": []}, {"version": 4, "graph": {"nodes": []}},
 ])
 def test_invalid_document_is_rejected(qapp: object, payload: object) -> None:
     with pytest.raises(ValueError):

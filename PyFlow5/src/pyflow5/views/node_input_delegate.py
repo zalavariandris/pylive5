@@ -31,7 +31,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-import pygraphrt as rt
+import pygraphrt2 as rt2
 
 from ..core.input_roles import InputDataRole
 from .abstract_input_editor_provider import AbstractInputEditorProvider
@@ -122,7 +122,7 @@ class NodeInputLabelDelegate(QStyledItemDelegate):
         def clear_input() -> None:
             if persistent_index.isValid():
                 label_index = QModelIndex(persistent_index)
-                label_index.model().setData(label_index.siblingAtColumn(1), rt.ParameterData.EMPTY)
+                label_index.model().setData(label_index.siblingAtColumn(1), rt2.ParameterData.EMPTY)
 
         input_label_widget.clearRequested.connect(clear_input)
         # expland the widget to fill the available space

@@ -11,7 +11,12 @@ class OutputViewer(BaseDetailsView):
         self.setBodyWidget(myqtx.widgets.DisplayWidget(channel_axis=-1))
         
     def showCurrentRootEvent(self, index: QModelIndex, roles: list[int] = []):
-        if not roles or not any(role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole, PyGraphRTGraphModel.OutputRole) for role in roles):
+        relevant_roles = (
+            Qt.ItemDataRole.DisplayRole,
+            Qt.ItemDataRole.EditRole,
+            PyGraphRTGraphModel.OutputRole,
+        )
+        if roles and not any(role in relevant_roles for role in roles):
             return
 
 
