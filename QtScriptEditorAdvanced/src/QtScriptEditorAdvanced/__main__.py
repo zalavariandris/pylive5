@@ -1,7 +1,8 @@
 
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
 from QtScriptEditorAdvanced.components.python_keywords_completer import PythonKeywordsCompleter
-
+from QtScriptEditorAdvanced.components.jedi_completer import JediCompleter
+from QtScriptEditorAdvanced.components.async_jedi_completer import AsyncJediCompleter
 
 
 if __name__ == "__main__":
@@ -9,7 +10,7 @@ if __name__ == "__main__":
     from textwrap import dedent
 
     app = QApplication([])
-    editor = ScriptEditAdvanced(completer=PythonKeywordsCompleter)
+    editor = ScriptEditAdvanced(completer=AsyncJediCompleter)
     editor.setReadOnly(False)
     
     editor.setPlainText(dedent("""\
@@ -18,6 +19,8 @@ if __name__ == "__main__":
         # This is a comment
         x = 42
         return x
+
+    from vfxops.io import 
     """))
 
     def validate_script(script:str):

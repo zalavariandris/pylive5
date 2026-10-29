@@ -141,17 +141,35 @@ class TextEditLinterWidget(QObject):
             case LinterMode.LABEL:
                 self.label(lineno, message)
 
-    def lintException(self, e:Exception, mode:LinterMode):
+    def lintException(
+        self,
+        e: Exception,
+        mode: LinterMode,
+        *,
+        filename: str = "<unknown>",
+    ) -> None:
+        """Annotate only locations belonging to the edited script."""
         import traceback
-        if isinstance(e, SyntaxError):
-            text = str(e.msg)
-            if e.lineno:
-                self.lint(e.lineno, e.msg, mode)
+
+        lineno: int | None = None
+        message = str(e)
+
+        if isinstance(e, SyntaxError) and e.filename == filename:
+            lineno = e.lineno
+            message = e.msg
         else:
-            tb = traceback.TracebackException.from_exception(e)
-            last_frame = tb.stack[-1]
-            if last_frame.lineno:
-                self.lint(last_frame.lineno, str(e), mode)
+            for frame in reversed(traceback.extract_tb(e.__traceback__)):
+                if frame.filename == filename:
+                    lineno = frame.lineno
+                    break
+
+        if lineno is None:
+            return
+
+        if not 1 <= lineno <= self.textedit.document().blockCount():
+            return
+
+        self.lint(lineno, message, mode)
 
 if __name__ == "__main__":
     from qtpy.QtWidgets import QApplication, QPlainTextEdit

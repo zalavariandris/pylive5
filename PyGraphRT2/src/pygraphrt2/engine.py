@@ -1,66 +1,13 @@
-from typing import Any, Iterable
-from typing_extensions import Literal
+from typing import Iterable
+from pygraphrt2.inline_backend import InlineBackend, ExecutionFailure
+
 
 from qtpy.QtCore import QObject, Signal
 
 from .graph import Graph, NodeRef
 from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .relations import ManyToOneRelation
-from .inline_executor import InlineExecutor, ExecutionFailure
 
-from dataclasses import dataclass
-
-# EMPTY = object()
-
-# @dataclass(frozen=True)
-# class _OperatorId:
-#     name: str
-
-# @dataclass
-# class ParameterMetadata:
-#     name: str
-#     annotation: Any = EMPTY
-#     default: Any = EMPTY
-
-# @dataclass
-# class OperatorMetadata:
-#     name: str
-#     parameters: list[ParameterMetadata]
-#     returntype: Any = EMPTY
-
-# @dataclass(frozen=True)
-# class _EvaluationRequest:
-#     # Define the fields for the evaluation request here
-#     pass
-
-# @dataclass(frozen=True)
-# class _EvaluationResult:
-#     operators: tuple["OperatorMetadata", ...] = ()
-
-# @dataclass(frozen=True)
-# class _ExecutionRequest:
-#     plan: list[_NodeState]
-
-
-# class InlineBackend:
-#     def evaluate(self, request:_EvaluationRequest) -> _EvaluationResult:
-#         ...
-
-#     def execute(self)->_ExecutionResult:
-#         ...
-
-#     def close(self) -> None:
-#         ...
-
-# class MultiprocessBackend:
-#     def evaluate(self, request:_EvaluationRequest) -> _EvaluationResult:
-#         ...
-
-#     def execute(self)->_ExecutionResult:
-#         ...
-
-#     def close(self) -> None:
-#         ...
 
 
 class Engine(QObject):
@@ -72,13 +19,15 @@ class Engine(QObject):
     registry_failed = Signal(Exception)
 
     def __init__(
-        self, graph: Graph | None = None, registry: InlineScriptModule | None = None,
+        self, 
+        graph: Graph | None = None, 
+        registry: InlineScriptModule | None = None
     ) -> None:
         super().__init__()
         self.graph = graph if graph is not None else Graph()
         self.registry = registry if registry is not None else InlineScriptModule()
 
-        self._executor = InlineExecutor(self.graph)
+        self._backend = InlineBackend(self.graph)
         self._closed = False
         self._operator_to_nodes = ManyToOneRelation[NodeRef, ScriptOperatorRef]()
         self._sync_node_operator_mappings(self.graph.nodes())
@@ -163,7 +112,7 @@ class Engine(QObject):
         if self._closed:
             return
         try:
-            outputs = self._executor.execute(*targets)
+            outputs = self._backend.execute(*targets)
         except ExecutionFailure as error:
             self.execution_failed.emit(error)
         else:

@@ -12,12 +12,10 @@ from multiprocessing import cpu_count
 import time
 
 
-@dataclass(frozen=True)
-class NodeStateSnapshot:
-    """Captured callable and inputs for one computation."""
-    operator: Callable|None
-    args: list[Any] = field(default_factory=list)
-    kwargs: dict[str, Any] = field(default_factory=dict)
+from .execution_plan import (
+    NodeStateSnapshot, 
+    NodeOutput
+)
 
 
 import os
@@ -28,9 +26,6 @@ def cpu_intensive_task(duration: float) -> int:
     time.sleep(duration)  # Stand-in for the actual computation.
     return os.getpid()
 
-@dataclass(frozen=True)
-class NodeOutput:
-    node_id: str
 
 class MultiprocessExecutor:
     def __init__(self, graph:'Graph', cache:dict['NodeRef', Any]|None = None):

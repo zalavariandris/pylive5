@@ -35,7 +35,7 @@ from ..core.input_roles import InputDataRole
 
 
 import pygraphrt2 as rt2
-from pygraphrt2.inline_executor import ExecutionFailure
+from pygraphrt2.inline_backend import ExecutionFailure
 
 from qdageditor5.core.item_data_roles import (
     NodeDataRole, SocketDataRole

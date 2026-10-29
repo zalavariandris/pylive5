@@ -1,0 +1,44 @@
+{
+    "version": 4,
+    "script": {
+        "name": null,
+        "source": "from vfxops.io import read_image\nfrom vfxops.draw import gradient\nfrom vfxops.color import grade\nfrom vfxops.filter import gaussian_blur\n\n__all__ = [\n    'read_image',\n    'grade',\n    'gradient',\n    'gaussian_blur'\n]"
+    },
+    "graph": {
+        "nodes": {
+            "read_image": {
+                "operator": "read_image",
+                "kwargs": {
+                    "path": {
+                        "type": "literal",
+                        "value": {
+                            "type": "path",
+                            "value": "C:\\Users\\and\\Documents\\GitHub\\pylive5\\examples\\image_grade\\IMG_0885.jpg"
+                        }
+                    }
+                },
+                "position": [
+                    325.0,
+                    187.0
+                ]
+            },
+            "gaussian_blur": {
+                "operator": "gaussian_blur",
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "read_image"
+                    },
+                    "size": {
+                        "type": "literal",
+                        "value": 30.0
+                    }
+                },
+                "position": [
+                    288.0,
+                    329.0
+                ]
+            }
+        }
+    }
+}

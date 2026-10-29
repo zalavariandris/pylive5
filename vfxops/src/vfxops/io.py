@@ -1,7 +1,5 @@
 # IO
 from pathlib import Path
-from typing import Union
-
 import av
 import numpy as np
 
@@ -78,7 +76,6 @@ def encode_jpg(image: ImageRGBA, quality:int=75) -> bytes:
 
 def encode_png(image: ImageRGBA) -> bytes:
     """Encode one input as an in-memory PNG upload."""
-    import numpy as np
     import cv2
 
     # clip to [0, 1] and convert to 8-bit integers
@@ -94,3 +91,4 @@ def encode_png(image: ImageRGBA) -> bytes:
     
     image_bytes = encoded.tobytes()
     return image_bytes
+

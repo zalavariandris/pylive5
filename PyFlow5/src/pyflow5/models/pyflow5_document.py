@@ -10,6 +10,7 @@ from qtpy.QtCore import QModelIndex, QObject, QPointF, Signal, Property
 from qtpy.QtGui import QTextDocument
 
 import pygraphrt2 as rt2
+from pygraphrt2.engine_serializer import FORMAT_VERSION
 
 from ..core.file_io import write_text_atomic
 
@@ -201,8 +202,8 @@ class PyFlowDocument(QObject):
         data = json.loads(jsontext)
         if not isinstance(data, dict):
             raise ValueError("A graph document must be an object.")
-        if type(data.get("version")) is not int or data["version"] != 4:
-            raise ValueError(f"Unsupported graph format; expected version 4. got: {data.get('version')!r}")
+        if type(data.get("version")) is not int or data["version"] != FORMAT_VERSION:
+            raise ValueError(f"Unsupported graph format; expected version {FORMAT_VERSION}. got: {data.get('version')!r}")
         if (
             not isinstance(data.get("graph"), dict)
             or not isinstance(data.get("script"), dict)

@@ -53,7 +53,9 @@ from qtpy.QtWidgets import (
 
 # widgets
 from myqtx.selection_dialog_view import SelectionDialog
+from QtScriptEditorAdvanced.components.linter_widget import LinterMode
 from QtScriptEditorAdvanced.script_edit_advanced import ScriptEditAdvanced
+from QtScriptEditorAdvanced.components.async_jedi_completer import AsyncJediCompleter
 
 # models
 from qdageditor5.models.abstract_dag_model import (
@@ -82,12 +84,11 @@ class PyFlow5DocumentWindow(QWidget):
         # Registry Panel
         self._registry_panel = QWidget(self)
         self._title_label = QLabel(self)
-        self._script_editor = ScriptEditAdvanced(completer=None, parent=self)
+        self._script_editor = ScriptEditAdvanced(completer=AsyncJediCompleter, parent=self)
         self._module_operator_tree_view = QTreeView(self)
         self._module_operator_tree_view.setFixedWidth(100)
         self._module_operator_tree_view.setMouseTracking(True)
         self._module_operator_tree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-
 
         self._script_status_label = QLabel(self)
         self._registry_panel_layout = QGridLayout()
@@ -419,7 +420,9 @@ class PyFlow5DocumentWindow(QWidget):
         state = self._document.scriptState()
         if isinstance(state, Exception):
             self._script_status_label.setText(f"{type(state).__name__}: {state}")
-            style = "underline" if isinstance(state, SyntaxError) else "label"
-            self._script_editor._linter.lintException(state, style)
+            style = LinterMode.UNDERLINE if isinstance(state, SyntaxError) else LinterMode.LABEL
+            self._script_editor._linter.lintException(
+                state, style, filename="<script:<script>>"
+            )
         else:
             self._script_status_label.clear()

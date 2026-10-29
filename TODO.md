@@ -1,6 +1,8 @@
 
 ## Features
-- [ ] run engine execution in a background process
+- [ ] try to use the execution_plan in the inline_backend.
+      execution_plan probably need to be renamed. it contains utilitiy functions, to evaluate,prepare and execute the engine(registry+graph)
+- [...] run engine execution in a background process
 - [x] ScriptEditAdvanced should support .setDocument(document.script_document)
 - [ ] consider creating a special ScriptDocument sublcassing QTextDocument
 - [x] indicate file and document modifications

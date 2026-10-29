@@ -7,6 +7,7 @@ from typing import Any, Callable
 from .graph import Graph, NodeRef
 from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 
+FORMAT_VERSION = 4
 
 def _encode_value(value: Any) -> Any:
     if type(value) in (type(None), bool, int, str):
@@ -134,12 +135,14 @@ class GraphSerializer:
         }
 
 
+
 class GraphDeserializer:
+    
     def fromdict(self, data: dict[str, Any]) -> tuple[InlineScriptModule, Graph]:
         """Restore the script module and graph, retaining missing operator names."""
         version = data.get("version")
-        if type(version) is not int or version != 4:
-            raise ValueError("Unsupported graph format; expected version 4")
+        if type(version) is not int or version != FORMAT_VERSION:
+            raise ValueError(f"Unsupported graph format; expected version {FORMAT_VERSION}")
 
         script = data["script"]
         if not isinstance(script, dict) or not isinstance(script.get("source"), str):

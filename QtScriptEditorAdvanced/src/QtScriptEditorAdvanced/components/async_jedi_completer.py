@@ -1,177 +1,171 @@
-from textwrap import dedent
-from qtpy.QtCore import QObject, QRunnable, QThread, QThreadPool, QCoreApplication, Signal, QStringListModel
-from qtpy.QtGui import QTextCursor
-from qtpy.QtWidgets import QTextEdit, QPlainTextEdit, QLineEdit, QApplication, QWidget, QHBoxLayout
-from typing import *
-import jedi
-# from traitlets.utils import text  # Import the Jedi library
+from __future__ import annotations
 
+import logging
+from concurrent.futures import Future, ThreadPoolExecutor
+from functools import partial
+from typing import cast
+
+import jedi
+from qtpy.QtCore import QTimer, QStringListModel, Slot
+from qtpy.QtGui import QTextCursor
+from qtpy.QtWidgets import QApplication, QPlainTextEdit
 
 from .jedi_completer import JediCompleter
 
-import time
-import logging
 logger = logging.getLogger(__name__)
+_executor: ThreadPoolExecutor | None = None
 
 
-class JediWorkerTask(QObject, QRunnable):
-	"""Encapsulates the rope task for the QThreadPool."""
-	finished = Signal(list)
-	exceptionThrown = Signal(Exception)
+def completion_executor() -> ThreadPoolExecutor:
+    global _executor
 
-	def __init__(self, source_code: str, line: int, column:int):
-		QObject.__init__(self)
-		QRunnable.__init__(self)
-		self.source_code = source_code
-		self.line = line
-		self.column = column
-		logger.info("start jedi task")
+    if _executor is None:
+        _executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="jedi",
+        )
+        app = QApplication.instance()
+        assert app is not None
+        app.aboutToQuit.connect(
+            partial(_executor.shutdown, wait=False, cancel_futures=True)
+        )
 
-	def run(self):
-		"""Perform the jedi code assist task and invoke the callback."""
-		# Check and print the thread details
-		# make sure the current 
-		app = QCoreApplication.instance()
-		IsSeperateThread = app and QThread.currentThread() != app.thread()
-		if not IsSeperateThread:
-			logger.warning("warning: RopeTask does not run in a seperate thread")
+    return _executor
 
-		try:
-			script = jedi.Script(code=self.source_code, path="<string>")
-			completions = script.complete(line=self.line, column=self.column)
-			self.finished.emit(completions)
 
-		except Exception as e:
-			self.exceptionThrown.emit(e)
+def analyze(
+    source: str,
+    line: int,
+    column: int,
+    path: str | None,
+) -> tuple[list[str], str]:
+    """Run entirely on the worker; return only ordinary Python data."""
+    script = jedi.Script(code=source, path=path)
+    names = [item.name for item in script.complete(line, column)]
+    signatures = script.get_signatures(line, column)
+    hint = signatures[0].to_string() if signatures else ""
+    return names, hint
+
 
 class AsyncJediCompleter(JediCompleter):
-	def __init__(self, textedit: QTextEdit | QPlainTextEdit):
-		super().__init__(textedit)
-		self._thread_pool = QThreadPool.globalInstance()
-		self._active_tasks:List[JediWorkerTask] = []
-		self.destroyed.connect(lambda: self.cancellAllTasks())
+    def __init__(
+        self,
+        textedit: QPlainTextEdit,
+        *,
+        path: str | None = None,
+    ) -> None:
+        super().__init__(textedit)
 
-		# self.model().modelReset.connect(lambda: self.updateCompletionWidgets())
+        # The inherited popup timer must die with the completer.
+        self.timer.setParent(self)
 
-	def requestCompletions(self):
-		logger.info('requestCompletions...')
-		# cancel previous tasks
-		self.cancellAllTasks()
-		
-		# get cursor info
-		def get_cursor_info()->Tuple[str, str, int, int]:
-			match self.widget():
-				case QPlainTextEdit():
-					textedit = cast(QPlainTextEdit, self.widget())
-					source_code = textedit.toPlainText()
-					cursor = QTextCursor(textedit.textCursor())
-					lineno = cursor.blockNumber() + 1  # PySide6 line numbers are 0-based
-					columnno = cursor.columnNumber()  # Current position within the line
-					cursor.movePosition(QTextCursor.MoveOperation.StartOfLine, QTextCursor.MoveMode.KeepAnchor)
-					line_text = cursor.selectedText()
+        self.path = path
+        self._executor = completion_executor()
+        self._future: Future[tuple[list[str], str]] | None = None
+        self._generation = 0
+        self._submitted_generation = 0
+        self._ready = False
 
-					return source_code, line_text, lineno, columnno
-				case QLineEdit():
-					lineedit = cast(QLineEdit, self.widget())
-					lineno = 1
-					columnno = lineedit.cursorPosition()
-					source_code = lineedit.text()
-					line_text = lineedit.text()
-					return source_code, line_text, lineno, columnno
-				case _:
-					raise ValueError(f"widget shoudl be either a QPlainTextEdit or a QLineEdit, got: {self.widget()}")
+        self._debounce = QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.setInterval(120)
+        self._debounce.timeout.connect(self._request_ready)
 
-		source_code, line_text, lineno, columnno = get_cursor_info()
-		# get completions from jedi
-		if line_text.split(" ")[-1].isidentifier() or line_text.endswith("."):
-			jedi_task = JediWorkerTask(source_code, lineno, columnno)
-			jedi_task.finished.connect(lambda completions:
-				self._update_completion_model([completion.name for completion in completions]))
-			self._active_tasks.append(jedi_task)
-			self._thread_pool.start(jedi_task)
+        self._poll = QTimer(self)
+        self._poll.setInterval(20)
+        self._poll.timeout.connect(self._collect_result)
 
-	def _update_completion_model(self, completions:List[str]):
-		try:
-			# Update proposals in the model
-			string_list_model = cast(QStringListModel, self.model())
-			string_list_model.setStringList([completion for completion in completions])
+        # The base class already connects textChanged.
+        textedit.cursorPositionChanged.connect(self.requestCompletions)
 
-		except Exception as e:
-			logger.warning(f"Error in requestCompletions: {e}")
-			string_list_model = cast(QStringListModel, self.model())
-			string_list_model.setStringList([])
-			self.hint_label.hide()
+    @Slot()
+    def requestCompletions(self) -> None:
+        self._generation += 1
+        self._ready = False
+        self.timer.stop()
+        self.popup().hide()
+        self.hint_label.hide()
 
-	def cancellAllTasks(self):
-		"""Cancel all running tasks by tracking task status."""
-		self._active_tasks.clear()  # Clear the list of active tasks
+        if self._future is not None:
+            # Cancels queued work. Running work finishes normally.
+            self._future.cancel()
 
+        self._debounce.start()
 
-if __name__ == "__main__":
-	def hello(x:int):
-		pass
+    @Slot()
+    def _request_ready(self) -> None:
+        self._ready = True
+        self._submit_latest()
 
-	# Create app
-	app = QApplication([])
+    def _submit_latest(self) -> None:
+        if not self._ready or self._future is not None:
+            return
 
-	window = QWidget()
-	mainLayout = QHBoxLayout()
-	window.setLayout(mainLayout)
+        self._ready = False
+        editor = cast(QPlainTextEdit, self.widget())
+        cursor = editor.textCursor()
 
-	# Create completing editor
-	editor = QTextEdit()
-	editor.setTabStopDistance(editor.fontMetrics().horizontalAdvance(' ')*4)
-	mainLayout.addWidget(editor)
-	completer = AsyncJediCompleter(editor)
-	editor.setWindowTitle("QTextEdit with a non-blocking Jedi Assist Completer")
-	editor.resize(800, 800)
+        before = QTextCursor(cursor)
+        before.movePosition(
+            QTextCursor.MoveOperation.StartOfBlock,
+            QTextCursor.MoveMode.KeepAnchor,
+        )
+        line_prefix = before.selectedText()
+        if not line_prefix.strip():
+            return
 
-	editor.setPlainText(dedent("""\
-	class Dog:
-		def __init__(self, name, height=1):
-			self.name = name
-			self.height = height
+        # Qt uses UTF-16 positions; Jedi expects Python character counts.
+        column = len(line_prefix)
 
-	mydog = Dog("buksi")
-	"""))
+        self._submitted_generation = self._generation
+        self._future = self._executor.submit(
+            analyze,
+            editor.toPlainText(),
+            cursor.blockNumber() + 1,
+            column,
+            self.path,
+        )
+        self._poll.start()
 
-	# COMPLETER INFO
-	label = QTextEdit()
-	label.setReadOnly(True)
-	label.setText("jedi info at x,y")
-	mainLayout.addWidget(label)
+    @Slot()
+    def _collect_result(self) -> None:
+        future = self._future
+        if future is None or not future.done():
+            return
 
-	def update_completion_info():
-		source_code = editor.toPlainText()
-		cursor = editor.textCursor()
-		line = cursor.blockNumber() + 1  # PySide6 line numbers are 0-based
-		column = cursor.columnNumber()  # Current position within the line
-		script = jedi.Script(code=source_code, path="<string>")
-		# completions = script.complete(line=line, column=column)
-		context = script.get_context(line=line, column=column)
-		signatures = script.get_signatures(line=line, column=column)
-		the_help = script.help(line=line, column=column)
-		infer = script.infer(line=line, column=column)
+        self._future = None
+        self._poll.stop()
 
+        if not future.cancelled():
+            try:
+                # Already finished, so this cannot wait for analysis.
+                names, hint = future.result()
+            except Exception:
+                logger.exception("Jedi completion failed")
+            else:
+                if self._submitted_generation == self._generation:
+                    self.setCompletionPrefix(self.getWordUntilCursor())
+                    model = cast(QStringListModel, self.model())
+                    model.setStringList(names)
 
-		label.setText(dedent(f"""\
-		Jedi info at {line} {column}
-		
-		help: {the_help}
-		context: {context}
-		signatures: {signatures}
-		infer: {infer}
-		"""))
+                    self.hint_label.setText(hint)
+                    self.hint_label.setVisible(bool(hint))
+                    if hint:
+                        editor = cast(QPlainTextEdit, self.widget())
+                        self.hint_label.move(
+                            editor.viewport().mapTo(
+                                editor,
+                                editor.cursorRect().topLeft(),
+                            )
+                        )
+                        self.hint_label.adjustSize()
 
+        # If typing continued during analysis, process the latest text.
+        self._submit_latest()
 
-	editor.cursorPositionChanged.connect(lambda: update_completion_info())
-
-	# Placeholder
-	words = [completer.model().index(row, 0).data() for row in range(completer.model().rowCount())]
-	editor.setPlaceholderText("Start typing...\n\neg.: " + ", ".join(words))
-
-	# Show window
-	window.show()
-
-	# Run app
-	app.exec()
+    def insertCompletion(self, completion: str) -> None:
+        editor = cast(QPlainTextEdit, self.widget())
+        cursor = editor.textCursor()
+        cursor.select(QTextCursor.SelectionType.WordUnderCursor)
+        cursor.insertText(completion)
+        editor.setTextCursor(cursor)

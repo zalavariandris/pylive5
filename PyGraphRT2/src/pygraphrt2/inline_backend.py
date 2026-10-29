@@ -1,7 +1,11 @@
-from typing import Any
+from typing import Any, Callable
 
 from .graph import Graph, NodeRef
+from .execution_plan import NodeStateSnapshot, NodeOutput
+from concurrent.futures import Future
+from .inline_scriptmodule import _get_all_callables_from_script
 
+from .execution_plan import evaluate, prepare, execute
 
 class ExecutionFailure(Exception):
     def __init__(
@@ -13,9 +17,21 @@ class ExecutionFailure(Exception):
         super().__init__(f"Execution failed for {node}: {error}")
 
 
-class InlineExecutor:
+class InlineBackend:
     def __init__(self, graph: Graph) -> None:
         self.graph = graph
+
+    def evaluate(self, source:str, *, name: str="<script>") -> Future[dict[str, Callable[..., Any]]]:
+        future: Future[dict[str, Callable[..., Any]]] = Future()
+
+        try:
+            functions = evaluate(source, name=name)
+        except Exception as error:
+            future.set_exception(error)
+        else:
+            future.set_result(functions)
+
+        return future
 
     def execute(self, *targets: NodeRef) -> dict[NodeRef, Any]:
         if not targets:
