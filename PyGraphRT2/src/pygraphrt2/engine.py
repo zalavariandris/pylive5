@@ -1,4 +1,5 @@
-from typing import Iterable
+from typing import Any, Iterable
+from typing_extensions import Literal
 
 from qtpy.QtCore import QObject, Signal
 
@@ -6,6 +7,60 @@ from .graph import Graph, NodeRef
 from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .relations import ManyToOneRelation
 from .inline_executor import InlineExecutor, ExecutionFailure
+
+from dataclasses import dataclass
+
+# EMPTY = object()
+
+# @dataclass(frozen=True)
+# class _OperatorId:
+#     name: str
+
+# @dataclass
+# class ParameterMetadata:
+#     name: str
+#     annotation: Any = EMPTY
+#     default: Any = EMPTY
+
+# @dataclass
+# class OperatorMetadata:
+#     name: str
+#     parameters: list[ParameterMetadata]
+#     returntype: Any = EMPTY
+
+# @dataclass(frozen=True)
+# class _EvaluationRequest:
+#     # Define the fields for the evaluation request here
+#     pass
+
+# @dataclass(frozen=True)
+# class _EvaluationResult:
+#     operators: tuple["OperatorMetadata", ...] = ()
+
+# @dataclass(frozen=True)
+# class _ExecutionRequest:
+#     plan: list[_NodeState]
+
+
+# class InlineBackend:
+#     def evaluate(self, request:_EvaluationRequest) -> _EvaluationResult:
+#         ...
+
+#     def execute(self)->_ExecutionResult:
+#         ...
+
+#     def close(self) -> None:
+#         ...
+
+# class MultiprocessBackend:
+#     def evaluate(self, request:_EvaluationRequest) -> _EvaluationResult:
+#         ...
+
+#     def execute(self)->_ExecutionResult:
+#         ...
+
+#     def close(self) -> None:
+#         ...
 
 
 class Engine(QObject):
@@ -22,6 +77,7 @@ class Engine(QObject):
         super().__init__()
         self.graph = graph if graph is not None else Graph()
         self.registry = registry if registry is not None else InlineScriptModule()
+
         self._executor = InlineExecutor(self.graph)
         self._closed = False
         self._operator_to_nodes = ManyToOneRelation[NodeRef, ScriptOperatorRef]()
@@ -40,6 +96,82 @@ class Engine(QObject):
         # auto evaluate and execution flags
         self._auto_execute = True
         self._auto_execute_targets: set[NodeRef] | None = None
+
+    # node operator binding
+    def node_operator(self, node_ref: NodeRef) -> ScriptOperatorRef | None:
+        """Return the node's script binding, including unavailable references."""
+        return self._operator_to_nodes.parent_of(node_ref)
+
+    def _on_nodes_changed(self, nodes: list[NodeRef]) -> None:
+        self._sync_node_operator_mappings(nodes)
+        self._invalidate_descendants(nodes)
+
+    def _sync_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
+        # This is an index of the bindings stored on nodes, not separate state.
+        # An unavailable reference remains bound; None or a plain callable does not.
+        for node in nodes:
+            operator = node.resolve().operator
+            previous = self._operator_to_nodes.parent_of(node)
+            if isinstance(operator, ScriptOperatorRef):
+                self._operator_to_nodes.set(node, operator)
+            elif previous is not None:
+                self._operator_to_nodes.delete(node, previous)
+
+    def _remove_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
+        # Graph emits nodes_changed for surviving consumers after removing links.
+        for node in nodes:
+            operator = self._operator_to_nodes.parent_of(node)
+            if operator is not None:
+                self._operator_to_nodes.delete(node, operator)
+
+    def _invalidate_descendants(self, nodes: list[NodeRef]) -> None:
+        affected: set[NodeRef] = set()
+        for node in nodes:
+            affected.update(self.graph.descendants(node))
+
+        invalidated = [
+            node for node in self.graph.nodes()
+            if node in affected
+        ]
+
+        if not invalidated:
+            return
+
+        self.nodes_invalidated.emit(invalidated)
+        # Call directly after notifying observers so their invalidation handlers
+        # clear stale outputs before execution publishes fresh results.
+        self._auto_execute_invalidated(invalidated)
+
+    # Execution backend
+    def evaluate_registry(self) -> None:
+        if self._closed:
+            return
+
+        try:
+            self.registry.evaluate()
+        except Exception as error:
+            self.registry_failed.emit(error)
+        else:
+            self.registry_evaluated.emit()
+
+        # todo: here we should update the nodes that are relevant to the changed registry entries.
+        #       here we need to know what operators have actually changed
+        #       the above code is syncronus by the way. an async backend would need to have a signal.
+        self._invalidate_descendants(self.graph.nodes())
+
+    def execute_nodes(self, *targets: NodeRef) -> None:
+        if self._closed:
+            return
+        try:
+            outputs = self._executor.execute(*targets)
+        except ExecutionFailure as error:
+            self.execution_failed.emit(error)
+        else:
+            self.nodes_executed.emit(outputs)
+
+    def _prune_auto_execution_targets(self, nodes: list[NodeRef]) -> None:
+        if self._auto_execute_targets is not None:
+            self._auto_execute_targets.difference_update(nodes)
 
     def auto_execute(self) -> bool:
         return self._auto_execute
@@ -73,7 +205,7 @@ class Engine(QObject):
             if node not in previous and (updated is None or node in updated)
         ]
         if new_targets:
-            self.execute(*new_targets)
+            self.execute_nodes(*new_targets)
 
     def _auto_evaluate_registry(self) -> None:
         """Automatically evaluate the registry if auto-execute is enabled."""
@@ -102,79 +234,7 @@ class Engine(QObject):
         if not targets:
             return
 
-        self.execute(*targets)
-
-    def evaluate_registry(self) -> None:
-        if self._closed:
-            return
-
-        try:
-            self.registry.evaluate()
-        except Exception as error:
-            self.registry_failed.emit(error)
-        else:
-            self.registry_evaluated.emit()
-        # Operator references stay on nodes even if their functions disappear.
-        # All bindings and presentation notifications are committed before execution.
-        self._invalidate_descendants(self.graph.nodes())
-
-    def execute(self, *targets: NodeRef) -> None:
-        if self._closed:
-            return
-        try:
-            outputs = self._executor.execute(*targets)
-        except ExecutionFailure as error:
-            self.execution_failed.emit(error)
-        else:
-            self.nodes_executed.emit(outputs)
-
-    def node_operator(self, node_ref: NodeRef) -> ScriptOperatorRef | None:
-        """Return the node's script binding, including unavailable references."""
-        return self._operator_to_nodes.parent_of(node_ref)
-
-    def _on_nodes_changed(self, nodes: list[NodeRef]) -> None:
-        self._sync_node_operator_mappings(nodes)
-        self._invalidate_descendants(nodes)
-
-    def _invalidate_descendants(self, nodes: list[NodeRef]) -> None:
-        affected: set[NodeRef] = set()
-        for node in nodes:
-            affected.update(self.graph.descendants(node))
-
-        invalidated = [
-            node for node in self.graph.nodes()
-            if node in affected
-        ]
-
-        if not invalidated:
-            return
-
-        self.nodes_invalidated.emit(invalidated)
-        # Call directly after notifying observers so their invalidation handlers
-        # clear stale outputs before execution publishes fresh results.
-        self._auto_execute_invalidated(invalidated)
-
-    def _sync_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
-        # This is an index of the bindings stored on nodes, not separate state.
-        # An unavailable reference remains bound; None or a plain callable does not.
-        for node in nodes:
-            operator = node.resolve().operator
-            previous = self._operator_to_nodes.parent_of(node)
-            if isinstance(operator, ScriptOperatorRef):
-                self._operator_to_nodes.set(node, operator)
-            elif previous is not None:
-                self._operator_to_nodes.delete(node, previous)
-
-    def _remove_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
-        # Graph emits nodes_changed for surviving consumers after removing links.
-        for node in nodes:
-            operator = self._operator_to_nodes.parent_of(node)
-            if operator is not None:
-                self._operator_to_nodes.delete(node, operator)
-
-    def _prune_auto_execution_targets(self, nodes: list[NodeRef]) -> None:
-        if self._auto_execute_targets is not None:
-            self._auto_execute_targets.difference_update(nodes)
+        self.execute_nodes(*targets)
 
     def close(self) -> None:
         if self._closed:

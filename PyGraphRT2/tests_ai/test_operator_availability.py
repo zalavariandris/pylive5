@@ -37,7 +37,7 @@ def test_reference_and_node_recover_after_removal_or_script_failure(
     outputs: list[dict] = []
     engine.execution_failed.connect(errors.append)
     engine.nodes_executed.connect(outputs.append)
-    engine.nodes_invalidated.connect(lambda nodes: engine.execute(node))
+    engine.nodes_invalidated.connect(lambda nodes: engine.execute_nodes(node))
 
     assert operator.is_available()
     assert operator() == 7

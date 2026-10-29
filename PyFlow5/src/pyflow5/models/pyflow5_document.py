@@ -157,7 +157,7 @@ class PyFlowDocument(QObject):
     def requestNodeExecution(self, node_name: NodeName) -> None:
         node_rt = self.graph_model.mapToSource(node_name)
         if node_rt is not None:
-            self._engine.execute(node_rt)
+            self._engine.execute_nodes(node_rt)
 
     def close(self) -> None:
         """Stop evaluation and disconnect requests from the graph model."""

@@ -19,8 +19,6 @@ class OutputViewer(BaseDetailsView):
         if roles and not any(role in relevant_roles for role in roles):
             return
 
-
-        
         if index.isValid() is False:
             self._lock_switch.setText("-no node selected-")
             self._body_widget.clear()
