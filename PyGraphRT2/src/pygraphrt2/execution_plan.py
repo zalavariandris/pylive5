@@ -124,6 +124,7 @@ def prepare(
         if target not in existing_nodes:
             raise ValueError(f"Node {target} is not in the graph.")
 
+    # Determine all nodes that are needed for the execution of the targets.
     needed: set[NodeRef] = set()
     visited: set[NodeRef] = set()
     pending = list(reversed(all_targets))

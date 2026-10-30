@@ -1,5 +1,7 @@
-from typing import Iterable
+from concurrent.futures import Future
+from typing import Any, Callable, Iterable
 from pygraphrt2.inline_backend import InlineBackend, ExecutionFailure
+from pygraphrt2.threaded_backend import ThreadedBackend
 
 
 from qtpy.QtCore import QObject, Signal
@@ -8,7 +10,7 @@ from .graph import Graph, NodeRef
 from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .relations import ManyToOneRelation
 
-
+from .execution_plan import evaluate, prepare, execute
 
 class Engine(QObject):
     nodes_invalidated = Signal(list)
@@ -27,9 +29,10 @@ class Engine(QObject):
         self.graph = graph if graph is not None else Graph()
         self.registry = registry if registry is not None else InlineScriptModule()
 
-        self._backend = InlineBackend(self.graph)
+        self._backend = ThreadedBackend(self.graph)
         self._closed = False
         self._operator_to_nodes = ManyToOneRelation[NodeRef, ScriptOperatorRef]()
+        self._preserve_operator_bindings: set[NodeRef] = set()
         self._sync_node_operator_mappings(self.graph.nodes())
         self._connections = [
             (self.graph.nodes_added, self._on_nodes_changed),
@@ -38,6 +41,10 @@ class Engine(QObject):
             (self.graph.nodes_removed, self._prune_auto_execution_targets),
             (self.registry.registry_invalidated, self.registry_invalidated.emit),
             (self.registry.registry_invalidated, self._auto_evaluate_registry),
+            (self.registry.operators_changed, self._on_operators_changed),
+            (self.registry.operators_removed, self._on_operators_removed),
+            (self.registry.operators_added, self._on_operators_added)
+            
         ]
         for signal, slot in self._connections:
             signal.connect(slot)
@@ -45,6 +52,43 @@ class Engine(QObject):
         # auto evaluate and execution flags
         self._auto_execute = True
         self._auto_execute_targets: set[NodeRef] | None = None
+
+    def _on_operators_changed(self, operators: list[ScriptOperatorRef]) -> None:
+        print("Operators changed:", [op.name() for op in operators])
+        affected_nodes: set[NodeRef] = set()
+        for operator in operators:
+            affected_nodes.update(self._operator_to_nodes.children_of(operator))
+        if affected_nodes:
+            self._invalidate_descendants(list(affected_nodes))
+
+    def _on_operators_removed(self, operators: list[ScriptOperatorRef]) -> None:
+        for operator in operators:
+            for node in self._operator_to_nodes.children_of(operator):
+                state = node.resolve()
+                self._preserve_operator_bindings.add(node)
+                try:
+                    self.graph._update_node(
+                        node,
+                        func=None,
+                        args=state.args,
+                        kwargs=state.kwargs,
+                    )
+                finally:
+                    self._preserve_operator_bindings.discard(node)
+
+    def _on_operators_added(self, operators: list[ScriptOperatorRef]) -> None:
+        for operator in operators:
+            for node in self._operator_to_nodes.children_of(operator):
+                state = node.resolve()
+                binding = self._operator_to_nodes.parent_of(node)
+                if binding is None:
+                    continue
+                self.graph._update_node(
+                    node,
+                    func=binding,
+                    args=state.args,
+                    kwargs=state.kwargs,
+                )
 
     # node operator binding
     def node_operator(self, node_ref: NodeRef) -> ScriptOperatorRef | None:
@@ -56,10 +100,11 @@ class Engine(QObject):
         self._invalidate_descendants(nodes)
 
     def _sync_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
-        # This is an index of the bindings stored on nodes, not separate state.
-        # An unavailable reference remains bound; None or a plain callable does not.
+        # Retain script bindings while registry-driven updates clear operators.
         for node in nodes:
             operator = node.resolve().operator
+            if node in self._preserve_operator_bindings and operator is None:
+                continue
             previous = self._operator_to_nodes.parent_of(node)
             if isinstance(operator, ScriptOperatorRef):
                 self._operator_to_nodes.set(node, operator)
@@ -96,27 +141,49 @@ class Engine(QObject):
         if self._closed:
             return
 
-        try:
-            self.registry.evaluate()
-        except Exception as error:
-            self.registry_failed.emit(error)
-        else:
-            self.registry_evaluated.emit()
+        evaluate_future = self._backend.evaluate(self.registry.get_script(), name="<registry>")
+        def _on_done(fut: Future[dict[str, Callable[..., Any]]]) -> None:
+            try:
+                functions = fut.result()
+                
+            except Exception as error:
+                self.registry_failed.emit(error)
+                self.registry._apply_functions(dict(), error)
+                # todo: here we should update the nodes that are relevant to the changed registry entries.
+                #       here we need to know what operators have actually changed
+                #       the above code is syncronus by the way. an async backend would need to have a signal.
+                self._invalidate_descendants(self.graph.nodes())
+            else:
+                self.registry_evaluated.emit()
+                self.registry._apply_functions(functions, "VALID")
+                # self._invalidate_descendants(self.graph.nodes())
 
-        # todo: here we should update the nodes that are relevant to the changed registry entries.
-        #       here we need to know what operators have actually changed
-        #       the above code is syncronus by the way. an async backend would need to have a signal.
-        self._invalidate_descendants(self.graph.nodes())
+        evaluate_future.add_done_callback(_on_done)
 
     def execute_nodes(self, *targets: NodeRef) -> None:
         if self._closed:
             return
-        try:
-            outputs = self._backend.execute(*targets)
-        except ExecutionFailure as error:
-            self.execution_failed.emit(error)
-        else:
-            self.nodes_executed.emit(outputs)
+        if not targets:
+            return
+        
+        plan, mapping = prepare(self.graph, targets)
+        output_future = self._backend.execute_plan(plan)
+        def _on_done(fut: Future[dict[str, Any]]) -> None:
+            try:
+                plan_outputs = fut.result()
+            except Exception as error:
+                self.execution_failed.emit(error)
+            else:
+                outputs = {mapping[name]: value for name, value in plan_outputs.items()}
+                self.nodes_executed.emit(outputs)
+
+        output_future.add_done_callback(_on_done)
+        # try:
+            
+        # except ExecutionFailure as error:
+        #     self.execution_failed.emit(error)
+        # else:
+        #     self.nodes_executed.emit(outputs)
 
     def _prune_auto_execution_targets(self, nodes: list[NodeRef]) -> None:
         if self._auto_execute_targets is not None:

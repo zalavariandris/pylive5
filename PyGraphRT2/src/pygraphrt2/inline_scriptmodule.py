@@ -136,11 +136,11 @@ class InlineScriptModule(Registry):
         try:
             functions = _get_all_callables_from_script(self._script, name="<script>")
         except Exception as error:
-            self.__apply_functions({}, error)
+            self._apply_functions({}, error)
             raise
-        self.__apply_functions(functions, "VALID")
+        self._apply_functions(functions, "VALID")
 
-    def __apply_functions(self, 
+    def _apply_functions(self, 
         all_functions_from_script: dict[str, Callable], 
         new_state: Literal["VALID"] | Exception
     ) -> None:
