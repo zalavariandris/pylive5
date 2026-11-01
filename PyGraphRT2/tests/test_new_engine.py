@@ -40,36 +40,12 @@ def test_graph_structure(hello_world):
     assert graph.in_links(hello) == {the_name: {0}}
     assert graph.out_links(the_name) == {hello: {0}}
 
-def test_inline_executor(hello_world):
-    graph, (the_name, the_greeting, hello) = hello_world
-    from pygraphrt2.inline_executor import InlineExecutor
-    executor = InlineExecutor(graph)
-
-    outputs = executor.execute(hello)
-
-    assert outputs[hello] == "Hello Mása!"
+def test_inline_backend(hello_world):
+    raise NotImplementedError()
     
 @pytest.mark.asyncio
-async def test_async_executor(hello_world):
-    from pygraphrt2.async_executor import AsyncExecutor
-    graph, (the_name, the_greeting, hello) = hello_world
-    executor = AsyncExecutor(graph)
-
-    future = executor.execute(hello)
-    print(future)
-    outputs = await future
-    assert outputs[hello] == "Hello Mása!"
-
-@pytest.mark.asyncio
-async def test_threaded_executor(hello_world):
-    from pygraphrt2.multiprocess_executor import MultiprocessExecutor
-    graph, (the_name, the_greeting, hello) = hello_world
-    executor = MultiprocessExecutor(graph)
-
-    future = executor.execute(hello)
-    print(future)
-    outputs = await future
-    assert outputs[hello] == "Hello Mása!"
+async def test_threaded_backend(hello_world):
+    raise NotImplementedError()
 
 
 ## SCRIPT MODULES

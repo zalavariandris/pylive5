@@ -19,16 +19,6 @@ class ThreadedBackend:
 
     def evaluate(self, source:str, *, name: str="<script>") -> Future[dict[str, Callable[..., Any]]]:
         return self._executor.submit(evaluate, source, name=name)
-        # future: Future[dict[str, Callable[..., Any]]] = Future()
-
-        # try:
-        #     functions = evaluate(source, name=name)
-        # except Exception as error:
-        #     future.set_exception(error)
-        # else:
-        #     future.set_result(functions)
-
-        # return future
 
     def execute_plan(self, plan:dict[str, NodeStateSnapshot]) -> Future[dict[str, Any]]:
         if self._latest_future is not None:
