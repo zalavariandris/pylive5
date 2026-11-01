@@ -13,12 +13,22 @@ from .relations import ManyToOneRelation
 from .execution_plan import prepare
 
 class Engine(QObject):
+    preface_changed = Signal(list)
+
+    operators_added = Signal(list)
+    operators_removed = Signal(list)
+    operators_changed = Signal(list)
+    nodes_added = Signal(list)
+    nodes_removed = Signal(list)
+    nodes_changed = Signal(list)
+
     nodes_invalidated = Signal(list)
     nodes_executed = Signal(dict)
     execution_failed = Signal(Exception)
     registry_invalidated = Signal()
     registry_evaluated = Signal()
     registry_failed = Signal(Exception)
+    
     _evaluation_finished = Signal(int, object)
     _execution_finished = Signal(int, object, object)
 
@@ -57,17 +67,38 @@ class Engine(QObject):
             (self.graph.nodes_removed, self._prune_auto_execution_targets),
             (self.registry.registry_invalidated, self.registry_invalidated.emit),
             (self.registry.registry_invalidated, self._auto_evaluate_registry),
-            (self.registry.operators_changed, self._on_operators_changed),
-            (self.registry.operators_removed, self._on_operators_removed),
-            (self.registry.operators_added, self._on_operators_added)
-            
+
         ]
+        self._connections.extend([
+            (self.graph.nodes_added, self.nodes_added.emit),
+            (self.graph.nodes_changed, self.nodes_changed.emit),
+            (self.graph.nodes_removed, self.nodes_removed.emit),
+            (self.registry.operators_added, self.operators_added.emit),
+            (self.registry.operators_removed, self.operators_removed.emit),
+            (self.registry.operators_changed, self.operators_changed.emit)
+        ])
         for signal, slot in self._connections:
             signal.connect(slot)
 
         # auto evaluate and execution flags
         self._auto_execute = True
         self._auto_execute_targets: set[NodeRef] | None = None
+
+    def set_preface(self, script:str):
+        self.registry.set_script(script)
+        self.preface_changed.emit()
+
+    def preface(self) -> str:
+        return self.registry.get_script()
+
+    def operator(self, name: str) -> ScriptOperatorRef | None:
+        return self.registry.get_operator_by_name(name)
+
+    def add_node(self, operator: ScriptOperatorRef, *args, **kwargs):
+        return self.graph.add_node(operator, *args, **kwargs)
+
+    def remove_node(self, node: NodeRef) -> None:
+        self.graph.remove_node(node)
 
     def _on_operators_changed(self, operators: list[ScriptOperatorRef]) -> None:
         print("Operators changed:", [op.name() for op in operators])
