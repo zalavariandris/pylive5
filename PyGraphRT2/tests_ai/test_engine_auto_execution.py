@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 
 import pytest
+from pytestqt.qtbot import QtBot
 
 from pygraphrt2 import Engine, NodeRef
 
@@ -11,20 +12,24 @@ SOURCE = "def answer(value: int = 7) -> int:\n    return value\n"
 
 
 @pytest.fixture
-def engine(qapp: object) -> Iterator[Engine]:
+def engine(qtbot: QtBot) -> Iterator[Engine]:
     engine = Engine()
     engine.set_auto_execute_targets([])
-    engine.registry.set_script(SOURCE)
+    with qtbot.waitSignal(engine.registry_evaluated):
+        engine.registry.set_script(SOURCE)
     try:
         yield engine
     finally:
         engine.close()
 
 
-def test_resuming_evaluates_latest_script_and_refreshes_targets(engine: Engine) -> None:
+def test_resuming_evaluates_latest_script_and_refreshes_targets(
+    engine: Engine, qtbot: QtBot,
+) -> None:
     operator = engine.registry.get_operator_by_name("answer")
     node = engine.graph._create_node(operator, kwargs={"value": 9})
-    engine.set_auto_execute_targets([node])
+    with qtbot.waitSignal(engine.nodes_executed):
+        engine.set_auto_execute_targets([node])
     engine.set_auto_execute(False)
     outputs: list[dict[NodeRef, object]] = []
     evaluations: list[bool] = []
@@ -35,7 +40,8 @@ def test_resuming_evaluates_latest_script_and_refreshes_targets(engine: Engine) 
     assert evaluations == []
     assert outputs == []
 
-    engine.set_auto_execute(True)
+    with qtbot.waitSignal(engine.nodes_executed):
+        engine.set_auto_execute(True)
     assert evaluations == [True]
     assert outputs == [{node: 18}]
 
@@ -43,12 +49,13 @@ def test_resuming_evaluates_latest_script_and_refreshes_targets(engine: Engine) 
     assert evaluations == [True]
     assert outputs == [{node: 18}]
 
-    engine.graph._update_node(node, operator, kwargs={"value": 10})
+    with qtbot.waitSignal(engine.nodes_executed):
+        engine.graph._update_node(node, operator, kwargs={"value": 10})
     assert outputs[-1] == {node: 20}
 
 
 def test_resuming_refreshes_graph_edits_and_targets_changed_while_paused(
-    engine: Engine,
+    engine: Engine, qtbot: QtBot,
 ) -> None:
     operator = engine.registry.get_operator_by_name("answer")
     node = engine.graph._create_node(operator)
@@ -60,12 +67,13 @@ def test_resuming_refreshes_graph_edits_and_targets_changed_while_paused(
     engine.set_auto_execute_targets([node])
     assert outputs == []
 
-    engine.set_auto_execute(True)
+    with qtbot.waitSignal(engine.nodes_executed):
+        engine.set_auto_execute(True)
     assert outputs == [{node: 11}]
 
 
-def test_watching_a_previously_invalidated_node_executes_it_immediately(
-    engine: Engine,
+def test_watching_a_previously_invalidated_node_schedules_execution(
+    engine: Engine, qtbot: QtBot,
 ) -> None:
     operator = engine.registry.get_operator_by_name("answer")
     node = engine.graph._create_node(operator)
@@ -75,7 +83,8 @@ def test_watching_a_previously_invalidated_node_executes_it_immediately(
     engine.graph._update_node(node, operator, kwargs={"value": 12})
     assert outputs == []
 
-    engine.set_auto_execute_targets([node])
+    with qtbot.waitSignal(engine.nodes_executed):
+        engine.set_auto_execute_targets([node])
     assert outputs == [{node: 12}]
 
     engine.set_auto_execute_targets(iter([node, node]))
@@ -97,6 +106,7 @@ def test_watching_a_previously_invalidated_node_executes_it_immediately(
 )
 def test_target_changes_execute_only_newly_included_nodes(
     engine: Engine,
+    qtbot: QtBot,
     initial: list[str] | None,
     updated: list[str] | None,
     expected: set[str],
@@ -106,22 +116,31 @@ def test_target_changes_execute_only_newly_included_nodes(
         name: engine.graph._create_node(operator, name=name)
         for name in ("first", "second")
     }
-    engine.set_auto_execute_targets(
-        None if initial is None else [nodes[name] for name in initial]
-    )
+    if initial is None or initial:
+        with qtbot.waitSignal(engine.nodes_executed):
+            engine.set_auto_execute_targets(
+                None if initial is None else [nodes[name] for name in initial]
+            )
+    else:
+        engine.set_auto_execute_targets([])
     outputs: list[dict[NodeRef, object]] = []
     engine.nodes_executed.connect(outputs.append)
 
-    engine.set_auto_execute_targets(
-        None if updated is None else [nodes[name] for name in updated]
-    )
+    targets = None if updated is None else [nodes[name] for name in updated]
+    if expected:
+        with qtbot.waitSignal(engine.nodes_executed):
+            engine.set_auto_execute_targets(targets)
+    else:
+        engine.set_auto_execute_targets(targets)
 
     assert len(outputs) == (1 if expected else 0)
     if expected:
         assert {node.name() for node in outputs[0]} == expected
 
 
-def test_new_targets_share_one_execution_of_their_dependency(engine: Engine) -> None:
+def test_new_targets_share_one_execution_of_their_dependency(
+    engine: Engine, qtbot: QtBot,
+) -> None:
     calls: list[str] = []
 
     def source() -> int:
@@ -142,7 +161,8 @@ def test_new_targets_share_one_execution_of_their_dependency(engine: Engine) -> 
     outputs: list[dict[NodeRef, object]] = []
     engine.nodes_executed.connect(outputs.append)
 
-    engine.set_auto_execute_targets([double_node, triple_node])
+    with qtbot.waitSignal(engine.nodes_executed):
+        engine.set_auto_execute_targets([double_node, triple_node])
 
     assert outputs == [{source_node: 3, double_node: 6, triple_node: 9}]
     assert calls[0] == "source"
@@ -167,11 +187,12 @@ def test_closed_engine_does_not_execute_when_configuration_changes(engine: Engin
 
 @pytest.mark.parametrize("change", ["graph", "registry"])
 def test_invalidation_observers_run_before_automatic_execution(
-    engine: Engine, change: str,
+    engine: Engine, qtbot: QtBot, change: str,
 ) -> None:
     operator = engine.registry.get_operator_by_name("answer")
     node = engine.graph._create_node(operator)
-    engine.set_auto_execute_targets([node])
+    with qtbot.waitSignal(engine.nodes_executed):
+        engine.set_auto_execute_targets([node])
     events: list[str] = []
     outputs: list[dict[NodeRef, object]] = []
 
@@ -182,12 +203,13 @@ def test_invalidation_observers_run_before_automatic_execution(
     engine.nodes_invalidated.connect(lambda nodes: events.append("invalidated"))
     engine.nodes_executed.connect(on_executed)
 
-    if change == "graph":
-        engine.graph._update_node(node, operator, kwargs={"value": 11})
-        expected = 11
-    else:
-        engine.registry.set_script(SOURCE.replace("return value", "return value * 2"))
-        expected = 14
+    with qtbot.waitSignal(engine.nodes_executed):
+        if change == "graph":
+            engine.graph._update_node(node, operator, kwargs={"value": 11})
+            expected = 11
+        else:
+            engine.registry.set_script(SOURCE.replace("return value", "return value * 2"))
+            expected = 14
 
     assert events == ["invalidated", "executed"]
     assert outputs == [{node: expected}]

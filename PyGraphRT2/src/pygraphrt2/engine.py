@@ -1,16 +1,16 @@
 from concurrent.futures import Future
+from dataclasses import replace
 from typing import Any, Callable, Iterable
-from pygraphrt2.inline_backend import InlineBackend, ExecutionFailure
 from pygraphrt2.threaded_backend import ThreadedBackend
 
 
-from qtpy.QtCore import QObject, Signal
+from qtpy.QtCore import Qt, QObject, Signal, Slot
 
 from .graph import Graph, NodeRef
 from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .relations import ManyToOneRelation
 
-from .execution_plan import evaluate, prepare, execute
+from .execution_plan import prepare
 
 class Engine(QObject):
     nodes_invalidated = Signal(list)
@@ -19,6 +19,8 @@ class Engine(QObject):
     registry_invalidated = Signal()
     registry_evaluated = Signal()
     registry_failed = Signal(Exception)
+    _evaluation_finished = Signal(int, object)
+    _execution_finished = Signal(int, object, object)
 
     def __init__(
         self, 
@@ -31,6 +33,20 @@ class Engine(QObject):
 
         self._backend = ThreadedBackend(self.graph)
         self._closed = False
+        self._evaluation_id = 0
+        self._evaluation_pending = False
+        self._evaluation_future: Future[dict[str, Callable[..., Any]]] | None = None
+        self._pending_targets: set[NodeRef] = set()
+        self._execution_id = 0
+        self._execution_future: Future[dict[str, Any]] | None = None
+        self._evaluation_finished.connect(
+            self._on_evaluation_finished,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self._execution_finished.connect(
+            self._on_execution_finished,
+            Qt.ConnectionType.QueuedConnection,
+        )
         self._operator_to_nodes = ManyToOneRelation[NodeRef, ScriptOperatorRef]()
         self._preserve_operator_bindings: set[NodeRef] = set()
         self._sync_node_operator_mappings(self.graph.nodes())
@@ -113,6 +129,7 @@ class Engine(QObject):
 
     def _remove_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
         # Graph emits nodes_changed for surviving consumers after removing links.
+        self._invalidate_execution()
         for node in nodes:
             operator = self._operator_to_nodes.parent_of(node)
             if operator is not None:
@@ -131,61 +148,150 @@ class Engine(QObject):
         if not invalidated:
             return
 
+        self._invalidate_execution()
         self.nodes_invalidated.emit(invalidated)
         # Call directly after notifying observers so their invalidation handlers
         # clear stale outputs before execution publishes fresh results.
         self._auto_execute_invalidated(invalidated)
 
     # Execution backend
+    def _invalidate_evaluation(self) -> None:
+        self._evaluation_id += 1
+        self._evaluation_pending = False
+        if self._evaluation_future is not None:
+            self._evaluation_future.cancel()
+            self._evaluation_future = None
+
+    def _invalidate_execution(self) -> None:
+        self._execution_id += 1
+        if self._execution_future is not None:
+            self._execution_future.cancel()
+            self._execution_future = None
+
     def evaluate_registry(self) -> None:
+        """Evaluate asynchronously, deferring execution until functions are applied."""
         if self._closed:
             return
 
-        evaluate_future = self._backend.evaluate(self.registry.get_script(), name="<registry>")
-        def _on_done(fut: Future[dict[str, Callable[..., Any]]]) -> None:
-            try:
-                functions = fut.result()
-                
-            except Exception as error:
-                self.registry_failed.emit(error)
-                self.registry._apply_functions(dict(), error)
-                # todo: here we should update the nodes that are relevant to the changed registry entries.
-                #       here we need to know what operators have actually changed
-                #       the above code is syncronus by the way. an async backend would need to have a signal.
-                self._invalidate_descendants(self.graph.nodes())
-            else:
-                self.registry_evaluated.emit()
-                self.registry._apply_functions(functions, "VALID")
-                # self._invalidate_descendants(self.graph.nodes())
+        self._invalidate_evaluation()
+        self._invalidate_execution()
+        self._evaluation_pending = True
+        evaluation_id = self._evaluation_id
 
-        evaluate_future.add_done_callback(_on_done)
+        try:
+            future = self._backend.evaluate(self.registry.get_script(), name="<registry>")
+        except Exception as error:
+            future = Future()
+            future.set_exception(error)
+        self._evaluation_future = future
+
+        def on_done(completed: Future[dict[str, Callable[..., Any]]]) -> None:
+            self._evaluation_finished.emit(evaluation_id, completed)
+
+        future.add_done_callback(on_done)
+
+    @Slot(int, object)
+    def _on_evaluation_finished(
+        self,
+        evaluation_id: int,
+        future: Future[dict[str, Callable[..., Any]]],
+    ) -> None:
+        if self._closed or evaluation_id != self._evaluation_id:
+            return
+
+        self._evaluation_future = None
+        if future.cancelled():
+            self._evaluation_pending = False
+            self._pending_targets.clear()
+            return
+
+        try:
+            functions = future.result()
+        except Exception as error:
+            self.registry._apply_functions({}, error)
+            if self._closed or evaluation_id != self._evaluation_id:
+                return
+            self._invalidate_descendants(self.graph.nodes())
+            if self._closed or evaluation_id != self._evaluation_id:
+                return
+            self._evaluation_pending = False
+            self._pending_targets.clear()
+            self.registry_failed.emit(error)
+            return
+
+        # Applying functions emits operator changes. Keep collecting their
+        # execution targets until every binding has been updated.
+        self.registry._apply_functions(functions, "VALID")
+        if self._closed or evaluation_id != self._evaluation_id:
+            return
+        self.registry_evaluated.emit()
+        if self._closed or evaluation_id != self._evaluation_id:
+            return
+
+        self._evaluation_pending = False
+        targets = tuple(self._pending_targets)
+        self._pending_targets.clear()
+        if targets:
+            self.execute_nodes(*targets)
 
     def execute_nodes(self, *targets: NodeRef) -> None:
-        if self._closed:
+        if self._closed or not targets:
             return
-        if not targets:
-            return
-        
-        plan, mapping = prepare(self.graph, targets)
-        output_future = self._backend.execute_plan(plan)
-        def _on_done(fut: Future[dict[str, Any]]) -> None:
-            try:
-                plan_outputs = fut.result()
-            except Exception as error:
-                self.execution_failed.emit(error)
-            else:
-                outputs = {mapping[name]: value for name, value in plan_outputs.items()}
-                self.nodes_executed.emit(outputs)
 
-        output_future.add_done_callback(_on_done)
-        # try:
-            
-        # except ExecutionFailure as error:
-        #     self.execution_failed.emit(error)
-        # else:
-        #     self.nodes_executed.emit(outputs)
+        # Supersede the previous request even if preparing this one fails.
+        self._invalidate_execution()
+        if self._evaluation_pending:
+            self._pending_targets.update(targets)
+            return
+
+        execution_id = self._execution_id
+
+        try:
+            plan, mapping = prepare(self.graph, targets)
+            # Workers use captured callables, never the live GUI registry.
+            for name, snapshot in plan.items():
+                if isinstance(snapshot.operator, ScriptOperatorRef):
+                    plan[name] = replace(snapshot, operator=snapshot.operator.resolve())
+            future = self._backend.execute_plan(plan)
+        except Exception as error:
+            self.execution_failed.emit(error)
+            return
+        self._execution_future = future
+
+        def on_done(completed: Future[dict[str, Any]]) -> None:
+            # This callback only sends a notification across threads.
+            self._execution_finished.emit(execution_id, mapping, completed)
+
+        future.add_done_callback(on_done)
+
+    @Slot(int, object, object)
+    def _on_execution_finished(
+        self,
+        execution_id: int,
+        mapping: dict[str, NodeRef],
+        future: Future[dict[str, Any]],
+    ) -> None:
+        # This check runs on the GUI thread, immediately before publication.
+        if self._closed or execution_id != self._execution_id:
+            return
+
+        self._execution_future = None
+        if future.cancelled():
+            return
+
+        try:
+            plan_outputs = future.result()
+        except Exception as error:
+            self.execution_failed.emit(error)
+        else:
+            outputs = {
+                mapping[name]: value
+                for name, value in plan_outputs.items()
+            }
+            self.nodes_executed.emit(outputs)
 
     def _prune_auto_execution_targets(self, nodes: list[NodeRef]) -> None:
+        self._pending_targets.difference_update(nodes)
         if self._auto_execute_targets is not None:
             self._auto_execute_targets.difference_update(nodes)
 
@@ -229,6 +335,10 @@ class Engine(QObject):
             return
 
         if not self._auto_execute:
+            # A source edit also supersedes manual evaluation already in flight.
+            self._invalidate_evaluation()
+            self._invalidate_execution()
+            self._pending_targets.clear()
             return
 
         self.evaluate_registry()
@@ -256,6 +366,10 @@ class Engine(QObject):
         if self._closed:
             return
         self._closed = True
+        self._invalidate_evaluation()
+        self._invalidate_execution()
+        self._pending_targets.clear()
         for signal, slot in self._connections:
             signal.disconnect(slot)
         self._connections.clear()
+        self._backend.close()

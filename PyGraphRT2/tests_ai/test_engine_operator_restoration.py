@@ -3,6 +3,7 @@
 from collections.abc import Callable, Iterator
 
 import pytest
+from pytestqt.qtbot import QtBot
 
 from pygraphrt2 import Engine, NodeRef
 
@@ -23,7 +24,7 @@ def engine(qapp: object) -> Iterator[Engine]:
 
 
 def test_removal_and_restoration_preserve_bindings_inputs_and_notifications(
-    engine: Engine,
+    engine: Engine, qtbot: QtBot,
 ) -> None:
     operator = engine.registry.get_operator_by_name("answer")
     first = engine.graph._create_node(operator, args=(9,), kwargs={"offset": 2})
@@ -58,7 +59,8 @@ def test_removal_and_restoration_preserve_bindings_inputs_and_notifications(
     assert any(set(batch) == {first, second} for batch in invalidated)
     outputs: list[dict[NodeRef, object]] = []
     engine.nodes_executed.connect(outputs.append)
-    engine.execute_nodes(second)
+    with qtbot.waitSignal(engine.nodes_executed):
+        engine.execute_nodes(second)
     assert outputs[-1][first] == 20
     assert outputs[-1][second] == 40
 
