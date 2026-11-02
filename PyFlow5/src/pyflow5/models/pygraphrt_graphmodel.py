@@ -294,14 +294,16 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def _on_nodes_invalidated(self, nodes: list[rt2.NodeRef]) -> None:
         if self._closed:
             return
-        changed: list[NodeName] = []
+        changed: set[NodeName] = set()
         for node in nodes:
             name = node.name()
-            if name in self._outputs or name in self._errors:
-                self._outputs.pop(name, None)
+            # if name in self._outputs:
+            #     self._outputs.pop(name, None)
+            #     changed.add(name)
+            if name in self._errors:
                 self._errors.pop(name, None)
-                changed.append(name)
-        self._notify_outputs_changed(changed)
+                changed.add(name)
+        self._notify_outputs_changed(list(changed))
 
     def _on_execution_failed(self, error: Exception) -> None:
         if self._closed:
@@ -596,9 +598,15 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 IsConnected = len(list(self.inLinks(node, inlet))) > 0 # todo: performance?
                 if IsConnected:
                     return True
+                
                 HasDefaultValue = self.inletData(node, inlet, InputDataRole.DefaultValueRole) is not self.EmptyInputValue
                 if HasDefaultValue:
                     return True
+
+                HasLiteralInput = self.inletData(node, inlet, InputDataRole.InputIsSetRole)
+                if HasLiteralInput:
+                    return True
+                
                 return False
             
             case Qt.ItemDataRole.ToolTipRole: 

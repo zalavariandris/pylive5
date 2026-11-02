@@ -1,7 +1,7 @@
 {
     "version": 4,
     "script": {
-        "name": null,
+        "name": "<script>",
         "source": "from vfxops.io import read_image\nfrom vfxops.draw import gradient\nfrom vfxops.color import grade\nfrom vfxops.filter import gaussian_blur\n\n__all__ = [\n    'read_image',\n    'grade',\n    'gradient',\n    'gaussian_blur'\n]"
     },
     "graph": {
@@ -18,8 +18,8 @@
                     }
                 },
                 "position": [
-                    325.0,
-                    187.0
+                    0.0,
+                    -60.0
                 ]
             },
             "gaussian_blur": {
@@ -31,12 +31,12 @@
                     },
                     "size": {
                         "type": "literal",
-                        "value": 30.0
+                        "value": 20.0
                     }
                 },
                 "position": [
-                    288.0,
-                    329.0
+                    0.0,
+                    60.0
                 ]
             }
         }

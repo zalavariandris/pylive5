@@ -1,5 +1,6 @@
 
 ## Features
+- [x] add ndoe cache to PyGraphRT2
 - [ ] try to use the execution_plan in the inline_backend.
       execution_plan probably need to be renamed. it contains utilitiy functions, to evaluate,prepare and execute the engine(registry+graph)
 - [...] run engine execution in a background process

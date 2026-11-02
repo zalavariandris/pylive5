@@ -20,11 +20,14 @@ class ThreadedBackend:
     def evaluate(self, source:str, *, name: str="<script>") -> Future[dict[str, Callable[..., Any]]]:
         return self._executor.submit(evaluate, source, name=name)
 
-    def execute_plan(self, plan:dict[str, NodeStateSnapshot]) -> Future[dict[str, Any]]:
+    def execute_plan(self, 
+        plan:dict[str, NodeStateSnapshot],
+        initial_outputs: dict[str, Any] | None = None
+    ) -> Future[dict[str, Any]]:
         if self._latest_future is not None:
             self._latest_future.cancel()
 
-        future = self._executor.submit(execute, plan)
+        future = self._executor.submit(execute, plan, initial_outputs=initial_outputs)
         self._latest_future = future
         return future
 

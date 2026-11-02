@@ -13,6 +13,7 @@ from .relations import ManyToOneRelation
 from .execution_plan import prepare
 from .execution_plan import NodeExecutionError
 from .exceptions import ExecutionFailure
+from .graph_cache import GraphCache
 
 
 class Engine(QObject):
@@ -41,10 +42,12 @@ class Engine(QObject):
         registry: InlineScriptModule | None = None
     ) -> None:
         super().__init__()
-        self._graph = graph if graph is not None else Graph()
         self._registry = registry if registry is not None else InlineScriptModule()
+        self._graph = graph if graph is not None else Graph()
+        
 
         self._backend = ThreadedBackend(self._graph)
+        self._cache = GraphCache()
         self._closed = False
         self._evaluation_id = 0
         self._evaluation_pending = False
@@ -70,7 +73,9 @@ class Engine(QObject):
             (self._graph.nodes_removed, self._prune_auto_execution_targets),
             (self._registry.registry_invalidated, self.registry_invalidated.emit),
             (self._registry.registry_invalidated, self._auto_evaluate_registry),
-
+            (self._registry.operators_added, self._on_operators_added),
+            (self._registry.operators_removed, self._on_operators_removed),
+            (self._registry.operators_changed, self._on_operators_changed),
         ]
         self._connections.extend([
             (self._graph.nodes_added, self.nodes_added.emit),
@@ -170,6 +175,7 @@ class Engine(QObject):
     def _remove_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
         # Graph emits nodes_changed for surviving consumers after removing links.
         self._invalidate_execution()
+        self._cache.invalidate(nodes)
         for node in nodes:
             operator = self._operator_to_nodes.parent_of(node)
             if operator is not None:
@@ -188,10 +194,9 @@ class Engine(QObject):
         if not invalidated:
             return
 
+        self._cache.invalidate(invalidated)
         self._invalidate_execution()
         self.nodes_invalidated.emit(invalidated)
-        # Call directly after notifying observers so their invalidation handlers
-        # clear stale outputs before execution publishes fresh results.
         self._auto_execute_invalidated(invalidated)
  
     # Execution backend
@@ -287,12 +292,16 @@ class Engine(QObject):
         execution_id = self._execution_id
 
         try:
-            plan, mapping = prepare(self._graph, targets)
+            plan, mapping, initial_outputs = prepare(
+                self._graph, 
+                targets,
+                cached_outputs=self._cache
+            )
             # Workers use captured callables, never the live GUI registry.
             for name, snapshot in plan.items():
                 if isinstance(snapshot.operator, ScriptOperatorRef):
                     plan[name] = replace(snapshot, operator=snapshot.operator.resolve())
-            future = self._backend.execute_plan(plan)
+            future = self._backend.execute_plan(plan, initial_outputs=initial_outputs)
         except Exception as error:
             self.execution_failed.emit(error)
             return
@@ -331,6 +340,8 @@ class Engine(QObject):
                 mapping[name]: value
                 for name, value in plan_outputs.items()
             }
+            for node, value in outputs.items():
+                self._cache.save(node, value)
             self.nodes_executed.emit(outputs)
 
     def _prune_auto_execution_targets(self, nodes: list[NodeRef]) -> None:

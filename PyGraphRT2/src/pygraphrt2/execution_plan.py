@@ -1,5 +1,5 @@
 from types import ModuleType
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 from types import FunctionType
 from collections.abc import Callable
 from copy import deepcopy
@@ -106,19 +106,29 @@ def evaluate(
 def prepare(
     graph: Graph,
     targets: tuple[NodeRef, ...],
-) -> tuple[dict[str, NodeStateSnapshot], dict[str, NodeRef]]:
+    cached_outputs: dict[NodeRef, Any] | None = None
+) -> tuple[
+    dict[str, NodeStateSnapshot], 
+    dict[str, NodeRef],
+    dict[str, Any],
+]:
     """
     Prepare an execution plan for the given graph and targets.
 
     Args:
         graph: The computation graph.
         targets: The target nodes for which to prepare the plan.
+        cached_outputs: Optional dictionary of cached outputs for nodes.
 
     Returns:
         A tuple containing:
         - plan:    A dictionary mapping node names to their state snapshots.
         - mapping: A dictionary mapping node names to their corresponding NodeRef objects.
+        - initial_outputs: A dictionary mapping node names to their cached outputs.
     """
+    cache = cached_outputs if cached_outputs is not None else {}
+    cached_nodes: list[NodeRef] = []
+
     all_targets = tuple(dict.fromkeys(targets))
     existing_nodes = set(graph.nodes())
     for target in all_targets:
@@ -135,6 +145,10 @@ def prepare(
             continue
         visited.add(node)
 
+        if node in cache:
+            cached_nodes.append(node)
+            continue
+
         needed.add(node)
         node_state = graph._nodes[node]
         for value in (*node_state.args, *node_state.kwargs.values()):
@@ -144,15 +158,17 @@ def prepare(
     # Sorting only uncached work also detects cycles in that remaining work.
     ordered_nodes = graph.topological_sort(needed)
 
-    # # CACHE
-    # memo: dict[int, Any] = {}
-    # initial_outputs = {
-    #     node_ref: deepcopy(cache[node_ref], memo)
-    #     for node_ref in cached_nodes
-    # }
+    # CACHE
+    initial_outputs = {
+        node.name(): cache[node]
+        for node in cached_nodes
+    }
 
     plan: dict[str, NodeStateSnapshot] = {}
-    mapping: dict[str, NodeRef] = {}
+    mapping: dict[str, NodeRef] = {
+        node.name(): node
+        for node in cached_nodes
+    }
     for node_ref in ordered_nodes:
         node_state = graph._nodes[node_ref]
         func = node_state.operator
@@ -169,7 +185,8 @@ def prepare(
         )
         plan[node_ref.name()] = snapshot
         mapping[node_ref.name()] = node_ref
-    return plan, mapping
+    return plan, mapping, initial_outputs
+
 
 class NodeExecutionError(Exception):
     def __init__(self, node_name: str, error: Exception) -> None:
@@ -177,8 +194,10 @@ class NodeExecutionError(Exception):
         self.error = error
         super().__init__(f"Execution failed for {node_name}: {error}")
 
+
 def execute(
-    plan: dict[str, NodeStateSnapshot]
+    plan: dict[str, NodeStateSnapshot],
+    initial_outputs: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Execute the given execution plan on the graph.
@@ -191,7 +210,9 @@ def execute(
     Returns:
         A dictionary mapping node names to their computed outputs.
     """
-    outputs: dict[str, Any] = {}
+    outputs: dict[str, Any] = (
+        dict(initial_outputs) if initial_outputs is not None else {}
+    )
     for node_name, snapshot in plan.items():
         args = [
             outputs[val.node_id] if isinstance(val, NodeOutput) else val
