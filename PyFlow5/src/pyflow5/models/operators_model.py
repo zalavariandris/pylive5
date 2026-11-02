@@ -18,48 +18,48 @@ class _OperatorShadow:
     name: str
 
 class OperatorsModel(QAbstractItemModel):
-    """A list of operators from the source registry."""
+    """A list of operators from the source engine."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._registry: rt2.InlineScriptModule | None = None
-        self._registry_connections: list[tuple[SignalInstance, Callable]] = []
+        self._engine: rt2.Engine | None = None
+        self._engine_connections: list[tuple[SignalInstance, Callable]] = []
 
         self._shadows: BiList[_OperatorShadow] = BiList()
         self._mapping: bidict[rt2.ScriptOperatorRef, _OperatorShadow] = bidict()
 
-    def sourceRegistry(self) -> rt2.InlineScriptModule | None:
-        return self._registry
+    def sourceEngine(self) -> rt2.Engine | None:
+        return self._engine
 
-    def setSourceRegistry(self, registry: rt2.InlineScriptModule | None) -> None:
+    def setSourceEngine(self, engine: rt2.Engine | None) -> None:
         """Replace the runtime used by this model."""
-        if self._registry is registry:
+        if self._engine is engine:
             return
 
-        if self._registry is not None:
-            for signal, slot in self._registry_connections:
+        if self._engine is not None:
+            for signal, slot in self._engine_connections:
                 signal.disconnect(slot)
-            self._registry_connections.clear()
+            self._engine_connections.clear()
 
-        if registry is not None:
+        if engine is not None:
             # todo: proper insertion and removal handling will be necessary to match the 
             # qabstractitmodel interface
-            self._registry_connections = [
-                (registry.operators_added,   self._on_operators_added),
-                (registry.operators_removed, self._on_operators_removed),
-                (registry.operators_changed, self._on_operators_changed),
+            self._engine_connections = [
+                (engine.operators_added,   self._on_operators_added),
+                (engine.operators_removed, self._on_operators_removed),
+                (engine.operators_changed, self._on_operators_changed),
             ]
-            for signal, slot in self._registry_connections:
+            for signal, slot in self._engine_connections:
                 signal.connect(slot)
 
         
 
         self.beginResetModel()
-        self._registry = registry
+        self._engine = engine
         self._mapping.clear()
         self._shadows.clear()
-        if self._registry is not None:
-            for operator in self._registry.operators():
+        if self._engine is not None:
+            for operator in self._engine.operators():
                 shadow = _OperatorShadow(name=operator.name())
                 self._shadows.append(shadow)
                 self._mapping[operator] = shadow
@@ -80,7 +80,7 @@ class OperatorsModel(QAbstractItemModel):
         self.endInsertRows()
 
     def _on_operators_removed(self, operators: list[rt2.ScriptOperatorRef]) -> None:
-        """Handle the removal of operators from the registry."""
+        """Handle the removal of operators from the engine."""
         # todo: keep the original operators order when removing
         # consolidate contiguous removed rows into a single beginRemoveRows/endRemoveRows block
         for operator in operators:
@@ -93,7 +93,7 @@ class OperatorsModel(QAbstractItemModel):
                 self.endRemoveRows()
 
     def _on_operators_changed(self, operators: list[rt2.ScriptOperatorRef]) -> None:
-        """Handle the change of operators in the registry."""
+        """Handle the change of operators in the engine."""
         # todo: consolidate contiguous changed rows into a single dataChanged signal
         for operator in operators:
             shadow = self._mapping.get(operator, None)
@@ -119,7 +119,7 @@ class OperatorsModel(QAbstractItemModel):
     def mapToSource(
         self, index: QModelIndex
     ) -> rt2.ScriptOperatorRef | None:
-        if self._registry is None:
+        if self._engine is None:
             return None
 
         if not index.isValid():
@@ -141,13 +141,13 @@ class OperatorsModel(QAbstractItemModel):
     def mapFromSource(
         self, source: rt2.ScriptOperatorRef | None
     ) -> QModelIndex:
-        if self._registry is None:
+        if self._engine is None:
             return QModelIndex()
 
         if not isinstance(source, rt2.ScriptOperatorRef):
             return QModelIndex()
 
-        ## Find the operator in the registry
+        ## Find the operator in the engine
         ## todo: performance optimization is necessary
         shadow = self._mapping.get(source)
         if shadow is None:

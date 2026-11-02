@@ -8,10 +8,10 @@ import pytest
 from pygraphrt2.engine_serializer import GraphDeserializer, GraphSerializer
 from pygraphrt2.graph import Graph
 from pygraphrt2.inline_executor import InlineExecutor
-from pygraphrt2 import InlineScriptModule, OperatorUnavailableError, ScriptOperatorRef
+from pygraphrt2 import Engine, OperatorUnavailableError, ScriptOperatorRef
 
 
-def roundtrip(graph: Graph, registry: InlineScriptModule) -> tuple[InlineScriptModule, Graph]:
+def roundtrip(graph: Graph, registry: Engine) -> tuple[Engine, Graph]:
     data = GraphSerializer(graph, registry).todict()
     text = json.dumps(data, allow_nan=False)
     return GraphDeserializer().fromdict(json.loads(text))
@@ -23,7 +23,7 @@ def test_roundtrip_restores_forward_links_and_execution(module_name: str | None)
         "def number(): return 6\n"
         "def combine(left, extra, *, right): return left + extra + right\n"
     )
-    registry = InlineScriptModule(module_name)
+    registry = Engine(module_name)
     registry.set_script(source)
     registry.evaluate()
     graph = Graph()
@@ -59,7 +59,7 @@ def test_roundtrip_preserves_literal_types_and_nonfinite_floats() -> None:
     graph = Graph()
     graph._create_node(args=values, kwargs={"path": Path("example.py")}, name="values")
 
-    _, restored_graph = roundtrip(graph, InlineScriptModule())
+    _, restored_graph = roundtrip(graph, Engine())
     state = restored_graph.nodes()[0].resolve()
 
     assert state.args[:-1] == values[:-1]
@@ -69,7 +69,7 @@ def test_roundtrip_preserves_literal_types_and_nonfinite_floats() -> None:
 
 @pytest.mark.parametrize("explicit", [False, True])
 def test_empty_nodes_and_modules_roundtrip(explicit: bool) -> None:
-    registry = InlineScriptModule()
+    registry = Engine()
     graph = Graph()
     restored_registry, restored_graph = roundtrip(graph, registry)
     assert restored_registry.get_script() == ""
@@ -89,7 +89,7 @@ def test_empty_nodes_and_modules_roundtrip(explicit: bool) -> None:
 
 @pytest.mark.parametrize("source", ["def answer(:", "raise RuntimeError('broken')", ""])
 def test_missing_operator_reference_survives_roundtrip_and_script_repair(source: str) -> None:
-    registry = InlineScriptModule()
+    registry = Engine()
     registry.set_script(source)
     if source:
         with pytest.raises((SyntaxError, RuntimeError)):
@@ -122,14 +122,14 @@ def test_roundtrip_preserves_cycles() -> None:
     second = graph._create_node(args=(first,), name="second")
     graph._update_node(first, args=(second,))
 
-    _, restored_graph = roundtrip(graph, InlineScriptModule())
+    _, restored_graph = roundtrip(graph, Engine())
     restored_first, restored_second = restored_graph.nodes()
     assert restored_first.resolve().args == (restored_second,)
     assert restored_second.resolve().args == (restored_first,)
 
 
 def test_operator_references_use_flat_names_and_require_the_same_module() -> None:
-    registry = InlineScriptModule("local")
+    registry = Engine("local")
     graph = Graph()
     node = graph._create_node(ScriptOperatorRef(registry, "answer"), name="answer")
     data = GraphSerializer(graph, registry).todict()
@@ -138,7 +138,7 @@ def test_operator_references_use_flat_names_and_require_the_same_module() -> Non
     assert data["graph"]["nodes"]["answer"]["operator"] == "answer"
     assert "modules" not in data
 
-    other_registry = InlineScriptModule("local")
+    other_registry = Engine("local")
     graph._update_node(node, ScriptOperatorRef(other_registry, "answer"))
     with pytest.raises(ValueError, match="different script module"):
         GraphSerializer(graph, registry).todict()
@@ -155,14 +155,14 @@ def test_rejects_unsupported_versions(version: Any) -> None:
 
 
 def test_rejects_invalid_operator_names() -> None:
-    data = GraphSerializer(Graph(), InlineScriptModule()).todict()
+    data = GraphSerializer(Graph(), Engine()).todict()
     data["graph"]["nodes"]["invalid"] = {"operator": {"module": "local", "name": "answer"}}
     with pytest.raises(ValueError, match="Invalid operator name"):
         GraphDeserializer().fromdict(data)
 
 
 def test_rejects_unknown_input_types_and_dangling_connections() -> None:
-    data = GraphSerializer(Graph(), InlineScriptModule()).todict()
+    data = GraphSerializer(Graph(), Engine()).todict()
     record = {"args": [{"type": "unknown"}]}
     data["graph"]["nodes"]["invalid"] = record
     with pytest.raises(ValueError, match="Unsupported input type"):

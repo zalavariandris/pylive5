@@ -1,20 +1,12 @@
 from typing import Any, Callable
 
 from .graph import Graph, NodeRef
-from .execution_plan import NodeStateSnapshot, NodeOutput
+# from .execution_plan import NodeStateSnapshot, NodeOutput
 from concurrent.futures import Future
 from .inline_scriptmodule import _get_all_callables_from_script
 
 from .execution_plan import evaluate, prepare, execute
-
-class ExecutionFailure(Exception):
-    def __init__(
-        self, node: NodeRef | None, error: Exception, targets: tuple[NodeRef, ...] = (),
-    ) -> None:
-        self.node = node
-        self.error = error
-        self.targets = targets
-        super().__init__(f"Execution failed for {node}: {error}")
+from .exceptions import ExecutionFailure
 
 
 class InlineBackend:

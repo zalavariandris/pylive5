@@ -35,7 +35,6 @@ class FileChangedError(RuntimeError):
     """Saving requires confirmation because the bound file changed."""
 
 
-
 class PyFlowDocument(QObject):
     nodesInvalidated = Signal(list)
     modified = Signal()
@@ -64,27 +63,30 @@ class PyFlowDocument(QObject):
         self.script_document.setDocumentLayout(
             QPlainTextDocumentLayout(self.script_document)
         )
-        self.script_document.setPlainText(self._engine.registry.get_script())
+        self.script_document.setPlainText(self._engine.get_script())
 
         # Models
         ## Graph Model
         self.graph_model = PyGraphRTGraphModel(self._engine)
         ## Modules Model
         self.operators_model = OperatorsModel()
-        self.operators_model.setSourceRegistry(self._engine.registry)
+        self.operators_model.setSourceEngine(self._engine)
 
         # Adapters
         ## Node inlet tree adapter
         self.node_inlet_tree_adapter = PyGraphRTNodeInletTreeModelAdapter(self.graph_model)
+
+        self._script_state = 'INVALIDATED'
         
         self._connections = [
             (self.script_document.contentsChanged, self._onScriptChanged),
-            # (self._engine.registry_invalidated, self._engine.evaluate_registry),
-            (self._engine.registry.stateChanged, self.scriptStateChanged.emit),
+            (self._engine.registry_invalidated, lambda: self._setScriptState('INVALIDATED')),
+            (self._engine.registry_failed, lambda e: self._setScriptState('ERROR')),
+            (self._engine.registry_evaluated, lambda: self._setScriptState('EVALUATED')),
             (self._engine.nodes_invalidated, self._onNodesInvalidated),
-            (self._engine.graph.nodes_added, self._markModified),
-            (self._engine.graph.nodes_removed, self._markModified),
-            (self._engine.graph.nodes_changed, self._markModified),
+            (self._engine.nodes_added, self._markModified),
+            (self._engine.nodes_removed, self._markModified),
+            (self._engine.nodes_changed, self._markModified),
             (self.graph_model.nodeMoved, self._markModified),
         ]
         for signal, slot in self._connections:
@@ -95,16 +97,19 @@ class PyFlowDocument(QObject):
 
     def _onScriptChanged(self) -> None:
         source = self.script_document.toPlainText()
-        if not self._closed and source != self._engine.registry.get_script():
+        if not self._closed and source != self._engine.get_script():
             self._markModified()
-            self._engine.registry.set_script(source)
+            self._engine.set_script(source)
 
     def _onNodesInvalidated(self, nodes: list[rt2.NodeRef]) -> None:
         if not self._closed:
             self.nodesInvalidated.emit([node.name() for node in nodes])
 
+    def _setScriptState(self, value):
+        self._script_state = value
+
     def scriptState(self) -> str | Exception | None:
-        return self._engine.registry.get_state()
+        return self._script_state
 
     def _markModified(self, *_args: object) -> None:
         """Mark the document as modified."""
@@ -168,7 +173,7 @@ class PyFlowDocument(QObject):
         for signal, slot in self._connections:
             signal.disconnect(slot)
         self._connections.clear()
-        self.operators_model.setSourceRegistry(None)
+        self.operators_model.setSourceEngine(None)
         self.graph_model.close()
         self._engine.close()
 
@@ -184,7 +189,6 @@ class PyFlowDocument(QObject):
 
         operator_index = self.operators_model.mapFromSource(operator)
         return operator_index
-
 
     # Serialization
     @classmethod
@@ -227,8 +231,8 @@ class PyFlowDocument(QObject):
                 raise ValueError(f"Invalid position for node {name!r}")
             positions[name] = QPointF(*position)
         deserializer = rt2.GraphDeserializer()
-        registry, graph = deserializer.fromdict(data)
-        engine = rt2.Engine(graph=graph, registry=registry)
+        engine = deserializer.fromdict(data)
+        # engine = rt2.Engine(graph=graph, registry=registry)
         doc = None
         try:
             doc = cls(engine=engine)
@@ -244,7 +248,7 @@ class PyFlowDocument(QObject):
         return doc
 
     def serialize(self) -> str:
-        serializer = rt2.GraphSerializer(self._engine.graph, self._engine.registry)
+        serializer = rt2.GraphSerializer(self._engine)
         data = serializer.todict()
 
         # inject position

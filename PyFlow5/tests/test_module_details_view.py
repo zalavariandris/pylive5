@@ -21,7 +21,7 @@ def view(qtbot: QtBot) -> ModuleDetailsView:
         module.evaluate()
         registry.add_module(module)
     model = OperatorsModel()
-    model.setSourceRegistry(registry)
+    model.setSourceEngine(registry)
     view = ModuleDetailsView()
     qtbot.addWidget(view)
     view.setModel(model)

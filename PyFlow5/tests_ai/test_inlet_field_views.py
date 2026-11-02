@@ -263,23 +263,23 @@ def test_window_shares_tree_fields_with_viewer_and_inspector(qtbot: QtBot) -> No
     selection = window.node_inlet_tree_selection_adapter
     assert window._node_inlet_tree_view.model() is model
     assert window._node_inlet_tree_view.selectionModel() is selection
-    assert window._viewer.model() is model
+    assert window._outputviewer.model() is model
     assert window._node_inspector.model() is model
     node = graph.nodes()[0]
     window.graphselection_model.setCurrentNode(node.name())
     window.graphselection_model.selectNodes({node.name()})
-    qtbot.waitUntil(lambda: window._viewer._body_widget._cached_data == 14)
+    qtbot.waitUntil(lambda: window._outputviewer._body_widget._cached_data == 14)
 
     root = model.mapFromSource(node.name())
     selection.setCurrentIndex(model.index(0, 1, root), QItemSelectionModel.SelectionFlag.NoUpdate)
-    assert window._viewer._body_widget._cached_data == 7
+    assert window._outputviewer._body_widget._cached_data == 7
     assert window._node_inspector._form_view.rootIndex() == root
     editor = window._node_inspector._form_view._mapper.mappedWidgetAt(0)
     editor.setValue(9)
-    assert window._viewer._body_widget._cached_data == 9
+    assert window._outputviewer._body_widget._cached_data == 9
     qtbot.waitUntil(lambda: root.data(PyGraphRTGraphModel.OutputRole) == 18)
     assert root.siblingAtColumn(1).data(Qt.ItemDataRole.EditRole) is None
-    assert window._viewer._body_widget._cached_data == 9
+    assert window._outputviewer._body_widget._cached_data == 9
     window.dispose()
     window.close()
 

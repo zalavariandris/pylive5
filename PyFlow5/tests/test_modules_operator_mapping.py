@@ -15,7 +15,7 @@ def model() -> OperatorsModel:
         module._evaluate()
         registry.add_module(module)
     model = OperatorsModel()
-    model.setSourceRegistry(registry)
+    model.setSourceEngine(registry)
     return model
 
 
@@ -73,7 +73,7 @@ def test_unknown_and_removed_sources(model: OperatorsModel) -> None:
 def test_mapping_without_registry(model: OperatorsModel) -> None:
     index = model.index(0, 0)
     module = model.mapToSource(index)
-    model.setSourceRegistry(None)
+    model.setSourceEngine(None)
     assert model.mapToSource(index) is None
     assert not model.mapFromSource(module).isValid()
 

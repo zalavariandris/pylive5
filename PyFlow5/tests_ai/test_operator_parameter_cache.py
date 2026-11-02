@@ -12,9 +12,9 @@ from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
 
 
 @pytest.fixture
-def model_and_module(qapp: object) -> Iterator[tuple[PyGraphRTGraphModel, rt.InlineScriptModule]]:
+def model_and_module(qapp: object) -> Iterator[tuple[PyGraphRTGraphModel, rt.Engine]]:
     graph = rt.Graph()
-    module = rt.InlineScriptModule("example")
+    module = rt.Engine("example")
     module.set_script("def operation(value: int = 1):\n    return value\n")
     module.evaluate()
     operator = module.get_operator_by_name("operation")
@@ -28,7 +28,7 @@ def model_and_module(qapp: object) -> Iterator[tuple[PyGraphRTGraphModel, rt.Inl
 
 
 def test_repeated_queries_and_value_edits_share_parameters(
-    model_and_module: tuple[PyGraphRTGraphModel, rt.InlineScriptModule],
+    model_and_module: tuple[PyGraphRTGraphModel, rt.Engine],
 ) -> None:
     model, _ = model_and_module
     node = model.mapToSource("first")
@@ -52,7 +52,7 @@ def test_repeated_queries_and_value_edits_share_parameters(
 
 
 def test_script_changes_refresh_parameters_before_notifying_observers(
-    model_and_module: tuple[PyGraphRTGraphModel, rt.InlineScriptModule],
+    model_and_module: tuple[PyGraphRTGraphModel, rt.Engine],
 ) -> None:
     model, module = model_and_module
     assert list(model.inlets("first")) == ["value"]
@@ -72,7 +72,7 @@ def test_script_changes_refresh_parameters_before_notifying_observers(
 
 
 def test_removed_operator_and_empty_parameters_refresh_when_restored(
-    model_and_module: tuple[PyGraphRTGraphModel, rt.InlineScriptModule],
+    model_and_module: tuple[PyGraphRTGraphModel, rt.Engine],
 ) -> None:
     model, module = model_and_module
     assert list(model.inlets("first")) == ["value"]
@@ -90,7 +90,7 @@ def test_removed_operator_and_empty_parameters_refresh_when_restored(
 
 
 def test_recovery_reset_refreshes_metadata(
-    model_and_module: tuple[PyGraphRTGraphModel, rt.InlineScriptModule],
+    model_and_module: tuple[PyGraphRTGraphModel, rt.Engine],
 ) -> None:
     model, module = model_and_module
     assert model.inletData("first", "value", InputDataRole.DefaultValueRole) == 1

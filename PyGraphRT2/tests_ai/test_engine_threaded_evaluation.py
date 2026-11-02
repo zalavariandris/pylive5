@@ -50,8 +50,8 @@ def controlled(
     monkeypatch.setattr("pygraphrt2.engine.ThreadedBackend", ControlledBackend)
     engine = Engine()
     engine.set_auto_execute(False)
-    engine.registry.set_script(SOURCE)
-    engine.registry.evaluate()
+    engine._registry.set_script(SOURCE)
+    engine._registry.evaluate()
     backend = engine._backend
     assert isinstance(backend, ControlledBackend)
     try:
@@ -63,21 +63,21 @@ def controlled(
 def test_worker_functions_reach_the_plan_and_notifications_run_on_gui(qtbot: QtBot) -> None:
     engine = Engine()
     engine.set_auto_execute(False)
-    engine.registry.set_script(
+    engine._registry.set_script(
         "import threading\n"
         "evaluation_thread = threading.get_ident()\n"
         "def answer():\n"
         "    return evaluation_thread, threading.get_ident(), 42\n"
     )
-    node = engine.graph._create_node(ScriptOperatorRef(engine.registry, "answer"))
+    node = engine._graph._create_node(ScriptOperatorRef(engine._registry, "answer"))
     gui_threads: list[int] = []
     available_at_notification: list[bool] = []
-    engine.registry.operators_added.connect(lambda _: gui_threads.append(get_ident()))
+    engine._registry.operators_added.connect(lambda _: gui_threads.append(get_ident()))
 
     def on_evaluated() -> None:
         gui_threads.append(get_ident())
         available_at_notification.append(
-            engine.registry.get_operator_by_name("answer").is_available()
+            engine._registry.get_operator_by_name("answer").is_available()
         )
 
     engine.registry_evaluated.connect(on_evaluated)
@@ -100,14 +100,14 @@ def test_requests_wait_for_functions_and_use_latest_inputs(
     controlled: tuple[Engine, ControlledBackend],
 ) -> None:
     engine, backend = controlled
-    operator = engine.registry.get_operator_by_name("answer")
-    first = engine.graph._create_node(operator, name="first")
-    second = engine.graph._create_node(operator, name="second")
+    operator = engine._registry.get_operator_by_name("answer")
+    first = engine._graph._create_node(operator, name="first")
+    second = engine._graph._create_node(operator, name="second")
 
     engine.evaluate_registry()
     engine.execute_nodes(first)
     engine.execute_nodes(second)
-    engine.graph._update_node(first, operator, kwargs={"value": 9})
+    engine._graph._update_node(first, operator, kwargs={"value": 9})
     assert backend.plans == []
 
     functions = evaluate(SOURCE.replace("return value", "return value * 2"))
@@ -120,7 +120,7 @@ def test_requests_wait_for_functions_and_use_latest_inputs(
     assert execute(plan) == {first.name(): 18, second.name(): 14}
     assert all(snapshot.operator is functions["answer"] for snapshot in plan.values())
 
-    engine.registry._apply_functions(evaluate(SOURCE), "VALID")
+    engine._registry._apply_functions(evaluate(SOURCE), "VALID")
     assert execute(plan) == {first.name(): 18, second.name(): 14}
 
 
@@ -152,7 +152,7 @@ def test_superseded_evaluations_cannot_publish_success_or_failure(
         finish_old()
         QCoreApplication.processEvents()
 
-    assert engine.registry.get_operator_by_name("answer")() == 42
+    assert engine._registry.get_operator_by_name("answer")() == 42
     assert notifications == ["evaluated"]
 
 
@@ -161,7 +161,7 @@ def test_starting_evaluation_immediately_supersedes_execution(
     controlled: tuple[Engine, ControlledBackend], fails: bool,
 ) -> None:
     engine, backend = controlled
-    node = engine.graph._create_node(engine.registry.get_operator_by_name("answer"))
+    node = engine._graph._create_node(engine._registry.get_operator_by_name("answer"))
     outputs: list[dict[NodeRef, Any]] = []
     errors: list[Exception] = []
     engine.nodes_executed.connect(outputs.append)
@@ -191,7 +191,7 @@ def test_new_request_discards_an_execution_completion_already_queued(
     controlled: tuple[Engine, ControlledBackend],
 ) -> None:
     engine, backend = controlled
-    node = engine.graph._create_node(engine.registry.get_operator_by_name("answer"))
+    node = engine._graph._create_node(engine._registry.get_operator_by_name("answer"))
     outputs: list[dict[NodeRef, Any]] = []
     engine.nodes_executed.connect(outputs.append)
     engine.execute_nodes(node)
@@ -206,9 +206,9 @@ def test_failure_clears_functions_and_pending_work_then_restoration_is_batched(
     controlled: tuple[Engine, ControlledBackend],
 ) -> None:
     engine, backend = controlled
-    operator = engine.registry.get_operator_by_name("answer")
-    first = engine.graph._create_node(operator, name="first")
-    second = engine.graph._create_node(operator, name="second")
+    operator = engine._registry.get_operator_by_name("answer")
+    first = engine._graph._create_node(operator, name="first")
+    second = engine._graph._create_node(operator, name="second")
     errors: list[Exception] = []
     engine.registry_failed.connect(errors.append)
     engine.set_auto_execute(True)
@@ -218,7 +218,7 @@ def test_failure_clears_functions_and_pending_work_then_restoration_is_batched(
     QCoreApplication.processEvents()
 
     assert errors == [error]
-    assert engine.registry.get_state() is error
+    assert engine._registry.get_state() is error
     assert not operator.is_available()
     assert backend.plans == []
 
@@ -233,10 +233,10 @@ def test_deleted_pending_target_is_not_prepared(
     controlled: tuple[Engine, ControlledBackend],
 ) -> None:
     engine, backend = controlled
-    node = engine.graph._create_node(engine.registry.get_operator_by_name("answer"))
+    node = engine._graph._create_node(engine._registry.get_operator_by_name("answer"))
     engine.evaluate_registry()
     engine.execute_nodes(node)
-    engine.graph._delete_node(node)
+    engine._graph._delete_node(node)
     backend.evaluations[-1].set_result(evaluate(SOURCE))
     QCoreApplication.processEvents()
     assert backend.plans == []
@@ -246,7 +246,7 @@ def test_evaluated_observer_can_start_a_new_evaluation_before_execution(
     controlled: tuple[Engine, ControlledBackend],
 ) -> None:
     engine, backend = controlled
-    node = engine.graph._create_node(engine.registry.get_operator_by_name("answer"))
+    node = engine._graph._create_node(engine._registry.get_operator_by_name("answer"))
 
     def on_evaluated() -> None:
         if len(backend.evaluations) == 1:
@@ -268,7 +268,7 @@ def test_new_evaluation_and_close_cancel_queued_work(
     controlled: tuple[Engine, ControlledBackend],
 ) -> None:
     engine, backend = controlled
-    node = engine.graph._create_node(engine.registry.get_operator_by_name("answer"))
+    node = engine._graph._create_node(engine._registry.get_operator_by_name("answer"))
     engine.execute_nodes(node)
     execution = backend.executions[-1]
     engine.evaluate_registry()
@@ -295,8 +295,8 @@ def test_source_edit_or_close_discards_running_evaluation(
     if close:
         engine.close()
     else:
-        engine.registry.set_script(SOURCE.replace("return value", "return 99"))
+        engine._registry.set_script(SOURCE.replace("return value", "return 99"))
     future.set_result(evaluate(SOURCE.replace("return value", "return 42")))
     QCoreApplication.processEvents()
     assert notifications == []
-    assert engine.registry.get_operator_by_name("answer")() == 7
+    assert engine._registry.get_operator_by_name("answer")() == 7

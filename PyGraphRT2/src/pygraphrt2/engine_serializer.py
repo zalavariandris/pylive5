@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .graph import Graph, NodeRef
-from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
+from .inline_scriptmodule import ScriptOperatorRef
+from .engine import Engine
 
 FORMAT_VERSION = 4
 
@@ -81,16 +82,12 @@ def _decode_input(data: dict[str, Any], nodes: dict[str, NodeRef]) -> Any:
 
 
 class GraphSerializer:
-    def __init__(self, graph: Graph, registry: InlineScriptModule) -> None:
-        self.graph = graph
-        self.registry = registry
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
 
     def _get_operator_pointer(self, operator: Callable[..., Any]) -> str:
         if not isinstance(operator, ScriptOperatorRef):
             raise TypeError("Only script operator references can be saved")
-
-        if operator.module() is not self.registry:
-            raise ValueError("The operator belongs to a different script module")
 
         return operator.name()
 
@@ -123,13 +120,13 @@ class GraphSerializer:
         return {
             "version": 4,
             "script": {
-                "name": self.registry.name(),
-                "source": self.registry.get_script(),
+                "name": '<script>',
+                "source": self._engine.get_script(),
             },
             "graph": {
                 "nodes": {
                     node.name(): self._node_todict(node, explicit)
-                    for node in self.graph.nodes()
+                    for node in self._engine.nodes()
                 },
             },
         }
@@ -137,8 +134,7 @@ class GraphSerializer:
 
 
 class GraphDeserializer:
-    
-    def fromdict(self, data: dict[str, Any]) -> tuple[InlineScriptModule, Graph]:
+    def fromdict(self, data: dict[str, Any]) -> Engine:
         """Restore the script module and graph, retaining missing operator names."""
         version = data.get("version")
         if type(version) is not int or version != FORMAT_VERSION:
@@ -149,15 +145,10 @@ class GraphDeserializer:
             raise ValueError("Script must contain a source string")
         if script.get("name") is not None and not isinstance(script["name"], str):
             raise ValueError("Script name must be a string or None")
-        registry = InlineScriptModule(script.get("name"))
+        engine = Engine()
+        registry = engine._registry
         registry.set_script(script["source"])
-        try:
-            registry.evaluate()
-        except Exception as error:
-            # A document with a broken script must still reopen for repair.
-            # Only tolerate errors recorded by script evaluation itself.
-            if registry.get_state() is not error:
-                raise
+
 
         graph = Graph()
         records = data["graph"].get("nodes", {})
@@ -190,4 +181,4 @@ class GraphDeserializer:
 
             graph._update_node(nodes[name], operator, args, kwargs)
 
-        return registry, graph
+        return Engine(graph=graph, registry=registry)

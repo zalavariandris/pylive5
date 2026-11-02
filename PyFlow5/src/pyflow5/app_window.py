@@ -118,7 +118,7 @@ class AppWindow(QMainWindow):
             (self.currentDocumentWindow()._registry_panel, "Modules"),
             (self.currentDocumentWindow()._graph_view, "Graph"),
             (self.currentDocumentWindow()._node_inlet_tree_view, "Tree"),
-            (self.currentDocumentWindow()._viewer, "Viewer")
+            (self.currentDocumentWindow()._outputviewer, "Viewer")
         ]
         for panel, name in panels:
             # add show/hide toggle to each panel

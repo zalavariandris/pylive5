@@ -17,15 +17,15 @@ from qdageditor5.models.graph_selection_model import GraphSelectionModel
 
 
 @pytest.fixture
-def module() -> rt.InlineScriptModule:
-    module = rt.InlineScriptModule("example")
+def module() -> rt.Engine:
+    module = rt.Engine("example")
     module.set_script("def operation(first: int = 1, second: int = 2): return first + second")
     module.evaluate()
     return module
 
 
 @pytest.fixture
-def model(qapp: object, module: rt.InlineScriptModule) -> Iterator[PyGraphRTGraphModel]:
+def model(qapp: object, module: rt.Engine) -> Iterator[PyGraphRTGraphModel]:
     graph = rt.Graph()
     graph._create_node(name="source")
     graph._create_node(
@@ -121,7 +121,7 @@ def test_binding_location_changes_without_resetting_inlets(
     "first: int = 9, second: int = 2",
 ])
 def test_metadata_change_updates_inlet_without_reset(
-    module: rt.InlineScriptModule, events: list[tuple[object, ...]], parameters: str,
+    module: rt.Engine, events: list[tuple[object, ...]], parameters: str,
 ) -> None:
     module.set_script(f"def operation({parameters}): return first + second")
     module.evaluate()
@@ -133,7 +133,7 @@ def test_metadata_change_updates_inlet_without_reset(
     "first: int = 1, middle: int = 0, second: int = 2",
 ])
 def test_inlet_order_or_membership_change_resets_inlets(
-    module: rt.InlineScriptModule, events: list[tuple[object, ...]], parameters: str,
+    module: rt.Engine, events: list[tuple[object, ...]], parameters: str,
 ) -> None:
     module.set_script(f"def operation({parameters}): return first + second")
     module.evaluate()
@@ -141,7 +141,7 @@ def test_inlet_order_or_membership_change_resets_inlets(
 
 
 def test_function_body_change_does_not_change_presentation(
-    module: rt.InlineScriptModule, events: list[tuple[object, ...]],
+    module: rt.Engine, events: list[tuple[object, ...]],
 ) -> None:
     module.set_script("def operation(first: int = 1, second: int = 2): return first - second")
     module.evaluate()
@@ -155,7 +155,7 @@ def test_operator_change_updates_header_without_resetting_identical_inlets(
         return first + second
 
     args, kwargs = (target.resolve().args, target.resolve().kwargs)
-    model._engine.graph._update_node(target, renamed, args, kwargs)
+    model._engine._graph._update_node(target, renamed, args, kwargs)
     assert events == [(
         "nodes", ("target",), (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.BackgroundRole),
     )]
@@ -190,7 +190,7 @@ def test_link_commands_keep_their_own_notifications(
 
 @pytest.mark.parametrize("through_model", [False, True])
 def test_added_and_recreated_nodes_start_with_current_snapshots(
-    model: PyGraphRTGraphModel, module: rt.InlineScriptModule,
+    model: PyGraphRTGraphModel, module: rt.Engine,
     events: list[tuple[object, ...]], through_model: bool,
 ) -> None:
     operator = module.get_operator_by_name("operation")
@@ -199,7 +199,7 @@ def test_added_and_recreated_nodes_start_with_current_snapshots(
         if through_model:
             model.addNode(operator)
         else:
-            model._engine.graph._create_node(operator, name="operation")
+            model._engine._graph._create_node(operator, name="operation")
         node = model.mapToSource("operation")
         assert node is not None
         events.clear()
@@ -210,13 +210,13 @@ def test_added_and_recreated_nodes_start_with_current_snapshots(
         if through_model:
             model.removeNodes(["operation"])
         else:
-            model._engine.graph._delete_node(node)
+            model._engine._graph._delete_node(node)
 
 
 def test_recovery_rebuilds_snapshots_before_next_notification(
     model: PyGraphRTGraphModel, target: rt.NodeRef, events: list[tuple[object, ...]],
 ) -> None:
-    graph = model._engine.graph
+    graph = model._engine._graph
     graph.blockSignals(True)
     try:
         set_inputs(target, first=10, second=4)

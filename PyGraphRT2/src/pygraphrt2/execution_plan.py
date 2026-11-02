@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 
 
+
 @dataclass(frozen=True)
 class NodeStateSnapshot:
     """Captured callable and inputs for one computation."""
@@ -170,6 +171,12 @@ def prepare(
         mapping[node_ref.name()] = node_ref
     return plan, mapping
 
+class NodeExecutionError(Exception):
+    def __init__(self, node_name: str, error: Exception) -> None:
+        self.node_name = node_name
+        self.error = error
+        super().__init__(f"Execution failed for {node_name}: {error}")
+
 def execute(
     plan: dict[str, NodeStateSnapshot]
 ) -> dict[str, Any]:
@@ -194,5 +201,11 @@ def execute(
             key: outputs[val.node_id] if isinstance(val, NodeOutput) else val
             for key, val in snapshot.kwargs.items()
         }
-        outputs[node_name] = snapshot.operator(*args, **kwargs)
+
+        try:
+            outputs[node_name] = snapshot.operator(*args, **kwargs)
+        except Exception as error:
+            raise NodeExecutionError(node_name, error) from error
+
+        
     return outputs

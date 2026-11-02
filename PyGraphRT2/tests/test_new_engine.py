@@ -7,7 +7,7 @@ from pygraphrt2.graph import Graph
 from pygraphrt2.engine import Engine
 
 
-from pygraphrt2.inline_scriptmodule import InlineScriptModule
+from pygraphrt2.inline_scriptmodule import Engine
 from pygraphrt2.async_scriptmodule import AsyncScriptModule
 
 
@@ -50,7 +50,7 @@ async def test_threaded_backend(hello_world):
 
 ## SCRIPT MODULES
 def test_inline_scriptmodule():
-    sm = InlineScriptModule()
+    sm = Engine()
     sm.evaluate()
     assert list(sm.operators()) == []
 

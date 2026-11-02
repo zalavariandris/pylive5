@@ -16,7 +16,7 @@ def engine(qtbot: QtBot) -> Iterator[Engine]:
     engine = Engine()
     engine.set_auto_execute_targets([])
     with qtbot.waitSignal(engine.registry_evaluated):
-        engine.registry.set_script(SOURCE)
+        engine._registry.set_script(SOURCE)
     try:
         yield engine
     finally:
@@ -26,8 +26,8 @@ def engine(qtbot: QtBot) -> Iterator[Engine]:
 def test_resuming_evaluates_latest_script_and_refreshes_targets(
     engine: Engine, qtbot: QtBot,
 ) -> None:
-    operator = engine.registry.get_operator_by_name("answer")
-    node = engine.graph._create_node(operator, kwargs={"value": 9})
+    operator = engine._registry.get_operator_by_name("answer")
+    node = engine._graph._create_node(operator, kwargs={"value": 9})
     with qtbot.waitSignal(engine.nodes_executed):
         engine.set_auto_execute_targets([node])
     engine.set_auto_execute(False)
@@ -36,7 +36,7 @@ def test_resuming_evaluates_latest_script_and_refreshes_targets(
     engine.nodes_executed.connect(outputs.append)
     engine.registry_evaluated.connect(lambda: evaluations.append(True))
 
-    engine.registry.set_script(SOURCE.replace("return value", "return value * 2"))
+    engine._registry.set_script(SOURCE.replace("return value", "return value * 2"))
     assert evaluations == []
     assert outputs == []
 
@@ -50,20 +50,20 @@ def test_resuming_evaluates_latest_script_and_refreshes_targets(
     assert outputs == [{node: 18}]
 
     with qtbot.waitSignal(engine.nodes_executed):
-        engine.graph._update_node(node, operator, kwargs={"value": 10})
+        engine._graph._update_node(node, operator, kwargs={"value": 10})
     assert outputs[-1] == {node: 20}
 
 
 def test_resuming_refreshes_graph_edits_and_targets_changed_while_paused(
     engine: Engine, qtbot: QtBot,
 ) -> None:
-    operator = engine.registry.get_operator_by_name("answer")
-    node = engine.graph._create_node(operator)
+    operator = engine._registry.get_operator_by_name("answer")
+    node = engine._graph._create_node(operator)
     outputs: list[dict[NodeRef, object]] = []
     engine.nodes_executed.connect(outputs.append)
     engine.set_auto_execute(False)
 
-    engine.graph._update_node(node, operator, kwargs={"value": 11})
+    engine._graph._update_node(node, operator, kwargs={"value": 11})
     engine.set_auto_execute_targets([node])
     assert outputs == []
 
@@ -75,12 +75,12 @@ def test_resuming_refreshes_graph_edits_and_targets_changed_while_paused(
 def test_watching_a_previously_invalidated_node_schedules_execution(
     engine: Engine, qtbot: QtBot,
 ) -> None:
-    operator = engine.registry.get_operator_by_name("answer")
-    node = engine.graph._create_node(operator)
+    operator = engine._registry.get_operator_by_name("answer")
+    node = engine._graph._create_node(operator)
     outputs: list[dict[NodeRef, object]] = []
     engine.nodes_executed.connect(outputs.append)
 
-    engine.graph._update_node(node, operator, kwargs={"value": 12})
+    engine._graph._update_node(node, operator, kwargs={"value": 12})
     assert outputs == []
 
     with qtbot.waitSignal(engine.nodes_executed):
@@ -111,9 +111,9 @@ def test_target_changes_execute_only_newly_included_nodes(
     updated: list[str] | None,
     expected: set[str],
 ) -> None:
-    operator = engine.registry.get_operator_by_name("answer")
+    operator = engine._registry.get_operator_by_name("answer")
     nodes = {
-        name: engine.graph._create_node(operator, name=name)
+        name: engine._graph._create_node(operator, name=name)
         for name in ("first", "second")
     }
     if initial is None or initial:
@@ -155,9 +155,9 @@ def test_new_targets_share_one_execution_of_their_dependency(
         calls.append("triple")
         return value * 3
 
-    source_node = engine.graph._create_node(source)
-    double_node = engine.graph._create_node(double, args=(source_node,))
-    triple_node = engine.graph._create_node(triple, args=(source_node,))
+    source_node = engine._graph._create_node(source)
+    double_node = engine._graph._create_node(double, args=(source_node,))
+    triple_node = engine._graph._create_node(triple, args=(source_node,))
     outputs: list[dict[NodeRef, object]] = []
     engine.nodes_executed.connect(outputs.append)
 
@@ -170,7 +170,7 @@ def test_new_targets_share_one_execution_of_their_dependency(
 
 
 def test_closed_engine_does_not_execute_when_configuration_changes(engine: Engine) -> None:
-    node = engine.graph._create_node(engine.registry.get_operator_by_name("answer"))
+    node = engine._graph._create_node(engine._registry.get_operator_by_name("answer"))
     outputs: list[dict[NodeRef, object]] = []
     evaluations: list[bool] = []
     engine.nodes_executed.connect(outputs.append)
@@ -189,8 +189,8 @@ def test_closed_engine_does_not_execute_when_configuration_changes(engine: Engin
 def test_invalidation_observers_run_before_automatic_execution(
     engine: Engine, qtbot: QtBot, change: str,
 ) -> None:
-    operator = engine.registry.get_operator_by_name("answer")
-    node = engine.graph._create_node(operator)
+    operator = engine._registry.get_operator_by_name("answer")
+    node = engine._graph._create_node(operator)
     with qtbot.waitSignal(engine.nodes_executed):
         engine.set_auto_execute_targets([node])
     events: list[str] = []
@@ -205,10 +205,10 @@ def test_invalidation_observers_run_before_automatic_execution(
 
     with qtbot.waitSignal(engine.nodes_executed):
         if change == "graph":
-            engine.graph._update_node(node, operator, kwargs={"value": 11})
+            engine._graph._update_node(node, operator, kwargs={"value": 11})
             expected = 11
         else:
-            engine.registry.set_script(SOURCE.replace("return value", "return value * 2"))
+            engine._registry.set_script(SOURCE.replace("return value", "return value * 2"))
             expected = 14
 
     assert events == ["invalidated", "executed"]

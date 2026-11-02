@@ -121,19 +121,19 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._operator_parameters_cache: dict[Callable[..., Any], Mapping[str, rt2.ParameterData]] = {}
         self._nodes: dict[NodeName, _NodeShadow] = {
             node.name(): self._make_node_shadow(node)
-            for node in self._engine.graph.nodes()
+            for node in self._engine.nodes()
         }
 
         self._connections = [
-            (self._engine.graph.nodes_added, self._on_rt_nodes_added),
-            (self._engine.graph.nodes_removed, self._on_rt_nodes_removed),
-            (self._engine.graph.nodes_changed, self._on_rt_nodes_changed),
-            (self._engine.registry.operators_added, self._on_registry_changed),
-            (self._engine.registry.operators_removed, self._on_registry_changed),
-            (self._engine.registry.operators_changed, self._on_registry_changed),
-            (self._engine.nodes_invalidated, self._on_invalidated),
-            (self._engine.nodes_executed, self._on_executed),
-            (self._engine.execution_failed, self._on_failed),
+            (self._engine.nodes_added, self._on_rt_nodes_added),
+            (self._engine.nodes_removed, self._on_rt_nodes_removed),
+            (self._engine.nodes_changed, self._on_rt_nodes_changed),
+            (self._engine.operators_added, self._on_registry_changed),
+            (self._engine.operators_removed, self._on_registry_changed),
+            (self._engine.operators_changed, self._on_registry_changed),
+            (self._engine.nodes_invalidated, self._on_nodes_invalidated),
+            (self._engine.nodes_executed, self._on_nodes_executed),
+            (self._engine.execution_failed, self._on_execution_failed),
         ]
         for signal, slot in self._connections:
             signal.connect(slot)
@@ -142,7 +142,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         if self._closed:
             return
         self._operator_parameters_cache.clear()
-        self._on_rt_nodes_changed(self._engine.graph.nodes())
+        self._on_rt_nodes_changed(self._engine.nodes())
 
     @staticmethod
     def _operator_name(operator: Callable[..., Any] | None) -> str | None:
@@ -268,7 +268,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             )
 
     @Slot(dict)
-    def _on_executed(self, outputs: dict[rt2.NodeRef, object|None]) -> None:
+    def _on_nodes_executed(self, outputs: dict[rt2.NodeRef, object|None]) -> None:
         if self._closed:
             return
 
@@ -291,7 +291,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 (self.OutputRole, NodeDataRole.TrailingRole, Qt.ItemDataRole.ForegroundRole),
             )
 
-    def _on_invalidated(self, nodes: list[rt2.NodeRef]) -> None:
+    def _on_nodes_invalidated(self, nodes: list[rt2.NodeRef]) -> None:
         if self._closed:
             return
         changed: list[NodeName] = []
@@ -303,26 +303,43 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 changed.append(name)
         self._notify_outputs_changed(changed)
 
-    def _on_failed(self, error: Exception) -> None:
+    def _on_execution_failed(self, error: Exception) -> None:
         if self._closed:
             return
-        existing = set(self._engine.graph.nodes())
+        
+        # existing = set(self._engine.nodes())
+
         if isinstance(error, ExecutionFailure):
-            roots = set(error.targets)
-            if error.node is not None:
-                roots.add(error.node)
+            node = error.node
             failure = error.error
+            if node is not None and (name := self.mapFromSource(node)):
+                self._errors[name] = failure
+                self._notify_outputs_changed([name])
         else:
-            roots = existing
-            failure = error
-        affected: set[rt2.NodeRef] = set()
-        for node in roots & existing:
-            affected.update(self._engine.graph.descendants(node))
-        names = [node.name() for node in self._engine.graph.nodes() if node in affected]
-        for name in names:
-            self._outputs.pop(name, None)
-            self._errors[name] = failure
-        self._notify_outputs_changed(names)
+            # For non-ExecutionFailure errors, we might want to handle them differently
+            # For now, just print the error
+            print("Execution failed with error:", error)
+
+        # if isinstance(error, ExecutionFailure):
+        #     roots = set(error.targets)
+        #     if error.node is not None:
+        #         roots.add(error.node)
+        #     failure = error.error
+        # else:
+        #     roots = existing
+        #     failure = error
+
+        # affected: set[rt2.NodeRef] = set()
+        # for node in roots & existing:
+        #     affected.update(self._engine._graph.descendants(node))
+
+        # names = [node.name() for node in self._engine._graph.nodes() if node in affected]
+
+        # for name in names:
+        #     self._outputs.pop(name, None)
+        #     self._errors[name] = failure
+
+        # self._notify_outputs_changed(names)
 
     def close(self) -> None:
         if self._closed:
@@ -355,7 +372,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         Call after a failed mutation has unwound, not from a mutation signal handler.
         """
-        node_names = {node.name() for node in self._engine.graph.nodes()}
+        node_names = {node.name() for node in self._engine._graph.nodes()}
         positions = {name: position for name, position in self._positions.items()
                      if name in node_names}
         # Recovery deliberately abandons notifications left open by a failed edit.
@@ -365,7 +382,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._positions = defaultdict(lambda: (0.0, 0.0), positions)
         self._nodes = {
             node_ref.name(): self._make_node_shadow(node_ref)
-            for node_ref in self._engine.graph.nodes()
+            for node_ref in self._engine._graph.nodes()
         }
         self._endResetModel()
 
@@ -373,7 +390,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def mapToSource(self, node_name:NodeName)->rt2.NodeRef|None:
         # todo: consider caching node references by name for faster lookup
         # find noderef by the name
-        for node_ref in self._engine.graph.nodes():
+        for node_ref in self._engine._graph.nodes():
             if node_ref.name() == node_name:
                 return node_ref
         return None
@@ -387,7 +404,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def nodes(self)->Iterable[NodeName]: # type: ignore
         return [
             node_ref.name()
-            for node_ref in self._engine.graph.nodes()
+            for node_ref in self._engine._graph.nodes()
         ]
 
     @override
@@ -638,7 +655,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
     @override
     def links(self)->Iterable[DirectionalLinkId]:
-        for node_ref in self._engine.graph.nodes():
+        for node_ref in self._engine._graph.nodes():
             yield from self.__node_input_links(node_ref)
 
     @override
@@ -718,7 +735,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         # Runtime notifications refresh the graph and all its adapters.
         node_state = node_rt.resolve()
-        self._engine.graph._update_node(node_rt, node_state.operator, args, kwargs)
+        self._engine._graph._update_node(node_rt, node_state.operator, args, kwargs)
         return True
 
     @override
@@ -756,7 +773,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._beginRemoveLinks(requested)
         try:
             for node, operator, args, kwargs in updates:
-                self._engine.graph._update_node(node, operator, args, kwargs)
+                self._engine._graph._update_node(node, operator, args, kwargs)
         finally:
             self._endRemoveLinks()
         return True
@@ -772,7 +789,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         try:
             for node in refs:
                 assert node is not None
-                self._engine.graph._delete_node(node)
+                self._engine._graph._delete_node(node)
                 name = node.name()
                 self._nodes.pop(name, None)
                 self._positions.pop(name, None)
@@ -786,13 +803,18 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         source_ref = self.mapToSource(source)
         if target_ref is None or source_ref is None:
             raise ValueError("Both link nodes must exist")
+        
         if outlet not in self.outlets(source) or inlet not in self.inlets(target):
             raise ValueError("Both link sockets must exist")
+        
         link = (source, outlet, target, inlet)
+
         if link in set(self.links()):
             return
-        if target_ref in self._engine.graph.ancestors(source_ref):
+        
+        if target_ref in self._engine._graph.ancestors(source_ref):
             raise ValueError("A link cannot create a cycle")
+        
         state = target_ref.resolve()
         location = self.inletData(target, inlet, InputDataRole.InputLocationRole)
         args, kwargs = list(state.args), dict(state.kwargs)
@@ -802,7 +824,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             kwargs[location] = source_ref
         self._beginAddLinks([link])
         try:
-            self._engine.graph._update_node(target_ref, state.operator, tuple(args), kwargs)
+            self._engine._graph._update_node(target_ref, state.operator, tuple(args), kwargs)
         finally:
             self._endAddLinks()
 
@@ -811,11 +833,11 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         position: QPointF|None, in scene coordinates"""
         assert isinstance(operator, rt2.ScriptOperatorRef), f"operator must be an instance of AbstractOperator, got: {operator}"
         new_node_name = operator.name()
-        node_names = [ref.name() for ref in self._engine.graph.nodes()]
+        node_names = [ref.name() for ref in self._engine._graph.nodes()]
         unique_name = UniqueNameGenerator(existing_names=node_names)(new_node_name)
         
         self._beginAddNodes([unique_name])
-        new_node_ref = self._engine.graph._create_node(operator, name=unique_name)
+        new_node_ref = self._engine._graph._create_node(operator, name=unique_name)
         self._nodes[new_node_ref.name()] = self._make_node_shadow(new_node_ref)
         if position is not None:
             self._positions[new_node_ref.name()] = position.x(), position.y()

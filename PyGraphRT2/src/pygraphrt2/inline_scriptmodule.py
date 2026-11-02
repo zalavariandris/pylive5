@@ -39,10 +39,10 @@ class ScriptOperatorRef:
     while it is unavailable; assigning None to a node explicitly unbinds it.
     """
 
-    _module: 'InlineScriptModule'
+    _module: 'Engine'
     _name: str
 
-    def module(self) -> 'InlineScriptModule':
+    def module(self) -> 'Engine':
         return self._module
 
     def name(self) -> str:

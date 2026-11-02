@@ -11,9 +11,12 @@ from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .relations import ManyToOneRelation
 
 from .execution_plan import prepare
+from .execution_plan import NodeExecutionError
+from .exceptions import ExecutionFailure
+
 
 class Engine(QObject):
-    preface_changed = Signal(list)
+    script_changed = Signal(str)
 
     operators_added = Signal(list)
     operators_removed = Signal(list)
@@ -28,7 +31,7 @@ class Engine(QObject):
     registry_invalidated = Signal()
     registry_evaluated = Signal()
     registry_failed = Signal(Exception)
-    
+
     _evaluation_finished = Signal(int, object)
     _execution_finished = Signal(int, object, object)
 
@@ -38,10 +41,10 @@ class Engine(QObject):
         registry: InlineScriptModule | None = None
     ) -> None:
         super().__init__()
-        self.graph = graph if graph is not None else Graph()
-        self.registry = registry if registry is not None else InlineScriptModule()
+        self._graph = graph if graph is not None else Graph()
+        self._registry = registry if registry is not None else InlineScriptModule()
 
-        self._backend = ThreadedBackend(self.graph)
+        self._backend = ThreadedBackend(self._graph)
         self._closed = False
         self._evaluation_id = 0
         self._evaluation_pending = False
@@ -59,23 +62,23 @@ class Engine(QObject):
         )
         self._operator_to_nodes = ManyToOneRelation[NodeRef, ScriptOperatorRef]()
         self._preserve_operator_bindings: set[NodeRef] = set()
-        self._sync_node_operator_mappings(self.graph.nodes())
+        self._sync_node_operator_mappings(self._graph.nodes())
         self._connections = [
-            (self.graph.nodes_added, self._on_nodes_changed),
-            (self.graph.nodes_changed, self._on_nodes_changed),
-            (self.graph.nodes_removed, self._remove_node_operator_mappings),
-            (self.graph.nodes_removed, self._prune_auto_execution_targets),
-            (self.registry.registry_invalidated, self.registry_invalidated.emit),
-            (self.registry.registry_invalidated, self._auto_evaluate_registry),
+            (self._graph.nodes_added, self._on_nodes_changed),
+            (self._graph.nodes_changed, self._on_nodes_changed),
+            (self._graph.nodes_removed, self._remove_node_operator_mappings),
+            (self._graph.nodes_removed, self._prune_auto_execution_targets),
+            (self._registry.registry_invalidated, self.registry_invalidated.emit),
+            (self._registry.registry_invalidated, self._auto_evaluate_registry),
 
         ]
         self._connections.extend([
-            (self.graph.nodes_added, self.nodes_added.emit),
-            (self.graph.nodes_changed, self.nodes_changed.emit),
-            (self.graph.nodes_removed, self.nodes_removed.emit),
-            (self.registry.operators_added, self.operators_added.emit),
-            (self.registry.operators_removed, self.operators_removed.emit),
-            (self.registry.operators_changed, self.operators_changed.emit)
+            (self._graph.nodes_added, self.nodes_added.emit),
+            (self._graph.nodes_changed, self.nodes_changed.emit),
+            (self._graph.nodes_removed, self.nodes_removed.emit),
+            (self._registry.operators_added, self.operators_added.emit),
+            (self._registry.operators_removed, self.operators_removed.emit),
+            (self._registry.operators_changed, self.operators_changed.emit)
         ])
         for signal, slot in self._connections:
             signal.connect(slot)
@@ -84,21 +87,27 @@ class Engine(QObject):
         self._auto_execute = True
         self._auto_execute_targets: set[NodeRef] | None = None
 
-    def set_preface(self, script:str):
-        self.registry.set_script(script)
-        self.preface_changed.emit()
+    def set_script(self, script:str):
+        self._registry.set_script(script)
+        self.script_changed.emit(script)
 
-    def preface(self) -> str:
-        return self.registry.get_script()
+    def get_script(self) -> str:
+        return self._registry.get_script()
 
-    def operator(self, name: str) -> ScriptOperatorRef | None:
-        return self.registry.get_operator_by_name(name)
+    def operators(self) -> list[ScriptOperatorRef]:
+        return self._registry.operators()
+
+    def get_operator_by_name(self, name: str) -> ScriptOperatorRef | None:
+        return self._registry.get_operator_by_name(name)
+
+    def nodes(self) -> list[NodeRef]:
+        return self._graph.nodes()
 
     def add_node(self, operator: ScriptOperatorRef, *args, **kwargs):
-        return self.graph.add_node(operator, *args, **kwargs)
+        return self._graph.add_node(operator, *args, **kwargs)
 
     def remove_node(self, node: NodeRef) -> None:
-        self.graph.remove_node(node)
+        self._graph.remove_node(node)
 
     def _on_operators_changed(self, operators: list[ScriptOperatorRef]) -> None:
         print("Operators changed:", [op.name() for op in operators])
@@ -114,7 +123,7 @@ class Engine(QObject):
                 state = node.resolve()
                 self._preserve_operator_bindings.add(node)
                 try:
-                    self.graph._update_node(
+                    self._graph._update_node(
                         node,
                         func=None,
                         args=state.args,
@@ -130,7 +139,7 @@ class Engine(QObject):
                 binding = self._operator_to_nodes.parent_of(node)
                 if binding is None:
                     continue
-                self.graph._update_node(
+                self._graph._update_node(
                     node,
                     func=binding,
                     args=state.args,
@@ -169,10 +178,10 @@ class Engine(QObject):
     def _invalidate_descendants(self, nodes: list[NodeRef]) -> None:
         affected: set[NodeRef] = set()
         for node in nodes:
-            affected.update(self.graph.descendants(node))
+            affected.update(self._graph.descendants(node))
 
         invalidated = [
-            node for node in self.graph.nodes()
+            node for node in self._graph.nodes()
             if node in affected
         ]
 
@@ -210,7 +219,7 @@ class Engine(QObject):
         evaluation_id = self._evaluation_id
 
         try:
-            future = self._backend.evaluate(self.registry.get_script(), name="<registry>")
+            future = self._backend.evaluate(self._registry.get_script(), name="<registry>")
         except Exception as error:
             future = Future()
             future.set_exception(error)
@@ -239,10 +248,10 @@ class Engine(QObject):
         try:
             functions = future.result()
         except Exception as error:
-            self.registry._apply_functions({}, error)
+            self._registry._apply_functions({}, error)
             if self._closed or evaluation_id != self._evaluation_id:
                 return
-            self._invalidate_descendants(self.graph.nodes())
+            self._invalidate_descendants(self._graph.nodes())
             if self._closed or evaluation_id != self._evaluation_id:
                 return
             self._evaluation_pending = False
@@ -252,7 +261,7 @@ class Engine(QObject):
 
         # Applying functions emits operator changes. Keep collecting their
         # execution targets until every binding has been updated.
-        self.registry._apply_functions(functions, "VALID")
+        self._registry._apply_functions(functions, "VALID")
         if self._closed or evaluation_id != self._evaluation_id:
             return
         self.registry_evaluated.emit()
@@ -278,7 +287,7 @@ class Engine(QObject):
         execution_id = self._execution_id
 
         try:
-            plan, mapping = prepare(self.graph, targets)
+            plan, mapping = prepare(self._graph, targets)
             # Workers use captured callables, never the live GUI registry.
             for name, snapshot in plan.items():
                 if isinstance(snapshot.operator, ScriptOperatorRef):
@@ -312,6 +321,9 @@ class Engine(QObject):
 
         try:
             plan_outputs = future.result()
+        except NodeExecutionError as error:
+            node = mapping[error.node_name]
+            self.execution_failed.emit(ExecutionFailure(node, error.error))
         except Exception as error:
             self.execution_failed.emit(error)
         else:
@@ -354,7 +366,7 @@ class Engine(QObject):
             return  # Every node was already watched.
 
         new_targets = [
-            node for node in self.graph.nodes()
+            node for node in self._graph.nodes()
             if node not in previous and (updated is None or node in updated)
         ]
         if new_targets:

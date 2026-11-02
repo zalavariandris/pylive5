@@ -160,7 +160,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     assert window._node_tree_view.isVisible()
     
     # Check the displayed result and the document output.
-    viewer:Viewer = window._viewer
+    viewer:Viewer = window._outputviewer
     assert viewer.currentRoot() is "helloworld", f"The current node should be 'helloworld' got:{viewer.currentRoot()}"
     assert viewer._body_widget._label.text() == "hello from userflow"
     qtbot.wait(WAIT_TIME_MS)
@@ -215,7 +215,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     qtbot.wait(WAIT_TIME_MS)
 
     # Check the displayed result and the document output.
-    viewer = window._viewer
+    viewer = window._outputviewer
     label = viewer._body_widget._label
     qtbot.waitUntil(lambda: label.text() == "Hello Mása!")
     assert label.isVisible()
@@ -238,7 +238,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
     qtbot.wait(WAIT_TIME_MS)
 
     # Check the displayed result and the document output.
-    viewer = window._viewer
+    viewer = window._outputviewer
     label = viewer._body_widget._label
     qtbot.waitUntil(lambda: label.text() == "Hey Mása!")
     assert label.isVisible()

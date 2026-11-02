@@ -153,6 +153,25 @@ class TextEditCompleter(QCompleter):
 		Updates the completion prefix and shows the popup if necessary.
 		"""
 		# prefix = self.textUnderCursor()
+		editor = self.widget()
+
+		if isinstance(editor, QPlainTextEdit):
+			cursor = editor.textCursor()
+			cursor.movePosition(
+				QTextCursor.MoveOperation.StartOfBlock,
+				QTextCursor.MoveMode.KeepAnchor,
+			)
+			text_before_cursor = cursor.selectedText()
+			last_character = text_before_cursor[-1:]
+
+			should_show = (
+				last_character.isalnum()
+				or last_character in {"_", "."}
+			)
+
+			if not should_show:
+				self.popup().hide()
+				return
 
 		def IsLineEmpty():
 			match self.widget():

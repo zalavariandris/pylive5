@@ -151,7 +151,7 @@ def test_result_label_change_remeasures_only_the_changed_node(
     render(view)
     old_cache = dict(view._node_item_cache)
     node = model.mapToSource("second")
-    model._on_failed(ExecutionFailure(node, ValueError("A much longer error label")))
+    model._on_execution_failed(ExecutionFailure(node, ValueError("A much longer error label")))
 
     rect = view._nodeSceneRect(view._nodeStyleOption("second"), "second")
     assert rect.width() > old_cache["second"].bounding_rect.width()

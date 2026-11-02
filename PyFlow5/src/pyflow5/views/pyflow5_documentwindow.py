@@ -123,7 +123,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._node_inspector.setLabelDelegate(NodeInputLabelDelegate(parent=self))
 
         # Output Viewer
-        self._viewer = OutputViewer(self)
+        self._outputviewer = OutputViewer(self)
 
         # LAYOUT
         ## Graph+Inspector panel
@@ -146,7 +146,7 @@ class PyFlow5DocumentWindow(QWidget):
 
         ## Right Tabs
         self._right_tabwidget = QTabWidget(self)
-        self._right_tabwidget.addTab(self._viewer, "Viewer")
+        self._right_tabwidget.addTab(self._outputviewer, "Viewer")
         self._right_tabwidget.addTab(self._node_inlet_tree_view, "Node Inlets")
 
         ## Main Splitter
@@ -193,7 +193,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._script_editor.setDocument(document.script_document)
         self._graph_view.setModel(document.graph_model)
         self._node_inlet_tree_view.setModel(document.node_inlet_tree_adapter)
-        self._viewer.setModel(document.node_inlet_tree_adapter)
+        self._outputviewer.setModel(document.node_inlet_tree_adapter)
         self._node_inspector.setModel(document.node_inlet_tree_adapter)
         self._node_inlet_tree_view.expandAll()
 
@@ -206,7 +206,7 @@ class PyFlow5DocumentWindow(QWidget):
         self._selection_models.append(self.node_inlet_tree_selection_adapter)
         self.node_inlet_tree_selection_adapter.setSourceSelection(self.graphselection_model)
         self._node_inlet_tree_view.setSelectionModel(self.node_inlet_tree_selection_adapter)
-        self._viewer.setSelectionModel(self.node_inlet_tree_selection_adapter)
+        self._outputviewer.setSelectionModel(self.node_inlet_tree_selection_adapter)
         self._node_inspector.setSelectionModel(self.node_inlet_tree_selection_adapter)
         self._graph_view.setSelectionModel(self.graphselection_model)
         self.updateWindowTitle()
@@ -399,8 +399,8 @@ class PyFlow5DocumentWindow(QWidget):
         # Destroy field editors while their delegates and models are still alive.
         self._node_inspector.setSelectionModel(None)
         self._node_inspector.setModel(None)
-        self._viewer.setSelectionModel(None)
-        self._viewer.setModel(None)
+        self._outputviewer.setSelectionModel(None)
+        self._outputviewer.setModel(None)
         self._node_inlet_tree_view.setModel(None)
         self._module_operator_tree_view.setModel(None)
         self._graph_view.setSelectionModel(None)

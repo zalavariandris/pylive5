@@ -65,13 +65,13 @@ def test_double_click_and_operator_selection_create_visible_nodes(
 def test_created_node_survives_document_reload(editor: PyFlow5DocumentWindow) -> None:
     document = editor.document()
     model = document.graph_model
-    operator = document._engine.registry.get_operator_by_name("example")
+    operator = document._engine._registry.get_operator_by_name("example")
     model.addNode(operator, QPointF(123, 234))
 
     # Updating a created node must find its snapshot and notify the adapters.
     node = model.mapToSource("example")
     assert node is not None
-    document._engine.graph._update_node(node, operator, (), {"value": 9})
+    document._engine._graph._update_node(node, operator, (), {"value": 9})
 
     restored = PyFlowDocument.deserialize(document.serialize())
     try:
