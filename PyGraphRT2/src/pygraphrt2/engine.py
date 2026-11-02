@@ -27,6 +27,8 @@ class Engine(QObject):
     nodes_changed = Signal(list)
 
     nodes_invalidated = Signal(list)
+    evaluation_pending_changed = Signal()
+    execution_pending_changed = Signal()
     nodes_executed = Signal(dict)
     execution_failed = Signal(Exception)
     registry_invalidated = Signal()
@@ -55,6 +57,7 @@ class Engine(QObject):
         self._pending_targets: set[NodeRef] = set()
         self._execution_id = 0
         self._execution_future: Future[dict[str, Any]] | None = None
+        self._executing_nodes: set[NodeRef] = set()
         self._evaluation_finished.connect(
             self._on_evaluation_finished,
             Qt.ConnectionType.QueuedConnection,
@@ -91,6 +94,14 @@ class Engine(QObject):
         # auto evaluate and execution flags
         self._auto_execute = True
         self._auto_execute_targets: set[NodeRef] | None = None
+
+    def evaluation_pending(self) -> bool:
+        """Whether script evaluation is queued, running, or being applied."""
+        return self._evaluation_pending
+
+    def pending_nodes(self) -> frozenset[NodeRef]:
+        """Snapshot of requested work, including targets waiting for evaluation."""
+        return frozenset(self._executing_nodes | self._pending_targets)
 
     def set_script(self, script:str):
         self._registry.set_script(script)
@@ -143,6 +154,10 @@ class Engine(QObject):
                 state = node.resolve()
                 binding = self._operator_to_nodes.parent_of(node)
                 if binding is None:
+                    continue
+                if state.operator is binding:
+                    # Loading resolves an existing binding without editing the graph.
+                    self._invalidate_descendants([node])
                     continue
                 self._graph._update_node(
                     node,
@@ -207,11 +222,17 @@ class Engine(QObject):
             self._evaluation_future.cancel()
             self._evaluation_future = None
 
-    def _invalidate_execution(self) -> None:
+    def _invalidate_execution(self) -> int:
         self._execution_id += 1
+        execution_id = self._execution_id
+        had_pending_execution = bool(self._executing_nodes)
         if self._execution_future is not None:
             self._execution_future.cancel()
             self._execution_future = None
+        self._executing_nodes.clear()
+        if had_pending_execution:
+            self.execution_pending_changed.emit()
+        return execution_id
 
     def evaluate_registry(self) -> None:
         """Evaluate asynchronously, deferring execution until functions are applied."""
@@ -219,9 +240,12 @@ class Engine(QObject):
             return
 
         self._invalidate_evaluation()
-        self._invalidate_execution()
         self._evaluation_pending = True
         evaluation_id = self._evaluation_id
+        self._invalidate_execution()
+        self.evaluation_pending_changed.emit()
+        if self._closed or evaluation_id != self._evaluation_id:
+            return
 
         try:
             future = self._backend.evaluate(self._registry.get_script(), name="<registry>")
@@ -248,6 +272,8 @@ class Engine(QObject):
         if future.cancelled():
             self._evaluation_pending = False
             self._pending_targets.clear()
+            self.evaluation_pending_changed.emit()
+            self.execution_pending_changed.emit()
             return
 
         try:
@@ -261,6 +287,10 @@ class Engine(QObject):
                 return
             self._evaluation_pending = False
             self._pending_targets.clear()
+            self.evaluation_pending_changed.emit()
+            self.execution_pending_changed.emit()
+            if self._closed or evaluation_id != self._evaluation_id:
+                return
             self.registry_failed.emit(error)
             return
 
@@ -278,18 +308,22 @@ class Engine(QObject):
         self._pending_targets.clear()
         if targets:
             self.execute_nodes(*targets)
+        if not self._closed and evaluation_id == self._evaluation_id:
+            self.evaluation_pending_changed.emit()
+            self.execution_pending_changed.emit()
 
     def execute_nodes(self, *targets: NodeRef) -> None:
         if self._closed or not targets:
             return
 
         # Supersede the previous request even if preparing this one fails.
-        self._invalidate_execution()
+        execution_id = self._invalidate_execution()
+        if self._closed or execution_id != self._execution_id:
+            return
         if self._evaluation_pending:
             self._pending_targets.update(targets)
+            self.execution_pending_changed.emit()
             return
-
-        execution_id = self._execution_id
 
         try:
             plan, mapping, initial_outputs = prepare(
@@ -300,10 +334,19 @@ class Engine(QObject):
             # Workers use captured callables, never the live GUI registry.
             for name, snapshot in plan.items():
                 if isinstance(snapshot.operator, ScriptOperatorRef):
-                    plan[name] = replace(snapshot, operator=snapshot.operator.resolve())
+                    try:
+                        operator = snapshot.operator.resolve()
+                    except Exception as error:
+                        raise ExecutionFailure(mapping[name], error, targets) from error
+                    plan[name] = replace(snapshot, operator=operator)
+            self._executing_nodes = {mapping[name] for name in plan}
             future = self._backend.execute_plan(plan, initial_outputs=initial_outputs)
         except Exception as error:
-            self.execution_failed.emit(error)
+            self._executing_nodes.clear()
+            self.execution_pending_changed.emit()
+            if not self._closed and execution_id == self._execution_id:
+                failure = error if isinstance(error, ExecutionFailure) else ExecutionFailure(None, error, targets)
+                self.execution_failed.emit(failure)
             return
         self._execution_future = future
 
@@ -312,6 +355,8 @@ class Engine(QObject):
             self._execution_finished.emit(execution_id, mapping, completed)
 
         future.add_done_callback(on_done)
+        if self._executing_nodes:
+            self.execution_pending_changed.emit()
 
     @Slot(int, object, object)
     def _on_execution_finished(
@@ -325,16 +370,24 @@ class Engine(QObject):
             return
 
         self._execution_future = None
+        executing_nodes = self._executing_nodes
+        self._executing_nodes = set()
         if future.cancelled():
+            self.execution_pending_changed.emit()
             return
 
         try:
             plan_outputs = future.result()
         except NodeExecutionError as error:
             node = mapping[error.node_name]
-            self.execution_failed.emit(ExecutionFailure(node, error.error))
+            failure = ExecutionFailure(node, error.error)
+            self.execution_pending_changed.emit()
+            if not self._closed and execution_id == self._execution_id:
+                self.execution_failed.emit(failure)
         except Exception as error:
-            self.execution_failed.emit(error)
+            self.execution_pending_changed.emit()
+            if not self._closed and execution_id == self._execution_id:
+                self.execution_failed.emit(ExecutionFailure(None, error, tuple(executing_nodes)))
         else:
             outputs = {
                 mapping[name]: value
@@ -342,12 +395,18 @@ class Engine(QObject):
             }
             for node, value in outputs.items():
                 self._cache.save(node, value)
-            self.nodes_executed.emit(outputs)
+            if executing_nodes:
+                self.execution_pending_changed.emit()
+            if not self._closed and execution_id == self._execution_id:
+                self.nodes_executed.emit(outputs)
 
     def _prune_auto_execution_targets(self, nodes: list[NodeRef]) -> None:
+        had_pending_targets = bool(self._pending_targets.intersection(nodes))
         self._pending_targets.difference_update(nodes)
         if self._auto_execute_targets is not None:
             self._auto_execute_targets.difference_update(nodes)
+        if had_pending_targets:
+            self.execution_pending_changed.emit()
 
     def auto_execute(self) -> bool:
         return self._auto_execute
@@ -391,8 +450,10 @@ class Engine(QObject):
         if not self._auto_execute:
             # A source edit also supersedes manual evaluation already in flight.
             self._invalidate_evaluation()
-            self._invalidate_execution()
             self._pending_targets.clear()
+            self._invalidate_execution()
+            self.evaluation_pending_changed.emit()
+            self.execution_pending_changed.emit()
             return
 
         self.evaluate_registry()
@@ -421,8 +482,10 @@ class Engine(QObject):
             return
         self._closed = True
         self._invalidate_evaluation()
-        self._invalidate_execution()
         self._pending_targets.clear()
+        self._invalidate_execution()
+        self.evaluation_pending_changed.emit()
+        self.execution_pending_changed.emit()
         for signal, slot in self._connections:
             signal.disconnect(slot)
         self._connections.clear()

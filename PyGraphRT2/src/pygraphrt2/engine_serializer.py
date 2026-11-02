@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .graph import Graph, NodeRef
-from .inline_scriptmodule import ScriptOperatorRef
+from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .engine import Engine
 
 FORMAT_VERSION = 4
@@ -145,8 +145,7 @@ class GraphDeserializer:
             raise ValueError("Script must contain a source string")
         if script.get("name") is not None and not isinstance(script["name"], str):
             raise ValueError("Script name must be a string or None")
-        engine = Engine()
-        registry = engine._registry
+        registry = InlineScriptModule()
         registry.set_script(script["source"])
 
 
@@ -181,4 +180,6 @@ class GraphDeserializer:
 
             graph._update_node(nodes[name], operator, args, kwargs)
 
-        return Engine(graph=graph, registry=registry)
+        engine = Engine(graph=graph, registry=registry)
+        engine.evaluate_registry()
+        return engine

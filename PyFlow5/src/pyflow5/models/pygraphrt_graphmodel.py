@@ -32,10 +32,11 @@ from qdageditor5.models.abstract_dag_model import (
 )
 
 from ..core.input_roles import InputDataRole
+from ..core.node_execution_state import NodeExecutionState
 
 
 import pygraphrt2 as rt2
-from pygraphrt2.inline_backend import ExecutionFailure
+from pygraphrt2.exceptions import ExecutionFailure
 
 from qdageditor5.core.item_data_roles import (
     NodeDataRole, SocketDataRole
@@ -105,6 +106,7 @@ class _NodeShadow:
 class PyGraphRTGraphModel(AbstractDAGModel):
     OutputRole = Qt.ItemDataRole.UserRole+1
     ResolutionRole = Qt.ItemDataRole.UserRole+2
+    StateRole = Qt.ItemDataRole.UserRole+3
 
     EmptyInputValue = EmptyInletValue
 
@@ -117,7 +119,8 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._positions: dict[NodeName, tuple[float, float]] = defaultdict(lambda: (0.0, 0.0))
 
         self._outputs: dict[NodeName, object|None] = {}
-        self._errors: dict[NodeName, object|None] = {}
+        self._errors: dict[NodeName, Exception] = {}
+        self._node_states: dict[NodeName, NodeExecutionState] = {}
         self._operator_parameters_cache: dict[Callable[..., Any], Mapping[str, rt2.ParameterData]] = {}
         self._nodes: dict[NodeName, _NodeShadow] = {
             node.name(): self._make_node_shadow(node)
@@ -132,11 +135,15 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             (self._engine.operators_removed, self._on_registry_changed),
             (self._engine.operators_changed, self._on_registry_changed),
             (self._engine.nodes_invalidated, self._on_nodes_invalidated),
+            (self._engine.evaluation_pending_changed, self._refresh_node_states),
+            (self._engine.execution_pending_changed, self._refresh_node_states),
             (self._engine.nodes_executed, self._on_nodes_executed),
             (self._engine.execution_failed, self._on_execution_failed),
         ]
         for signal, slot in self._connections:
             signal.connect(slot)
+        # Loading can start evaluation before the document creates this model.
+        self._refresh_node_states(notify=False)
 
     def _on_registry_changed(self, operators: list[rt2.ScriptOperatorRef]) -> None:
         if self._closed:
@@ -204,6 +211,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self.nodesAboutToBeAdded.emit(names)
         for node_ref in nodes:
             self._nodes[node_ref.name()] = self._make_node_shadow(node_ref)
+        self._refresh_node_states(notify=False)
         self.nodesAdded.emit(names)
 
     def _on_rt_nodes_removed(self, nodes: list[rt2.NodeRef]) -> None:
@@ -219,6 +227,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             self._positions.pop(name, None)
             self._outputs.pop(name, None)
             self._errors.pop(name, None)
+            self._node_states.pop(name, None)
         self.nodesRemoved.emit(names)
 
     def _on_rt_nodes_changed(self, nodes: list[rt2.NodeRef]) -> None:
@@ -266,6 +275,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 tuple(changed_headers),
                 (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.BackgroundRole),
             )
+        self._refresh_node_states()
 
     @Slot(dict)
     def _on_nodes_executed(self, outputs: dict[rt2.NodeRef, object|None]) -> None:
@@ -274,74 +284,87 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
         changed_nodenames: list[NodeName] = []
         for node_ref, execution in outputs.items():
-            if node_name := self.mapFromSource(node_ref):
+            node_name = node_ref.name()
+            if node_name in self._nodes:
                 self._errors.pop(node_name, None)
                 self._outputs[node_name] = execution
                 changed_nodenames.append(node_name)
 
-        self.nodesDataChanged.emit(
-            tuple(changed_nodenames),
-            (self.OutputRole, NodeDataRole.TrailingRole, Qt.ItemDataRole.ForegroundRole),
-        )
+        self._refresh_node_states(changed_nodenames)
 
-    def _notify_outputs_changed(self, names: list[NodeName]) -> None:
-        if names:
+    def _operator_error(self, node: rt2.NodeRef) -> Exception | None:
+        operator = self._engine.node_operator(node)
+        if operator is not None and not operator.is_available():
+            state = operator.module().get_state()
+            if isinstance(state, Exception):
+                return state
+            if state is not None:
+                return rt2.OperatorUnavailableError(operator)
+        elif node.resolve().operator is None:
+            return ValueError("Node has no operator")
+        return None
+
+    def _node_error(self, node: rt2.NodeRef) -> Exception | None:
+        if self._node_states.get(node.name()) is NodeExecutionState.EXECUTING:
+            return None
+        error = self._errors.get(node.name())
+        return error if error is not None else self._operator_error(node)
+
+    def _refresh_node_states(
+        self, changed_names: Iterable[NodeName] = (), *, notify: bool = True,
+    ) -> None:
+        """Translate runtime facts into presentation state owned by this model."""
+        if self._closed:
+            return
+        changed = set(changed_names) & self._nodes.keys()
+        pending = self._engine.pending_nodes()
+        evaluating = self._engine.evaluation_pending()
+        for node in self._engine.nodes():
+            name = node.name()
+            # Runtime work can start before nodesAdded reaches this model.
+            if name not in self._nodes:
+                continue
+            if node in pending or (evaluating and self._engine.node_operator(node) is not None):
+                state = NodeExecutionState.EXECUTING
+                self._errors.pop(name, None)
+            elif name in self._errors or self._operator_error(node) is not None:
+                state = NodeExecutionState.ERROR
+            else:
+                state = NodeExecutionState.IDLE
+            if self._node_states.get(name) != state:
+                changed.add(name)
+            self._node_states[name] = state
+        if notify and changed:
             self.nodesDataChanged.emit(
-                tuple(names),
-                (self.OutputRole, NodeDataRole.TrailingRole, Qt.ItemDataRole.ForegroundRole),
+                tuple(name for name in self._nodes if name in changed),
+                (
+                    self.StateRole, self.OutputRole, NodeDataRole.TrailingRole,
+                    Qt.ItemDataRole.BackgroundRole, Qt.ItemDataRole.ForegroundRole,
+                ),
             )
 
     def _on_nodes_invalidated(self, nodes: list[rt2.NodeRef]) -> None:
         if self._closed:
             return
-        changed: set[NodeName] = set()
+        changed: list[NodeName] = []
         for node in nodes:
-            name = node.name()
-            # if name in self._outputs:
-            #     self._outputs.pop(name, None)
-            #     changed.add(name)
-            if name in self._errors:
-                self._errors.pop(name, None)
-                changed.add(name)
-        self._notify_outputs_changed(list(changed))
+            if self._errors.pop(node.name(), None) is not None:
+                changed.append(node.name())
+        self._refresh_node_states(changed)
 
     def _on_execution_failed(self, error: Exception) -> None:
         if self._closed:
             return
-        
-        # existing = set(self._engine.nodes())
-
         if isinstance(error, ExecutionFailure):
-            node = error.node
+            nodes = (error.node,) if error.node is not None else error.targets
             failure = error.error
-            if node is not None and (name := self.mapFromSource(node)):
-                self._errors[name] = failure
-                self._notify_outputs_changed([name])
         else:
-            # For non-ExecutionFailure errors, we might want to handle them differently
-            # For now, just print the error
-            print("Execution failed with error:", error)
-
-        # if isinstance(error, ExecutionFailure):
-        #     roots = set(error.targets)
-        #     if error.node is not None:
-        #         roots.add(error.node)
-        #     failure = error.error
-        # else:
-        #     roots = existing
-        #     failure = error
-
-        # affected: set[rt2.NodeRef] = set()
-        # for node in roots & existing:
-        #     affected.update(self._engine._graph.descendants(node))
-
-        # names = [node.name() for node in self._engine._graph.nodes() if node in affected]
-
-        # for name in names:
-        #     self._outputs.pop(name, None)
-        #     self._errors[name] = failure
-
-        # self._notify_outputs_changed(names)
+            nodes = self._engine.nodes()
+            failure = error
+        names = [node.name() for node in nodes if node.name() in self._nodes]
+        for name in names:
+            self._errors[name] = failure
+        self._refresh_node_states(names)
 
     def close(self) -> None:
         if self._closed:
@@ -354,6 +377,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._nodes.clear()
         self._outputs.clear()
         self._errors.clear()
+        self._node_states.clear()
 
     def _get_operator_parameters(
         self, operator: Callable[..., Any],
@@ -386,6 +410,9 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             node_ref.name(): self._make_node_shadow(node_ref)
             for node_ref in self._engine._graph.nodes()
         }
+        self._errors = {name: error for name, error in self._errors.items() if name in node_names}
+        self._node_states.clear()
+        self._refresh_node_states(notify=False)
         self._endResetModel()
 
     # = Mapping Source =
@@ -424,29 +451,37 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                     return "-NoOp-"
 
             case Qt.ItemDataRole.BackgroundRole:
-                if self._operator_available(node_state.operator):
-                    return None
-                else:
-                    return QColor(200,20,20)
+                match self._node_states.get(node_name, NodeExecutionState.IDLE):
+                    case NodeExecutionState.EXECUTING:
+                        return QColor("yellow")
+                    case NodeExecutionState.ERROR:
+                        return QColor(200, 20, 20)
+                    case _:
+                        return None
 
             case Qt.ItemDataRole.ForegroundRole:
-                if node_name in self._errors:
-                    return QColor("red")
-                else:
-                    return None
+                match self._node_states.get(node_name, NodeExecutionState.IDLE):
+                    case NodeExecutionState.EXECUTING:
+                        return QColor("black")
+                    case NodeExecutionState.ERROR:
+                        return QColor("white")
+                    case _:
+                        return None
+
+            case self.StateRole:
+                return self._node_states.get(node_name, NodeExecutionState.IDLE)
 
             case NodeDataRole.LeadingRole:
                 return f"{node_ref.name()}"
 
             case NodeDataRole.TrailingRole:
-                error = self._errors.get(node_name)
-                if error:=self._errors.get(node_name):
+                if (error := self._node_error(node_ref)) is not None:
                     return str(error)
 
                 return None
 
             case self.OutputRole:
-                if error:=self._errors.get(node_name):
+                if (error := self._node_error(node_ref)) is not None:
                     return str(error)
                 if node_name in self._outputs:
                     return self._outputs[node_name]
@@ -803,6 +838,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 self._positions.pop(name, None)
                 self._outputs.pop(name, None)
                 self._errors.pop(name, None)
+                self._node_states.pop(name, None)
         finally:
             self._endRemoveNodes()
 
@@ -847,6 +883,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         self._beginAddNodes([unique_name])
         new_node_ref = self._engine._graph._create_node(operator, name=unique_name)
         self._nodes[new_node_ref.name()] = self._make_node_shadow(new_node_ref)
+        self._refresh_node_states(notify=False)
         if position is not None:
             self._positions[new_node_ref.name()] = position.x(), position.y()
         self._endAddNodes()

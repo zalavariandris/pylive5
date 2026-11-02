@@ -372,6 +372,13 @@ class DirectionalGraphView5(QFrame):
             if background is not None
             else option.palette.base()
         )
+        if background is not None:
+            # Preserve status colors when selected, with a lighter selection tint.
+            option.palette.setColor(
+                QPalette.ColorRole.Highlight, option.backgroundBrush.color().lighter(115),
+            )
+            # Side labels sit outside the colored body and use the view's theme.
+            option.palette.setBrush(QPalette.ColorRole.PlaceholderText, self.palette().placeholderText())
         return option
 
     def _updateGeometryMetrics(self, metrics: QFontMetrics) -> None:

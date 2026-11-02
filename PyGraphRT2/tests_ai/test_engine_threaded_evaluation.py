@@ -33,7 +33,10 @@ class ControlledBackend(ThreadedBackend):
         self.evaluations.append(future)
         return future
 
-    def execute_plan(self, plan: dict[str, NodeStateSnapshot]) -> Future[dict[str, Any]]:
+    def execute_plan(
+        self, plan: dict[str, NodeStateSnapshot],
+        initial_outputs: dict[str, Any] | None = None,
+    ) -> Future[dict[str, Any]]:
         future: Future[dict[str, Any]] = Future()
         self.plans.append(plan)
         self.executions.append(future)
