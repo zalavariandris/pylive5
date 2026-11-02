@@ -114,10 +114,24 @@ class TextEditCompleter(QCompleter):
 		# 	print(f"text under cursor: '{self.textUnderCursor()}'")
 
 		#superclass already installed an eventfilter on the popup() ListView
+
+		# Handle shortcut override events for the Escape key when the popup is visible.
+		# so it closes, before an ESC shortcut would be processed by the parent widget.
+		# todo: create a test for this behavior
+		if e.type() == QEvent.Type.ShortcutOverride:
+			key_event = cast(QKeyEvent, e)
+			if (
+				(o is self.widget() or o is self.popup())
+				and self.popup().isVisible()
+				and key_event.key() == Qt.Key.Key_Escape
+			):
+				key_event.accept()
+				return True
+			
 		if e.type() == QEvent.Type.KeyPress:
 			e = cast(QKeyEvent, e)
 			# print("currentCompletion:", self.currentCompletion())
-			if o is self.text_edit or o is self.popup():
+			if o is self.widget() or o is self.popup():
 				# Handle key events for autocompletion
 				
 				if e.key() in {Qt.Key.Key_Enter, Qt.Key.Key_Return} and self.popup().isVisible():

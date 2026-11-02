@@ -1,0 +1,61 @@
+{
+    "version": 4,
+    "script": {
+        "name": "<script>",
+        "source": "from vfxops.io import read_image\nfrom vfxops.draw import gradient\nfrom vfxops.color import grade\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.file_sequence import FileSequence\nimport pathlib\n\n\ndef read_video(path: pathlib.Path):\n    seq = FileSequence.from_single_frame(path)\n    def wrapped(frame:int):\n        frame_path = seq.get_path(frame)\n        return read_image(frame_path)\n    return wrapped\n    \ndef blur_video(video, size:float=0.0):\n    def wrapped(frame:int):\n        img = video(frame)\n        return gaussian_blur(img, size)\n    return wrapped\n    \ndef get_image_frame(video, frame:int=0):\n    return video(frame)\n    \n__all__ = [\n    'read_video',\n    'blur_video',\n    'get_image_frame',\n    'read_image',\n    'grade',\n    'gradient',\n    'gaussian_blur'\n]"
+    },
+    "graph": {
+        "nodes": {
+            "read_video": {
+                "operator": "read_video",
+                "kwargs": {
+                    "path": {
+                        "type": "literal",
+                        "value": {
+                            "type": "path",
+                            "value": "assets\\SMPTE_Color_Bars_animation\\SMPTE_Color_Bars_animation_00000.png"
+                        }
+                    }
+                },
+                "position": [
+                    54.0,
+                    -118.0
+                ]
+            },
+            "get_image_frame": {
+                "operator": "get_image_frame",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "gaussian_blur_0"
+                    },
+                    "frame": {
+                        "type": "literal",
+                        "value": 16
+                    }
+                },
+                "position": [
+                    54.0,
+                    122.0
+                ]
+            },
+            "gaussian_blur_0": {
+                "operator": "gaussian_blur",
+                "kwargs": {
+                    "img": {
+                        "type": "node",
+                        "name": "read_video"
+                    },
+                    "size": {
+                        "type": "literal",
+                        "value": 10.0
+                    }
+                },
+                "position": [
+                    54.0,
+                    2.0
+                ]
+            }
+        }
+    }
+}

@@ -105,8 +105,9 @@ class _NodeShadow:
 
 class PyGraphRTGraphModel(AbstractDAGModel):
     OutputRole = Qt.ItemDataRole.UserRole+1
-    ResolutionRole = Qt.ItemDataRole.UserRole+2
-    StateRole = Qt.ItemDataRole.UserRole+3
+    ErrorRole = Qt.ItemDataRole.UserRole+2
+    ResolutionRole = Qt.ItemDataRole.UserRole+3
+    StateRole = Qt.ItemDataRole.UserRole+4
 
     EmptyInputValue = EmptyInletValue
 
@@ -338,8 +339,12 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             self.nodesDataChanged.emit(
                 tuple(name for name in self._nodes if name in changed),
                 (
-                    self.StateRole, self.OutputRole, NodeDataRole.TrailingRole,
-                    Qt.ItemDataRole.BackgroundRole, Qt.ItemDataRole.ForegroundRole,
+                    self.StateRole, 
+                    self.OutputRole, 
+                    self.ErrorRole,
+                    NodeDataRole.TrailingRole,
+                    Qt.ItemDataRole.BackgroundRole, 
+                    Qt.ItemDataRole.ForegroundRole,
                 ),
             )
 
@@ -481,12 +486,15 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 return None
 
             case self.OutputRole:
-                if (error := self._node_error(node_ref)) is not None:
-                    return str(error)
                 if node_name in self._outputs:
                     return self._outputs[node_name]
                 else:
                     return None
+
+            case self.ErrorRole:
+                if (error := self._node_error(node_ref)) is not None:
+                    return error
+                return None
             
             case _:
                 return None

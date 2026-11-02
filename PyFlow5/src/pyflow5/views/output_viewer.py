@@ -13,6 +13,7 @@ class OutputViewer(BaseDetailsView):
     def showCurrentRootEvent(self, index: QModelIndex, roles: list[int] = []):
         relevant_roles = (
             Qt.ItemDataRole.DisplayRole,
+            PyGraphRTGraphModel.ErrorRole,
             Qt.ItemDataRole.EditRole,
             PyGraphRTGraphModel.OutputRole,
         )
@@ -32,8 +33,9 @@ class OutputViewer(BaseDetailsView):
         label_index = index.siblingAtColumn(0)
         self._lock_switch.setText(str(label_index.data(Qt.ItemDataRole.DisplayRole)))
         if not label_index.parent().isValid():
-            # Node outputs belong to column zero's execution role.
-            result = label_index.data(PyGraphRTGraphModel.OutputRole)
+            result = label_index.data(PyGraphRTGraphModel.ErrorRole)
+            if result is None:
+                result = label_index.data(PyGraphRTGraphModel.OutputRole)
         else:
             value_index = label_index.siblingAtColumn(1)
             # EditRole preserves the inlet's Python value.
@@ -43,4 +45,6 @@ class OutputViewer(BaseDetailsView):
         try:
             self._body_widget.display(result)
         except Exception as e:
-            self._body_widget.display(e)
+            import traceback
+            error_traceback = traceback.format_exc()
+            self._body_widget.display(f"{e}\n{error_traceback}")

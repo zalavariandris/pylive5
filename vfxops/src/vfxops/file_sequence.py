@@ -8,6 +8,12 @@ class FileSequence:
         self._first = first
         self._last = last
 
+    def __repr__(self) -> str:
+        return f"<FileSequence pattern='{self.pattern}' first={self.first} last={self.last}>"
+
+    def __str__(self) -> str:
+        return f"{self.pattern} [{self.first}-{self.last}]"
+
     @property
     def first(self) -> int:
         return self._first

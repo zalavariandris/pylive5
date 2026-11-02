@@ -84,7 +84,7 @@ class DisplayWidget(QWidget):
             case DisplayWidget.Markdown():
                 return QTextBrowser(parent=self._stack)
 
-            case Exception():
+            case Exception() as a:
                 label = QLabel("An exception occurred", parent=self._stack)
                 label.setStyleSheet("{color: red; font-weight: bold;}")
                 return label

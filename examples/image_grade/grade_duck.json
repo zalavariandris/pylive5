@@ -2,7 +2,7 @@
     "version": 4,
     "script": {
         "name": "<script>",
-        "source": "from vfxops.io import read_image\nfrom vfxops.draw import gradient\nfrom vfxops.color import grade\nfrom vfxops.filter import gaussian_blur\n\n__all__ = [\n    'read_image',\n    'grade',\n    'gradient',\n    'gaussian_blur'\n]"
+        "source": "from vfxops.io import read_image\nfrom vfxops.draw import gradient\nfrom vfxops.color import grade\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.file_sequence import FileSequence\nimport pathlib\n\n\ndef read_video(path: pathlib.Path):\n    seq = FileSequence.from_single_frame(path)\n    def wrapped(frame:int):\n        frame_path = seq.get_path(frame)\n        return read_image(frame_path)\n    return wrapped\n    \ndef blur_video(video, size:float=0.0):\n    def wrapped(frame:int):\n        img = video(frame)\n        return gaussian_blur(img, size)\n    return wrapped\n    \ndef get_image_frame(video, frame:int=0):\n    return video(frame)\n    \n__all__ = [\n    'read_video',\n    'blur_video',\n    'get_image_frame',\n    'read_image',\n    'grade',\n    'gradient',\n    'gaussian_blur'\n]"
     },
     "graph": {
         "nodes": {
@@ -18,8 +18,8 @@
                     }
                 },
                 "position": [
-                    0.0,
-                    -60.0
+                    -205.77261079631882,
+                    -65.41825430350805
                 ]
             },
             "gaussian_blur": {
@@ -31,12 +31,45 @@
                     },
                     "size": {
                         "type": "literal",
-                        "value": 20.0
+                        "value": 90.0
                     }
                 },
                 "position": [
-                    0.0,
-                    60.0
+                    -193.5236858226533,
+                    92.11874673869303
+                ]
+            },
+            "read_video": {
+                "operator": "read_video",
+                "kwargs": {
+                    "path": {
+                        "type": "literal",
+                        "value": {
+                            "type": "path",
+                            "value": "assets\\SMPTE_Color_Bars_animation\\SMPTE_Color_Bars_animation_00000.png"
+                        }
+                    }
+                },
+                "position": [
+                    -25.023685822653306,
+                    -184.14975378240752
+                ]
+            },
+            "get_image_frame": {
+                "operator": "get_image_frame",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "read_video"
+                    },
+                    "frame": {
+                        "type": "literal",
+                        "value": 16
+                    }
+                },
+                "position": [
+                    87.7263141773467,
+                    6.984496478142773
                 ]
             }
         }

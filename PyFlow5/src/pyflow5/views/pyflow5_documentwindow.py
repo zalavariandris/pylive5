@@ -124,6 +124,7 @@ class PyFlow5DocumentWindow(QWidget):
 
         # Output Viewer
         self._outputviewer = OutputViewer(self)
+        
 
         # LAYOUT
         ## Graph+Inspector panel
@@ -189,6 +190,13 @@ class PyFlow5DocumentWindow(QWidget):
         document.filePathChanged.connect(self.updateWindowTitle)
         document.scriptStateChanged.connect(self._on_script_module_state_changed)
 
+        def _onOutputCurrentNodeChanged(current: QModelIndex, previous: QModelIndex):
+            current_nodename = self.document().node_inlet_tree_adapter.mapToSource(current)
+            previous_nodename = self.document().node_inlet_tree_adapter.mapToSource(previous)
+            self.document().removeAutoExecuteTarget(previous_nodename)
+            self.document().addAutoExecuteTarget(current_nodename)
+        self._outputviewer.currentChanged.connect(_onOutputCurrentNodeChanged)
+
         self._module_operator_tree_view.setModel(document.operators_model)
         self._script_editor.setDocument(document.script_document)
         self._graph_view.setModel(document.graph_model)
@@ -207,6 +215,7 @@ class PyFlow5DocumentWindow(QWidget):
         self.node_inlet_tree_selection_adapter.setSourceSelection(self.graphselection_model)
         self._node_inlet_tree_view.setSelectionModel(self.node_inlet_tree_selection_adapter)
         self._outputviewer.setSelectionModel(self.node_inlet_tree_selection_adapter)
+        
         self._node_inspector.setSelectionModel(self.node_inlet_tree_selection_adapter)
         self._graph_view.setSelectionModel(self.graphselection_model)
         self.updateWindowTitle()
@@ -224,8 +233,15 @@ class PyFlow5DocumentWindow(QWidget):
         if self._document is None:
             return
 
-        targets = [] if current is None else [current]
-        self._document.setAutoExecuteTargets(targets)
+        if previous is current:
+            return
+
+        if previous is not None:
+            self._document.removeAutoExecuteTarget(previous)
+
+        if current is not None:
+            self._document.addAutoExecuteTarget(current)
+
 
     def _replaceDocument(self, document: PyFlowDocument) -> None:
         previous = self._document

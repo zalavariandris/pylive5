@@ -91,9 +91,10 @@ class PyFlowDocument(QObject):
         ]
         for signal, slot in self._connections:
             signal.connect(slot)
-        # self._engine.execute(*self._engine.graph.nodes())
 
-        self._engine.nodes_executed.connect(lambda: print("nodes executed"))
+        self._engine.nodes_executed.connect(lambda nodes: print(f"nodes executed {[node.name() for node in nodes]}"))
+
+        self._auto_execute_targets: list[NodeName] | None = None # keep track of auto-execute targets can contain duplicate noderefs, if used multiple times
 
     def _onScriptChanged(self) -> None:
         source = self.script_document.toPlainText()
@@ -137,6 +138,41 @@ class PyFlowDocument(QObject):
         self._filestat = stat if path is not None else None
         self.filePathChanged.emit(self._filepath)
 
+    def addAutoExecuteTarget(self, node_name: NodeName) -> None:
+        """Add a node to the list of auto-execute targets.
+        note: the same node may appear multiple times.
+        """
+        if self._auto_execute_targets is None:
+            self._auto_execute_targets = []
+        self._auto_execute_targets.append(node_name)
+
+        # update the engine
+        self._engine.set_auto_execute_targets([
+            self.graph_model.mapToSource(name)
+            for name in self._auto_execute_targets 
+            if self.graph_model.mapToSource(name) is not None
+        ])
+
+    def removeAutoExecuteTarget(self, node_name: NodeName) -> None:
+        """Remove a node from the list of auto-execute targets.
+        note:  the same node may appear multiple times, 
+               only removes the first occurrence
+        """
+        if self._auto_execute_targets is None:
+            return
+
+        if node_name not in self._auto_execute_targets:
+            return
+        
+        self._auto_execute_targets.remove(node_name)
+
+        # update the engine
+        self._engine.set_auto_execute_targets([
+            self.graph_model.mapToSource(name)
+            for name in self._auto_execute_targets 
+            if self.graph_model.mapToSource(name) is not None
+        ])
+
     def setAutoExecuteTargets(
         self, node_names: Iterable[NodeName] | None
     ) -> None:
@@ -149,16 +185,16 @@ class PyFlowDocument(QObject):
             return
 
         if node_names is None:
+            self._auto_execute_targets = None
             self._engine.set_auto_execute_targets(None)
             return
-
-        targets: list[rt2.NodeRef] = []
-        for name in node_names:
-            node = self.graph_model.mapToSource(name)
-            if node is not None:
-                targets.append(node)
-
-        self._engine.set_auto_execute_targets(targets)
+        else:
+            self._auto_execute_targets = list(node_names)
+            self._engine.set_auto_execute_targets([
+                self.graph_model.mapToSource(name)
+                for name in self._auto_execute_targets 
+                if self.graph_model.mapToSource(name) is not None
+            ])
 
     def requestNodeExecution(self, node_name: NodeName) -> None:
         node_rt = self.graph_model.mapToSource(node_name)

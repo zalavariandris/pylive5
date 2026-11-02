@@ -202,11 +202,6 @@ def execute(
     """
     Execute the given execution plan on the graph.
 
-    Args:
-        graph: The computation graph.
-        plan: The execution plan mapping node names to their state snapshots.
-        mapping: The mapping from node names to their corresponding NodeRef objects.
-
     Returns:
         A dictionary mapping node names to their computed outputs.
     """
@@ -228,5 +223,5 @@ def execute(
         except Exception as error:
             raise NodeExecutionError(node_name, error) from error
 
-        
+    
     return outputs

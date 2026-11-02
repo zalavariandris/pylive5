@@ -424,8 +424,8 @@ class Engine(QObject):
         self, targets: Iterable[NodeRef] | None
     ) -> None:
         """Watch all nodes with None, or a selection; refresh newly watched nodes."""
-        previous = self._auto_execute_targets
-        updated = None if targets is None else set(targets)
+        previous: set[NodeRef] | None = self._auto_execute_targets
+        updated: set[NodeRef] | None = None if targets is None else set(targets)
         if previous == updated:
             return
 
