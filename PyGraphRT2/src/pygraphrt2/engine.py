@@ -193,7 +193,7 @@ class Engine(QObject):
         # Call directly after notifying observers so their invalidation handlers
         # clear stale outputs before execution publishes fresh results.
         self._auto_execute_invalidated(invalidated)
-
+ 
     # Execution backend
     def _invalidate_evaluation(self) -> None:
         self._evaluation_id += 1
