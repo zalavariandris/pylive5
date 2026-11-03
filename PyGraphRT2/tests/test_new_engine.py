@@ -1,3 +1,4 @@
+from pygraphrt2.inline_backend import InlineBackend
 import pytest
 
 from textwrap import dedent
@@ -6,8 +7,6 @@ from typing import Iterable, Tuple, Any
 from pygraphrt2.graph import Graph
 from pygraphrt2.engine import Engine
 
-
-from pygraphrt2.inline_scriptmodule import Engine
 from pygraphrt2.async_scriptmodule import AsyncScriptModule
 
 
@@ -262,5 +261,18 @@ async def test_engine_with_async_executor_and_scriptmodule():
     await executor.execute(hello_world_node)
 
 
+async def test_engine_subscription():
+    engine = Engine()    
+
+    engine.set_script(dedent("""
+    def hello(name:str, greeting:str="Hello"):
+        return f":{greeting} {name}"
+    """))
+
+    hello_node = engine.add_node(engine.registry.get_operator_by_name("hello"))
+    subscription = engine.subscribe(hello_node, lambda output: print(f"Received output: {output}"))
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    import asyncio
+    asyncio.run(pytest.main([__file__]))

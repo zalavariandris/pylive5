@@ -1,10 +1,13 @@
 from types import ModuleType
 from typing import Any, Iterable, Mapping
 from types import FunctionType
-from collections.abc import Callable
+
 from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import Callable, Hashable
+from contextvars import ContextVar
 
+from .contextual import contextual, is_contextual
 
 
 @dataclass(frozen=True)
@@ -195,33 +198,132 @@ class NodeExecutionError(Exception):
         super().__init__(f"Execution failed for {node_name}: {error}")
 
 
-def execute(
-    plan: dict[str, NodeStateSnapshot],
-    initial_outputs: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    """
-    Execute the given execution plan on the graph.
+type ContextKey = tuple[str, Hashable]
+type ContextStateCallback = Callable[[ContextKey, bool], None]
 
-    Returns:
-        A dictionary mapping node names to their computed outputs.
-    """
-    outputs: dict[str, Any] = (
-        dict(initial_outputs) if initial_outputs is not None else {}
-    )
-    for node_name, snapshot in plan.items():
-        args = [
-            outputs[val.node_id] if isinstance(val, NodeOutput) else val
-            for val in snapshot.args
-        ]
-        kwargs = {
-            key: outputs[val.node_id] if isinstance(val, NodeOutput) else val
-            for key, val in snapshot.kwargs.items()
-        }
+
+@dataclass
+class ExecutionResult:
+    outputs: dict[str, Any]
+    contextual_outputs: dict[ContextKey, Any] = field(default_factory=dict)
+
+
+@dataclass
+class _ContextRuntime:
+    cached_outputs: Mapping[ContextKey, Any]
+    on_context_state_changed: ContextStateCallback | None = None
+    computed_outputs: dict[ContextKey, Any] = field(default_factory=dict)
+
+
+_active_runtime: ContextVar[_ContextRuntime | None] = ContextVar(
+    "pygraphrt2_context_runtime",
+    default=None,
+)
+
+
+def _wrap_contextual(
+    node_name: str,
+    compute: Callable[[Hashable], Any],
+) -> Callable[[Hashable], Any]:
+    def managed(context: Hashable) -> Any:
+        runtime = _active_runtime.get()
+        if runtime is None:
+            raise RuntimeError(
+                "Managed contextual outputs require an active execution"
+            )
 
         try:
-            outputs[node_name] = snapshot.operator(*args, **kwargs)
+            key = (node_name, context)
+
+            if key in runtime.computed_outputs:
+                return runtime.computed_outputs[key]
+
+            if key in runtime.cached_outputs:
+                return runtime.cached_outputs[key]
+
+            notify = runtime.on_context_state_changed
+            if notify is not None:
+                notify(key, True)
+
+            try:
+                value = compute(context)
+                runtime.computed_outputs[key] = value
+                return value
+            finally:
+                if notify is not None:
+                    notify(key, False)
+
+        except NodeExecutionError:
+            raise
         except Exception as error:
             raise NodeExecutionError(node_name, error) from error
 
-    
-    return outputs
+    return contextual(managed)
+
+
+def execute(
+    plan: dict[str, NodeStateSnapshot],
+    initial_outputs: Mapping[str, Any] | None = None,
+    *,
+    initial_contextual_outputs: Mapping[ContextKey, Any] | None = None,
+    on_context_state_changed: ContextStateCallback | None = None,
+) -> ExecutionResult:
+    outputs = dict(initial_outputs) if initial_outputs is not None else {}
+
+    runtime = _ContextRuntime(
+        cached_outputs=(
+            dict(initial_contextual_outputs)
+            if initial_contextual_outputs is not None
+            else {}
+        ),
+        on_context_state_changed=on_context_state_changed,
+    )
+
+    token = _active_runtime.set(runtime)
+
+    try:
+        for node_name, snapshot in plan.items():
+            try:
+                args = [
+                    outputs[value.node_id]
+                    if isinstance(value, NodeOutput)
+                    else value
+                    for value in snapshot.args
+                ]
+
+                kwargs = {
+                    name: (
+                        outputs[value.node_id]
+                        if isinstance(value, NodeOutput)
+                        else value
+                    )
+                    for name, value in snapshot.kwargs.items()
+                }
+
+                if snapshot.operator is None:
+                    raise ValueError("Node has no operator")
+
+                value = snapshot.operator(*args, **kwargs)
+
+                if is_contextual(value):
+                    if not callable(value):
+                        raise TypeError(
+                            "A marked contextual output must be callable"
+                        )
+
+                    value = _wrap_contextual(node_name, value)
+
+                outputs[node_name] = value
+
+            except NodeExecutionError:
+                raise
+            except Exception as error:
+                raise NodeExecutionError(node_name, error) from error
+
+        return ExecutionResult(
+            outputs=outputs,
+            contextual_outputs=runtime.computed_outputs,
+        )
+
+    finally:
+        _active_runtime.reset(token)

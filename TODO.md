@@ -1,5 +1,10 @@
 
 ## Features
+- [ ] consider detecting contextual operators by its return value (or hint)
+      a contextual decorator basically tells the engine, that it should manage the returned calalble cache, 
+      and helps the engine, to report its execution state. If it does not change behaviour, we could simply 
+      check when an operator is executed, then it return a callable, the engine could simply
+- [ ] copy paste nodes in the graph
 - [x] add ndoe cache to PyGraphRT2
 - [ ] try to use the execution_plan in the inline_backend.
       execution_plan probably need to be renamed. it contains utilitiy functions, to evaluate,prepare and execute the engine(registry+graph)
@@ -19,6 +24,10 @@
 - [ ] allow hotreloading python modules
 - [ ] node Execution progress (possibly as simply as using tqdl inside the operator code)
 - [ ] Console, to interact with the nodegraph
+
+## Relevant Libraries
+lazyflow https://ilastik.github.io/lazyflow/
+gaffer/cortex
 
 ## Tests
 - [ ] document open save saveAs, fileHandling

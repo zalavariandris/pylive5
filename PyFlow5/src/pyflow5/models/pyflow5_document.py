@@ -3,7 +3,7 @@ import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Callable, Iterable
 
 from qdageditor5.models.abstract_dag_model import NodeName
 from qtpy.QtCore import QModelIndex, QObject, QPointF, Signal, Property
@@ -58,7 +58,6 @@ class PyFlowDocument(QObject):
 
         # RT
         self._engine = engine or rt2.Engine()
-        self._engine.set_auto_execute_targets([])
         self.script_document: QTextDocument = QTextDocument(self)
         self.script_document.setDocumentLayout(
             QPlainTextDocumentLayout(self.script_document)
@@ -91,10 +90,6 @@ class PyFlowDocument(QObject):
         ]
         for signal, slot in self._connections:
             signal.connect(slot)
-
-        self._engine.nodes_executed.connect(lambda nodes: print(f"nodes executed {[node.name() for node in nodes]}"))
-
-        self._auto_execute_targets: list[NodeName] | None = None # keep track of auto-execute targets can contain duplicate noderefs, if used multiple times
 
     def _onScriptChanged(self) -> None:
         source = self.script_document.toPlainText()
@@ -138,63 +133,21 @@ class PyFlowDocument(QObject):
         self._filestat = stat if path is not None else None
         self.filePathChanged.emit(self._filepath)
 
-    def addAutoExecuteTarget(self, node_name: NodeName) -> None:
-        """Add a node to the list of auto-execute targets.
-        note: the same node may appear multiple times.
-        """
-        if self._auto_execute_targets is None:
-            self._auto_execute_targets = []
-        self._auto_execute_targets.append(node_name)
-
-        # update the engine
-        self._engine.set_auto_execute_targets([
-            self.graph_model.mapToSource(name)
-            for name in self._auto_execute_targets 
-            if self.graph_model.mapToSource(name) is not None
-        ])
-
-    def removeAutoExecuteTarget(self, node_name: NodeName) -> None:
-        """Remove a node from the list of auto-execute targets.
-        note:  the same node may appear multiple times, 
-               only removes the first occurrence
-        """
-        if self._auto_execute_targets is None:
-            return
-
-        if node_name not in self._auto_execute_targets:
-            return
-        
-        self._auto_execute_targets.remove(node_name)
-
-        # update the engine
-        self._engine.set_auto_execute_targets([
-            self.graph_model.mapToSource(name)
-            for name in self._auto_execute_targets 
-            if self.graph_model.mapToSource(name) is not None
-        ])
-
-    def setAutoExecuteTargets(
-        self, node_names: Iterable[NodeName] | None
-    ) -> None:
-        """Set the nodes to be automatically executed by the engine.
-        node_names: Iterable[NodeName] | None
-            if None, all nodes are watched automatically.
-            empty iterable disables auto-execution for all nodes.
-        """
+    def subscribeNode(
+        self, node_name: NodeName, callback: Callable[[Any], None],
+    ) -> rt2.Subscription:
+        """Watch a named node and deliver its output after the graph model updates."""
         if self._closed:
-            return
+            raise RuntimeError("Document is closed")
+        node_ref = self.graph_model.mapToSource(node_name)
+        if node_ref is None:
+            raise KeyError(node_name)
 
-        if node_names is None:
-            self._auto_execute_targets = None
-            self._engine.set_auto_execute_targets(None)
-            return
-        else:
-            self._auto_execute_targets = list(node_names)
-            self._engine.set_auto_execute_targets([
-                self.graph_model.mapToSource(name)
-                for name in self._auto_execute_targets 
-                if self.graph_model.mapToSource(name) is not None
-            ])
+        def on_executed(output: Any) -> None:
+            if not self._closed:
+                callback(output)
+
+        return self._engine.subscribe(node_ref, on_executed)
 
     def requestNodeExecution(self, node_name: NodeName) -> None:
         node_rt = self.graph_model.mapToSource(node_name)

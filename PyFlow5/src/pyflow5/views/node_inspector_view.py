@@ -28,9 +28,8 @@ class NodeInspectorView(BaseDetailsView):
 
     def setModel(self, model: QAbstractItemModel | None) -> None:
         super().setModel(model)
-        self._current_root = QModelIndex()
         self._form_view.setModel(model)
-        self.showCurrentRootEvent(self._current_root)
+        self.showCurrentRootEvent(self.currentRoot())
 
     def showCurrentRootEvent(self, index: QModelIndex, roles: list[int] = [])->None:
         root = self.currentRoot()

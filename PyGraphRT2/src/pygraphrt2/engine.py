@@ -1,19 +1,62 @@
 from concurrent.futures import Future
 from dataclasses import replace
-from typing import Any, Callable, Iterable
+import logging
+from typing import Any, Callable, Iterable, Mapping
 from pygraphrt2.threaded_backend import ThreadedBackend
 
 
-from qtpy.QtCore import Qt, QObject, Signal, Slot
+# class ContextOperator:
+#     def __init__(self, *args, **kwargs) -> None:
+#         ...
+
+#     def compute(self, ctx):
+#         ...
+
+# @graph.node(...)
+# def blur(img, radius):
+#     @graph.context(ctx)
+#     def compute(self, ctx):
+#         ...
+
+#     return compute
+
+
+from qtpy.QtCore import Qt, QObject, QTimer, Signal, Slot
 
 from .graph import Graph, NodeRef
 from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .relations import ManyToOneRelation
 
 from .execution_plan import prepare
-from .execution_plan import NodeExecutionError
+from .execution_plan import ContextKey, ExecutionResult, NodeExecutionError
 from .exceptions import ExecutionFailure
 from .graph_cache import GraphCache
+
+logger = logging.getLogger(__name__)
+
+
+class Subscription:
+    """One registration, independent of other registrations of the same callback."""
+
+    def __init__(
+        self, engine: "Engine", node: NodeRef, callback: Callable[[Any], None],
+    ) -> None:
+        self._engine: Engine | None = engine
+        self._node = node
+        self._callback: Callable[[Any], None] | None = callback
+
+    @property
+    def node(self) -> NodeRef:
+        return self._node
+
+    @property
+    def active(self) -> bool:
+        return self._engine is not None
+
+    def unsubscribe(self) -> None:
+        """Release this registration; repeated calls are harmless."""
+        if self._engine is not None:
+            self._engine._unsubscribe(self)
 
 
 class Engine(QObject):
@@ -37,18 +80,19 @@ class Engine(QObject):
 
     _evaluation_finished = Signal(int, object)
     _execution_finished = Signal(int, object, object)
+    _context_state_changed = Signal(int, object, bool)
 
     def __init__(
         self, 
         graph: Graph | None = None, 
-        registry: InlineScriptModule | None = None
+        registry: InlineScriptModule | None = None,
+        backend: ThreadedBackend | None = None,
     ) -> None:
         super().__init__()
         self._registry = registry if registry is not None else InlineScriptModule()
         self._graph = graph if graph is not None else Graph()
-        
 
-        self._backend = ThreadedBackend(self._graph)
+        self._backend = backend if backend is not None else ThreadedBackend(self._graph)
         self._cache = GraphCache()
         self._closed = False
         self._evaluation_id = 0
@@ -56,14 +100,25 @@ class Engine(QObject):
         self._evaluation_future: Future[dict[str, Callable[..., Any]]] | None = None
         self._pending_targets: set[NodeRef] = set()
         self._execution_id = 0
-        self._execution_future: Future[dict[str, Any]] | None = None
+        self._execution_future: Future[ExecutionResult] | None = None
         self._executing_nodes: set[NodeRef] = set()
+        self._contextual_counts: dict[NodeRef, int] = {}
+        self._auto_execute = True
+        self._subscriptions: dict[NodeRef, list[Subscription]] = {}
+        self._pending_notifications: set[Subscription] = set()
+        self._subscription_timer = QTimer(self)
+        self._subscription_timer.setSingleShot(True)
+        self._subscription_timer.timeout.connect(self._execute_subscriptions)
         self._evaluation_finished.connect(
             self._on_evaluation_finished,
             Qt.ConnectionType.QueuedConnection,
         )
         self._execution_finished.connect(
             self._on_execution_finished,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self._context_state_changed.connect(
+            self._on_context_state_changed,
             Qt.ConnectionType.QueuedConnection,
         )
         self._operator_to_nodes = ManyToOneRelation[NodeRef, ScriptOperatorRef]()
@@ -73,7 +128,7 @@ class Engine(QObject):
             (self._graph.nodes_added, self._on_nodes_changed),
             (self._graph.nodes_changed, self._on_nodes_changed),
             (self._graph.nodes_removed, self._remove_node_operator_mappings),
-            (self._graph.nodes_removed, self._prune_auto_execution_targets),
+            (self._graph.nodes_removed, self._prune_subscriptions),
             (self._registry.registry_invalidated, self.registry_invalidated.emit),
             (self._registry.registry_invalidated, self._auto_evaluate_registry),
             (self._registry.operators_added, self._on_operators_added),
@@ -91,17 +146,17 @@ class Engine(QObject):
         for signal, slot in self._connections:
             signal.connect(slot)
 
-        # auto evaluate and execution flags
-        self._auto_execute = True
-        self._auto_execute_targets: set[NodeRef] | None = None
-
     def evaluation_pending(self) -> bool:
         """Whether script evaluation is queued, running, or being applied."""
         return self._evaluation_pending
 
     def pending_nodes(self) -> frozenset[NodeRef]:
         """Snapshot of requested work, including targets waiting for evaluation."""
-        return frozenset(self._executing_nodes | self._pending_targets)
+        pending = self._executing_nodes | self._pending_targets
+        pending.update(self._contextual_counts)
+        if self._evaluation_pending or self._subscription_timer.isActive():
+            pending.update(node for node in self._subscription_targets() if node not in self._cache)
+        return frozenset(pending)
 
     def set_script(self, script:str):
         self._registry.set_script(script)
@@ -119,14 +174,22 @@ class Engine(QObject):
     def nodes(self) -> list[NodeRef]:
         return self._graph.nodes()
 
-    def add_node(self, operator: ScriptOperatorRef, *args, **kwargs):
-        return self._graph.add_node(operator, *args, **kwargs)
+    def add_node(
+        self,
+        operator: Callable[..., Any] | None,
+        args: Iterable[Any] = (),
+        kwargs: Mapping[str, Any] | None = None,
+        *,
+        name: str | None = None,
+    ) -> NodeRef:
+        return self._graph._create_node(
+            operator, args, kwargs if kwargs is not None else {}, name=name,
+        )
 
     def remove_node(self, node: NodeRef) -> None:
-        self._graph.remove_node(node)
+        self._graph._delete_node(node)
 
     def _on_operators_changed(self, operators: list[ScriptOperatorRef]) -> None:
-        print("Operators changed:", [op.name() for op in operators])
         affected_nodes: set[NodeRef] = set()
         for operator in operators:
             affected_nodes.update(self._operator_to_nodes.children_of(operator))
@@ -212,7 +275,7 @@ class Engine(QObject):
         self._cache.invalidate(invalidated)
         self._invalidate_execution()
         self.nodes_invalidated.emit(invalidated)
-        self._auto_execute_invalidated(invalidated)
+        self._schedule_subscriptions()
  
     # Execution backend
     def _invalidate_evaluation(self) -> None:
@@ -225,11 +288,12 @@ class Engine(QObject):
     def _invalidate_execution(self) -> int:
         self._execution_id += 1
         execution_id = self._execution_id
-        had_pending_execution = bool(self._executing_nodes)
+        had_pending_execution = bool(self._executing_nodes or self._contextual_counts)
         if self._execution_future is not None:
             self._execution_future.cancel()
             self._execution_future = None
         self._executing_nodes.clear()
+        self._contextual_counts.clear()
         if had_pending_execution:
             self.execution_pending_changed.emit()
         return execution_id
@@ -241,6 +305,7 @@ class Engine(QObject):
 
         self._invalidate_evaluation()
         self._evaluation_pending = True
+        self._subscription_timer.stop()
         evaluation_id = self._evaluation_id
         self._invalidate_execution()
         self.evaluation_pending_changed.emit()
@@ -294,8 +359,8 @@ class Engine(QObject):
             self.registry_failed.emit(error)
             return
 
-        # Applying functions emits operator changes. Keep collecting their
-        # execution targets until every binding has been updated.
+        # Applying functions emits operator changes. Subscription demand is
+        # collected only after every binding has been updated.
         self._registry._apply_functions(functions, "VALID")
         if self._closed or evaluation_id != self._evaluation_id:
             return
@@ -304,7 +369,7 @@ class Engine(QObject):
             return
 
         self._evaluation_pending = False
-        targets = tuple(self._pending_targets)
+        targets = tuple(dict.fromkeys((*self._pending_targets, *self._subscription_targets())))
         self._pending_targets.clear()
         if targets:
             self.execute_nodes(*targets)
@@ -321,10 +386,14 @@ class Engine(QObject):
         if self._closed or execution_id != self._execution_id:
             return
         if self._evaluation_pending:
+            # Only explicit requests are retained here. Automatic demand is
+            # derived from live subscriptions when evaluation completes.
             self._pending_targets.update(targets)
             self.execution_pending_changed.emit()
             return
 
+        self._subscription_timer.stop()
+        targets = tuple(dict.fromkeys((*targets, *self._subscription_targets())))
         try:
             plan, mapping, initial_outputs = prepare(
                 self._graph, 
@@ -335,12 +404,38 @@ class Engine(QObject):
             for name, snapshot in plan.items():
                 if isinstance(snapshot.operator, ScriptOperatorRef):
                     try:
-                        operator = snapshot.operator.resolve()
+                        operator:Callable = snapshot.operator.resolve()
                     except Exception as error:
                         raise ExecutionFailure(mapping[name], error, targets) from error
-                    plan[name] = replace(snapshot, operator=operator)
+                    plan[name] = replace(
+                        snapshot,
+                        operator=operator
+                    )
             self._executing_nodes = {mapping[name] for name in plan}
-            future = self._backend.execute_plan(plan, initial_outputs=initial_outputs)
+
+            # Cached contextual callables can request ancestors outside the plan.
+            mapping.update({
+                node.name(): node
+                for node in self._graph.ancestors(*targets)
+            })
+
+            initial_contextual_outputs = {
+                (node.name(), context): value
+                for (node, context), value
+                in self._cache.contextual_outputs().items()
+                if node.name() in mapping
+            }
+
+            def on_context_state_changed(key: ContextKey, running: bool) -> None:
+                # Only the queued Qt slot mutates execution state.
+                self._context_state_changed.emit(execution_id, mapping[key[0]], running)
+
+            future = self._backend.execute_plan(
+                plan,
+                initial_outputs=initial_outputs,
+                initial_contextual_outputs=initial_contextual_outputs,
+                on_context_state_changed=on_context_state_changed,
+            )
         except Exception as error:
             self._executing_nodes.clear()
             self.execution_pending_changed.emit()
@@ -350,7 +445,7 @@ class Engine(QObject):
             return
         self._execution_future = future
 
-        def on_done(completed: Future[dict[str, Any]]) -> None:
+        def on_done(completed: Future[ExecutionResult]) -> None:
             # This callback only sends a notification across threads.
             self._execution_finished.emit(execution_id, mapping, completed)
 
@@ -358,20 +453,40 @@ class Engine(QObject):
         if self._executing_nodes:
             self.execution_pending_changed.emit()
 
+    @Slot(int, object, bool)
+    def _on_context_state_changed(
+        self, execution_id: int, node: NodeRef, running: bool,
+    ) -> None:
+        if self._closed or execution_id != self._execution_id:
+            return
+
+        # One node may have nested contextual computations in progress.
+        was_running = node in self._contextual_counts
+        count = self._contextual_counts.get(node, 0) + (1 if running else -1)
+        if count > 0:
+            self._contextual_counts[node] = count
+        else:
+            self._contextual_counts.pop(node, None)
+
+        if was_running != (count > 0):
+            self.execution_pending_changed.emit()
+
     @Slot(int, object, object)
     def _on_execution_finished(
         self,
         execution_id: int,
         mapping: dict[str, NodeRef],
-        future: Future[dict[str, Any]],
+        future: Future[ExecutionResult],
     ) -> None:
         # This check runs on the GUI thread, immediately before publication.
         if self._closed or execution_id != self._execution_id:
             return
 
         self._execution_future = None
+        had_pending_execution = bool(self._executing_nodes or self._contextual_counts)
         executing_nodes = self._executing_nodes
         self._executing_nodes = set()
+        self._contextual_counts.clear()
         if future.cancelled():
             self.execution_pending_changed.emit()
             return
@@ -391,22 +506,86 @@ class Engine(QObject):
         else:
             outputs = {
                 mapping[name]: value
-                for name, value in plan_outputs.items()
+                for name, value in plan_outputs.outputs.items()
             }
+
             for node, value in outputs.items():
                 self._cache.save(node, value)
-            if executing_nodes:
+
+            for (name, context), value in plan_outputs.contextual_outputs.items():
+                self._cache.save_context(mapping[name], context, value)
+
+            subscriptions = [
+                subscription
+                for node in outputs
+                for subscription in self._subscriptions.get(node, ())
+                if node in executing_nodes or subscription in self._pending_notifications
+            ]
+            # A callback may edit an unrelated node and supersede publication.
+            # Keep undelivered notifications eligible for a cached replay.
+            self._pending_notifications.update(subscriptions)
+            if had_pending_execution:
                 self.execution_pending_changed.emit()
             if not self._closed and execution_id == self._execution_id:
                 self.nodes_executed.emit(outputs)
+                for subscription in subscriptions:
+                    if self._closed or execution_id != self._execution_id:
+                        break
+                    callback = subscription._callback
+                    if callback is None:
+                        continue
+                    self._pending_notifications.discard(subscription)
+                    try:
+                        callback(outputs[subscription.node])
+                    except Exception:
+                        logger.exception("Subscription callback failed for %s", subscription.node)
 
-    def _prune_auto_execution_targets(self, nodes: list[NodeRef]) -> None:
-        had_pending_targets = bool(self._pending_targets.intersection(nodes))
+    def _prune_subscriptions(self, nodes: list[NodeRef]) -> None:
         self._pending_targets.difference_update(nodes)
-        if self._auto_execute_targets is not None:
-            self._auto_execute_targets.difference_update(nodes)
-        if had_pending_targets:
-            self.execution_pending_changed.emit()
+        for node in nodes:
+            for subscription in tuple(self._subscriptions.get(node, ())):
+                subscription.unsubscribe()
+        self.execution_pending_changed.emit()
+        # Removing a node also supersedes work on surviving subscriptions.
+        self._schedule_subscriptions()
+
+    def subscribe(self, node: NodeRef, callback: Callable[[Any], None]) -> Subscription:
+        """Watch a node and queue its initial result when auto-execution is enabled.
+
+        Callbacks receive the node's output on the engine's Qt thread, after
+        the cache and nodes_executed observers have been updated. Values are
+        borrowed from the cache, including None; do not mutate them. Later
+        notifications follow recomputation; cached dependencies are not repeated.
+        """
+        if self._closed:
+            raise RuntimeError("Engine is closed")
+        if node not in self._graph.nodes():
+            raise ValueError(f"Node {node} is not in the graph")
+        if not callable(callback):
+            raise TypeError("Subscription callback must be callable")
+        subscription = Subscription(self, node, callback)
+        self._subscriptions.setdefault(node, []).append(subscription)
+        self._pending_notifications.add(subscription)
+        self._schedule_subscriptions()
+        return subscription
+
+    def _unsubscribe(self, subscription: Subscription) -> None:
+        subscriptions = self._subscriptions.get(subscription.node)
+        if subscriptions is not None and subscription in subscriptions:
+            subscriptions.remove(subscription)
+            if not subscriptions:
+                del self._subscriptions[subscription.node]
+        self._pending_notifications.discard(subscription)
+        subscription._engine = None
+        subscription._callback = None
+        self.execution_pending_changed.emit()
+
+    def unsubscribe(self, node: NodeRef, callback: Callable[[Any], None]) -> None:
+        """Remove the first matching registration; handles identify exact registrations."""
+        for subscription in tuple(self._subscriptions.get(node, ())):
+            if subscription._callback == callback:
+                subscription.unsubscribe()
+                break
 
     def auto_execute(self) -> bool:
         return self._auto_execute
@@ -419,28 +598,9 @@ class Engine(QObject):
         self._auto_execute = value
         if value:
             self.evaluate_registry()
-
-    def set_auto_execute_targets(
-        self, targets: Iterable[NodeRef] | None
-    ) -> None:
-        """Watch all nodes with None, or a selection; refresh newly watched nodes."""
-        previous: set[NodeRef] | None = self._auto_execute_targets
-        updated: set[NodeRef] | None = None if targets is None else set(targets)
-        if previous == updated:
-            return
-
-        self._auto_execute_targets = updated
-        if self._closed or not self._auto_execute:
-            return
-        if previous is None:
-            return  # Every node was already watched.
-
-        new_targets = [
-            node for node in self._graph.nodes()
-            if node not in previous and (updated is None or node in updated)
-        ]
-        if new_targets:
-            self.execute_nodes(*new_targets)
+        else:
+            self._subscription_timer.stop()
+            self.execution_pending_changed.emit()
 
     def _auto_evaluate_registry(self) -> None:
         """Automatically evaluate the registry if auto-execute is enabled."""
@@ -458,29 +618,38 @@ class Engine(QObject):
 
         self.evaluate_registry()
 
-    def _auto_execute_invalidated(
-        self, invalidated: list[NodeRef]
-    ) -> None:
-        """Automatically execute invalidated nodes if auto-execute is enabled."""
+    def _subscription_targets(self) -> tuple[NodeRef, ...]:
+        if self._closed or not self._auto_execute:
+            return ()
+        return tuple(
+            node for node, subscriptions in self._subscriptions.items()
+            if node not in self._cache
+            or any(subscription in self._pending_notifications for subscription in subscriptions)
+        )
+
+    def _schedule_subscriptions(self) -> None:
         if self._closed or not self._auto_execute:
             return
+        if not self._evaluation_pending and self._subscription_targets():
+            self._subscription_timer.start(0)
+        self.execution_pending_changed.emit()
 
-        watched = self._auto_execute_targets
-        targets = [
-            node
-            for node in invalidated
-            if watched is None or node in watched
-        ]
-
-        if not targets:
+    def _execute_subscriptions(self) -> None:
+        if self._evaluation_pending:
             return
-
-        self.execute_nodes(*targets)
+        targets = self._subscription_targets()
+        if targets:
+            # A new subscriber must not discard unrelated manual work in flight.
+            self.execute_nodes(*targets, *self._executing_nodes)
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        self._subscription_timer.stop()
+        for subscriptions in tuple(self._subscriptions.values()):
+            for subscription in tuple(subscriptions):
+                subscription.unsubscribe()
         self._invalidate_evaluation()
         self._pending_targets.clear()
         self._invalidate_execution()

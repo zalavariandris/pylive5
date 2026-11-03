@@ -12,7 +12,7 @@ from qtpy.QtWidgets import QStyleFactory
 from PyGraphRT2.tests_ai.controlled_backend import ControlledBackend
 from pygraphrt2 import Graph
 from pyflow5.core.node_execution_state import NodeExecutionState
-from pygraphrt2.execution_plan import NodeExecutionError, evaluate
+from pygraphrt2.execution_plan import ExecutionResult, NodeExecutionError, evaluate
 from pyflow5.models.pyflow5_document import PyFlowDocument
 from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
 from qdageditor5.core.item_data_roles import NodeDataRole
@@ -73,10 +73,11 @@ def test_opening_graph_is_yellow_then_normal_and_execution_repaints(
     assert not document.isModified()
 
     changed_roles.clear()
-    document.setAutoExecuteTargets(["answer"])
+    document.subscribeNode("answer", lambda _: None)
     assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
     assert any(Qt.ItemDataRole.BackgroundRole in roles for roles in changed_roles)
-    backend.executions[-1].set_result({"answer": 42})
+    QCoreApplication.processEvents()
+    backend.executions[-1].set_result(ExecutionResult({"answer": 42}))
     QCoreApplication.processEvents()
     assert model.nodeData("answer", model.StateRole) is NodeExecutionState.IDLE
     assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) is None
@@ -98,7 +99,8 @@ def test_real_errors_turn_red_and_recovery_removes_error_text(
         backend.evaluations[-1].set_result(evaluate(SOURCE))
     QCoreApplication.processEvents()
     if failure == "execution":
-        document.setAutoExecuteTargets(["answer"])
+        document.subscribeNode("answer", lambda _: None)
+        QCoreApplication.processEvents()
         backend.executions[-1].set_exception(NodeExecutionError("answer", ValueError("bad input")))
         QCoreApplication.processEvents()
 
@@ -111,7 +113,7 @@ def test_real_errors_turn_red_and_recovery_removes_error_text(
     backend.evaluations[-1].set_result(evaluate(SOURCE))
     QCoreApplication.processEvents()
     if failure == "execution":
-        backend.executions[-1].set_result({"answer": 42})
+        backend.executions[-1].set_result(ExecutionResult({"answer": 42}))
         QCoreApplication.processEvents()
     assert model.nodeData("answer", model.StateRole) is NodeExecutionState.IDLE
     assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) is None
@@ -125,7 +127,7 @@ def test_real_document_load_evaluates_and_executes_once(qtbot: QtBot) -> None:
         "graph": {"nodes": {"answer": {"operator": "answer"}}},
     }))
     try:
-        document.setAutoExecuteTargets(["answer"])
+        document.subscribeNode("answer", lambda _: None)
         qtbot.waitUntil(lambda: document.graph_model.nodeData("answer", document.graph_model.OutputRole) == 42)
         node = document.graph_model.mapToSource("answer")
         assert node is not None

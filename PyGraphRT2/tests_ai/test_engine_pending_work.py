@@ -7,7 +7,7 @@ from qtpy.QtCore import QCoreApplication
 
 from pygraphrt2 import Engine, NodeRef, ScriptOperatorRef
 from pygraphrt2.exceptions import ExecutionFailure
-from pygraphrt2.execution_plan import evaluate
+from pygraphrt2.execution_plan import ExecutionResult, evaluate
 from PyGraphRT2.tests_ai.controlled_backend import ControlledBackend
 
 
@@ -44,7 +44,7 @@ def test_snapshots_cover_evaluation_deferred_execution_and_completion(
     assert evaluations == [True, False]
     snapshot = engine.pending_nodes()
     assert snapshot == frozenset({node})
-    backend.executions[-1].set_result({node.name(): 42})
+    backend.executions[-1].set_result(ExecutionResult({node.name(): 42}))
     QCoreApplication.processEvents()
     assert executions[-1] == frozenset()
     assert snapshot == frozenset({node})  # Callers cannot mutate engine bookkeeping.

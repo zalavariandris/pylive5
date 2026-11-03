@@ -11,7 +11,7 @@ from .node_inspector_view import NodeInspectorView
 from .node_input_delegate import NodeInputFieldDelegate, NodeInputLabelDelegate
 from .output_viewer import OutputViewer
 
-from pygraphrt2 import ScriptOperatorRef
+from pygraphrt2 import ScriptOperatorRef, Subscription
 from qtpy.QtCore import QAbstractItemModel, QItemSelectionModel, QModelIndex, QObject, QSize
 
 from qtpy.QtCore import (
@@ -166,6 +166,9 @@ class PyFlow5DocumentWindow(QWidget):
         # Connect the document to the views
         # private members
         self._document: PyFlowDocument | None = None
+        self._selection_subscription: Subscription | None = None
+        self._viewer_subscription: Subscription | None = None
+        self._outputviewer.currentChanged.connect(self._onOutputCurrentNodeChanged)
         self._selection_models: list[QObject] = []
         self._fit_timer = QTimer(self)
         self._fit_timer.setSingleShot(True)
@@ -185,17 +188,9 @@ class PyFlow5DocumentWindow(QWidget):
         
         self._disconnectDocument()
         self._document = document
-        document.nodesInvalidated.connect(lambda: None)
         document.isModifiedChanged.connect(self.updateWindowTitle)
         document.filePathChanged.connect(self.updateWindowTitle)
         document.scriptStateChanged.connect(self._on_script_module_state_changed)
-
-        def _onOutputCurrentNodeChanged(current: QModelIndex, previous: QModelIndex):
-            current_nodename = self.document().node_inlet_tree_adapter.mapToSource(current)
-            previous_nodename = self.document().node_inlet_tree_adapter.mapToSource(previous)
-            self.document().removeAutoExecuteTarget(previous_nodename)
-            self.document().addAutoExecuteTarget(current_nodename)
-        self._outputviewer.currentChanged.connect(_onOutputCurrentNodeChanged)
 
         self._module_operator_tree_view.setModel(document.operators_model)
         self._script_editor.setDocument(document.script_document)
@@ -233,14 +228,53 @@ class PyFlow5DocumentWindow(QWidget):
         if self._document is None:
             return
 
-        if previous is current:
+        if previous == current:
             return
 
-        if previous is not None:
-            self._document.removeAutoExecuteTarget(previous)
+        if self._selection_subscription is not None:
+            self._selection_subscription.unsubscribe()
+            self._selection_subscription = None
 
         if current is not None:
-            self._document.addAutoExecuteTarget(current)
+            self._selection_subscription = self._document.subscribeNode(
+                current, self._onSelectedNodeExecuted,
+            )
+
+    def _nodeForIndex(self, index: QModelIndex) -> NodeName | None:
+        if self._document is None or not index.isValid():
+            return None
+        source = self._document.node_inlet_tree_adapter.mapToSource(index)
+        return source[0] if isinstance(source, tuple) else source
+
+    def _onOutputCurrentNodeChanged(
+        self, current: QModelIndex, previous: QModelIndex,
+    ) -> None:
+        node_name = self._nodeForIndex(current)
+        if self._viewer_subscription is not None:
+            if (
+                self._viewer_subscription.active
+                and self._viewer_subscription.node.name() == node_name
+            ):
+                return
+            self._viewer_subscription.unsubscribe()
+            self._viewer_subscription = None
+        if self._document is not None and node_name is not None:
+            self._viewer_subscription = self._document.subscribeNode(
+                node_name, self._onViewedNodeExecuted,
+            )
+
+    def _onSelectedNodeExecuted(self, _output: object) -> None:
+        subscription = self._selection_subscription
+        root = self._node_inspector.currentRoot()
+        if subscription is not None and self._nodeForIndex(root) == subscription.node.name():
+            self._node_inspector.showCurrentRootEvent(root, [])
+
+    def _onViewedNodeExecuted(self, _output: object) -> None:
+        subscription = self._viewer_subscription
+        root = self._outputviewer.currentRoot()
+        if subscription is not None and self._nodeForIndex(root) == subscription.node.name():
+            # Model roles also handle inlet values and errors in this viewer.
+            self._outputviewer.showCurrentRootEvent(root, [])
 
 
     def _replaceDocument(self, document: PyFlowDocument) -> None:
@@ -405,6 +439,12 @@ class PyFlow5DocumentWindow(QWidget):
 
     def _disconnectDocument(self) -> None:
         self._fit_timer.stop()
+        if self._selection_subscription is not None:
+            self._selection_subscription.unsubscribe()
+            self._selection_subscription = None
+        if self._viewer_subscription is not None:
+            self._viewer_subscription.unsubscribe()
+            self._viewer_subscription = None
         if self._document is None:
             return
         # self._document.nodesInvalidated.disconnect(self._on_nodes_invalidated)

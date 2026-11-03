@@ -1,8 +1,7 @@
 """Latest valid node outputs, with validity supplied by the invalidator."""
 
-from collections.abc import Iterable, Iterator, Mapping
+from typing import Hashable, Iterable, Iterator, Mapping, Any
 from dataclasses import dataclass
-from typing import Any
 
 from .graph import NodeRef
 
@@ -25,6 +24,10 @@ class GraphCache(Mapping[NodeRef, Any]):
 
     def __init__(self) -> None:
         self._entries: dict[NodeRef, _CacheEntry] = {}
+        self._context_entries: dict[
+            tuple[NodeRef, Hashable],
+            _CacheEntry,
+        ] = {}
 
     def __getitem__(self, node: NodeRef) -> Any:
         return self._entries[node].value
@@ -34,6 +37,7 @@ class GraphCache(Mapping[NodeRef, Any]):
 
     def __len__(self) -> int:
         return len(self._entries)
+
 
     def duration_seconds(self, node: NodeRef) -> float | None:
         """Return the original execution duration for a cached node."""
@@ -52,6 +56,9 @@ class GraphCache(Mapping[NodeRef, Any]):
     def remove(self, node: NodeRef) -> None:
         """Forget a node's output if present."""
         self._entries.pop(node, None)
+        for key in tuple(self._context_entries):
+            if key[0] == node:
+                del self._context_entries[key]
 
     def invalidate(self, nodes: Iterable[NodeRef]) -> None:
         """Forget affected nodes; the caller supplies downstream nodes too."""
@@ -60,4 +67,43 @@ class GraphCache(Mapping[NodeRef, Any]):
             self.remove(node)
 
     def clear(self) -> None:
+        """Forget all ordinary and contextual results."""
         self._entries.clear()
+        self._context_entries.clear()
+
+    def _has_context(self, node: NodeRef, context: Hashable) -> bool:
+        return (node, context) in self._context_entries
+
+    def _get_context(self, node: NodeRef, context: Hashable) -> Any:
+        """Return a cached contextual result; raise KeyError if absent."""
+        return self._context_entries[node, context].value
+
+    def save_context(
+        self,
+        node: NodeRef,
+        context: Hashable,
+        value: Any,
+        *,
+        duration_seconds: float | None = None,
+    ) -> None:
+        """Store a contextual result after execution is accepted."""
+        self._context_entries[node, context] = _CacheEntry(
+            value=value,
+            duration_seconds=duration_seconds,
+        )
+
+    def context_duration_seconds(
+        self,
+        node: NodeRef,
+        context: Hashable,
+    ) -> float | None:
+        return self._context_entries[node, context].duration_seconds
+
+    def contextual_outputs(
+        self,
+    ) -> dict[tuple[NodeRef, Hashable], Any]:
+        """Copy the contextual lookup table; stored values remain borrowed."""
+        return {
+            key: entry.value
+            for key, entry in self._context_entries.items()
+        }

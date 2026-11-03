@@ -6,7 +6,7 @@ import numpy as np
 import pygraphrt2 as rt
 import pytest
 from pygraphrt2 import Engine
-from pygraphrt2.inline_executor import ExecutionFailure
+from pygraphrt2.exceptions import ExecutionFailure
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QItemSelectionModel, QModelIndex, Qt
 from qtpy.QtWidgets import QApplication, QLineEdit, QSpinBox, QStyleOptionViewItem, QTreeView
@@ -258,7 +258,7 @@ def test_window_shares_tree_fields_with_viewer_and_inspector(qtbot: QtBot) -> No
 
     document = PyFlowDocument(engine=rt.Engine(graph=graph))
     window = PyFlow5DocumentWindow(document)
-    qtbot.addWidget(window, before_close_func=window.dispose)
+    qtbot.addWidget(window, before_close_func=lambda widget: widget.dispose())
     model = document.node_inlet_tree_adapter
     selection = window.node_inlet_tree_selection_adapter
     assert window._node_inlet_tree_view.model() is model

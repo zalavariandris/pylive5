@@ -12,7 +12,7 @@ from pygraphrt2 import Engine, NodeRef, ScriptOperatorRef
 from pyflow5.core.node_execution_state import NodeExecutionState
 from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
 from PyGraphRT2.tests_ai.controlled_backend import ControlledBackend
-from pygraphrt2.execution_plan import NodeExecutionError, evaluate
+from pygraphrt2.execution_plan import ExecutionResult, NodeExecutionError, evaluate
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def test_execution_marks_only_uncached_dependencies_and_returns_to_idle(
     engine.execute_nodes(target)
     assert changes == [{source: NodeExecutionState.EXECUTING, target: NodeExecutionState.EXECUTING}]
     assert model.nodeData(unrelated.name(), model.StateRole) is NodeExecutionState.IDLE
-    backend.executions[-1].set_result({"source": 1, "target": 2})
+    backend.executions[-1].set_result(ExecutionResult({"source": 1, "target": 2}))
     QCoreApplication.processEvents()
     assert changes[-1] == {source: NodeExecutionState.IDLE, target: NodeExecutionState.IDLE}
 
@@ -56,7 +56,7 @@ def test_execution_marks_only_uncached_dependencies_and_returns_to_idle(
     engine.execute_nodes(target)
     assert model.nodeData(source.name(), model.StateRole) is NodeExecutionState.IDLE
     assert model.nodeData(target.name(), model.StateRole) is NodeExecutionState.EXECUTING
-    backend.executions[-1].set_result({"source": 1, "target": 2})
+    backend.executions[-1].set_result(ExecutionResult({"source": 1, "target": 2}))
     QCoreApplication.processEvents()
     changes.clear()
     engine.execute_nodes(target)
@@ -80,7 +80,7 @@ def test_failure_marks_only_failed_node_and_retry_clears_error(
     engine.execute_nodes(target)
     assert model.nodeData(source.name(), model.StateRole) is NodeExecutionState.EXECUTING
     assert model._node_error(source) is None
-    backend.executions[-1].set_result({"source": 1, "target": 1})
+    backend.executions[-1].set_result(ExecutionResult({"source": 1, "target": 1}))
     QCoreApplication.processEvents()
     assert model.nodeData(source.name(), model.StateRole) is NodeExecutionState.IDLE
     assert model._node_error(source) is None
@@ -110,7 +110,7 @@ def test_registry_loading_and_recovery(
     backend.evaluations[-1].set_result(evaluate("def answer(): return 42"))
     QCoreApplication.processEvents()
     assert model.nodeData(node.name(), model.StateRole) is NodeExecutionState.EXECUTING
-    backend.executions[-1].set_result({node.name(): 42})
+    backend.executions[-1].set_result(ExecutionResult({node.name(): 42}))
     QCoreApplication.processEvents()
     assert model.nodeData(node.name(), model.StateRole) is NodeExecutionState.IDLE
 
@@ -180,7 +180,7 @@ def test_stale_completion_cannot_replace_current_state(
     if fails:
         old.set_exception(ValueError("stale failure"))
     else:
-        old.set_result({})
+        old.set_result({} if evaluation else ExecutionResult({}))
     QCoreApplication.processEvents()
     assert model.nodeData(node.name(), model.StateRole) is NodeExecutionState.EXECUTING
     futures[-1].cancel()
@@ -246,11 +246,11 @@ def test_state_observer_can_supersede_a_completion(
             engine.execute_nodes(node)
 
     model.nodesDataChanged.connect(rerun)
-    backend.executions[-1].set_result({node.name(): 42})
+    backend.executions[-1].set_result(ExecutionResult({node.name(): 42}))
     QCoreApplication.processEvents()
     assert model.nodeData(node.name(), model.StateRole) is NodeExecutionState.EXECUTING
     assert outputs == []
-    backend.executions[-1].set_result({node.name(): 99})
+    backend.executions[-1].set_result(ExecutionResult({node.name(): 99}))
     QCoreApplication.processEvents()
     assert outputs == [{node: 99}]
 
@@ -279,11 +279,12 @@ def test_model_attached_during_execution_initializes_and_observes_result(
             error = ValueError("bad input")
             backend.executions[-1].set_exception(NodeExecutionError(node.name(), error))
         else:
-            backend.executions[-1].set_result({node.name(): 42})
+            backend.executions[-1].set_result(ExecutionResult({node.name(): 42}))
         QCoreApplication.processEvents()
         expected = NodeExecutionState.ERROR if fails else NodeExecutionState.IDLE
         assert model.nodeData(node.name(), model.StateRole) is expected
-        assert model.nodeData(node.name(), model.OutputRole) == ("bad input" if fails else 42)
+        assert model.nodeData(node.name(), model.OutputRole) == (None if fails else 42)
+        assert model.nodeData(node.name(), model.ErrorRole) is (error if fails else None)
     finally:
         model.close()
 

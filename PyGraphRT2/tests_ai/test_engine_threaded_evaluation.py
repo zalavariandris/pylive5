@@ -10,7 +10,9 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QCoreApplication
 
 from pygraphrt2 import Engine, Graph, NodeRef, ScriptOperatorRef
-from pygraphrt2.execution_plan import NodeStateSnapshot, evaluate, execute
+from pygraphrt2.execution_plan import (
+    ContextKey, ContextStateCallback, ExecutionResult, NodeStateSnapshot, evaluate, execute,
+)
 from pygraphrt2.threaded_backend import ThreadedBackend
 
 
@@ -25,7 +27,7 @@ class ControlledBackend(ThreadedBackend):
         self.graph = graph
         self.evaluations: list[Future[Functions]] = []
         self.plans: list[dict[str, NodeStateSnapshot]] = []
-        self.executions: list[Future[dict[str, Any]]] = []
+        self.executions: list[Future[ExecutionResult]] = []
         self.closed = False
 
     def evaluate(self, source: str, *, name: str = "<script>") -> Future[Functions]:
@@ -36,8 +38,11 @@ class ControlledBackend(ThreadedBackend):
     def execute_plan(
         self, plan: dict[str, NodeStateSnapshot],
         initial_outputs: dict[str, Any] | None = None,
-    ) -> Future[dict[str, Any]]:
-        future: Future[dict[str, Any]] = Future()
+        *,
+        initial_contextual_outputs: dict[ContextKey, Any] | None = None,
+        on_context_state_changed: ContextStateCallback | None = None,
+    ) -> Future[ExecutionResult]:
+        future: Future[ExecutionResult] = Future()
         self.plans.append(plan)
         self.executions.append(future)
         return future
@@ -120,11 +125,11 @@ def test_requests_wait_for_functions_and_use_latest_inputs(
 
     assert len(backend.plans) == 1
     plan = backend.plans[0]
-    assert execute(plan) == {first.name(): 18, second.name(): 14}
+    assert execute(plan).outputs == {first.name(): 18, second.name(): 14}
     assert all(snapshot.operator is functions["answer"] for snapshot in plan.values())
 
     engine._registry._apply_functions(evaluate(SOURCE), "VALID")
-    assert execute(plan) == {first.name(): 18, second.name(): 14}
+    assert execute(plan).outputs == {first.name(): 18, second.name(): 14}
 
 
 @pytest.mark.parametrize("queued", [False, True])
@@ -178,7 +183,7 @@ def test_starting_evaluation_immediately_supersedes_execution(
     if fails:
         old.set_exception(ValueError("old execution"))
     else:
-        old.set_result({node.name(): 7})
+        old.set_result(ExecutionResult({node.name(): 7}))
     QCoreApplication.processEvents()
     assert outputs == []
     assert errors == []
@@ -198,9 +203,9 @@ def test_new_request_discards_an_execution_completion_already_queued(
     outputs: list[dict[NodeRef, Any]] = []
     engine.nodes_executed.connect(outputs.append)
     engine.execute_nodes(node)
-    backend.executions[-1].set_result({node.name(): 7})
+    backend.executions[-1].set_result(ExecutionResult({node.name(): 7}))
     engine.execute_nodes(node)
-    backend.executions[-1].set_result({node.name(): 42})
+    backend.executions[-1].set_result(ExecutionResult({node.name(): 42}))
     QCoreApplication.processEvents()
     assert outputs == [{node: 42}]
 
@@ -214,6 +219,8 @@ def test_failure_clears_functions_and_pending_work_then_restoration_is_batched(
     second = engine._graph._create_node(operator, name="second")
     errors: list[Exception] = []
     engine.registry_failed.connect(errors.append)
+    engine.subscribe(first, lambda _: None)
+    engine.subscribe(second, lambda _: None)
     engine.set_auto_execute(True)
     engine.execute_nodes(first, second)
     error = SyntaxError("broken script")
@@ -229,7 +236,7 @@ def test_failure_clears_functions_and_pending_work_then_restoration_is_batched(
     backend.evaluations[-1].set_result(evaluate(SOURCE))
     QCoreApplication.processEvents()
     assert len(backend.plans) == 1
-    assert execute(backend.plans[0]) == {first.name(): 7, second.name(): 7}
+    assert execute(backend.plans[0]).outputs == {first.name(): 7, second.name(): 7}
 
 
 def test_deleted_pending_target_is_not_prepared(
@@ -264,7 +271,7 @@ def test_evaluated_observer_can_start_a_new_evaluation_before_execution(
     assert backend.plans == []
     backend.evaluations[-1].set_result(evaluate(SOURCE.replace("return value", "return 42")))
     QCoreApplication.processEvents()
-    assert execute(backend.plans[-1]) == {node.name(): 42}
+    assert execute(backend.plans[-1]).outputs == {node.name(): 42}
 
 
 def test_new_evaluation_and_close_cancel_queued_work(

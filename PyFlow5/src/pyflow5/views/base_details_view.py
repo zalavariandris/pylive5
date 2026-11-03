@@ -6,6 +6,7 @@ from qtpy.QtCore import (
     QItemSelection,
     QItemSelectionModel,
     QModelIndex,
+    QPersistentModelIndex,
     QObject,
     Qt,
     Signal,
@@ -43,7 +44,7 @@ class BaseDetailsView(QFrame):
         self._model_connections: list[tuple[SignalInstance, Callable]] = []
         self._nodes_selection_model: QItemSelectionModel|None = None
         self._selection_model_connections: list[tuple[SignalInstance, Callable]] = []
-        self._current_root:QModelIndex = QModelIndex()
+        self._current_root: QPersistentModelIndex = QPersistentModelIndex()
         self._selection_behaviour: BaseDetailsView.SelectionBehaviour = BaseDetailsView.SelectionBehaviour.Current
 
         # lock switch
@@ -99,75 +100,87 @@ class BaseDetailsView(QFrame):
         if model:
             # Connect new model signals
             self._model_connections = [
+                (model.modelAboutToBeReset, self._on_model_reset),
                 (model.modelReset,  self._on_model_reset),
                 (model.dataChanged, self._on_data_changed),
+                (model.rowsAboutToBeRemoved, self._on_rows_about_to_be_removed),
                 (model.rowsRemoved, self._on_rows_removed)
             ]
             for signal, slot in self._model_connections:
                 signal.connect(slot)
         
         self._model = model
-        self._current_root = QModelIndex()
-        self.showCurrentRootEvent(self._current_root, [])
+        self._on_model_reset()
 
     def currentRoot(self)->QModelIndex:
-        return self._current_root
+        return QModelIndex(self._current_root)
 
-    def _on_lock_toggled(self, checked: bool):
+    def _on_lock_toggled(self, checked: bool) -> None:
         if checked:
-            print("- Lock is checked")
+            return
+        previous_root = self.currentRoot()
+        if self._nodes_selection_model is None:
+            self._current_root = QPersistentModelIndex()
         else:
-            previous_root = self._current_root
             match self._selection_behaviour:
                 case BaseDetailsView.SelectionBehaviour.FirstSelected:
                     indexes = self._nodes_selection_model.selectedIndexes()
                     first_index = indexes[0] if indexes else QModelIndex()
-                    self._current_root = first_index
+                    self._current_root = QPersistentModelIndex(first_index)
                 case BaseDetailsView.SelectionBehaviour.LastSelected:
                     indexes = self._nodes_selection_model.selectedIndexes()
                     last_index = indexes[-1] if indexes else QModelIndex()
-                    self._current_root = last_index
+                    self._current_root = QPersistentModelIndex(last_index)
                 case _:
-                    pass
-            self.currentChanged.emit(self._current_root, previous_root)
-            self.showCurrentRootEvent(self._current_root, [])
+                    self._current_root = QPersistentModelIndex(
+                        self._nodes_selection_model.currentIndex(),
+                    )
+        if self.currentRoot() != previous_root:
+            self.currentChanged.emit(self.currentRoot(), previous_root)
+        self.showCurrentRootEvent(self.currentRoot(), [])
 
-    def _on_selection_changed(self, selected:QItemSelection, deselected:QItemSelection):
+    def _on_selection_changed(
+        self, selected: QItemSelection, deselected: QItemSelection,
+    ) -> None:
         if self._lock_switch.isChecked():
-            print("- Lock is checked, cant set current node")
             return
 
         if self._selection_behaviour not in  {BaseDetailsView.SelectionBehaviour.FirstSelected, BaseDetailsView.SelectionBehaviour.LastSelected}:
             return
 
+        previous_root = self.currentRoot()
         match self._selection_behaviour:
             case BaseDetailsView.SelectionBehaviour.FirstSelected:
                 indexes = self._nodes_selection_model.selectedIndexes()
                 first_index = indexes[0] if indexes else QModelIndex()
-                self._current_root = first_index
-                self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
-                self.showCurrentRootEvent(self._current_root, [])
+                self._current_root = QPersistentModelIndex(first_index)
+                self._lock_switch.setText(f"{self.currentRoot().siblingAtColumn(0).data()}")
             case BaseDetailsView.SelectionBehaviour.LastSelected:
                 indexes = self._nodes_selection_model.selectedIndexes()
                 last_index = indexes[-1] if indexes else QModelIndex()
-                self._current_root = last_index
-                self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
-                self.showCurrentRootEvent(self._current_root, [])
+                self._current_root = QPersistentModelIndex(last_index)
+                self._lock_switch.setText(f"{self.currentRoot().siblingAtColumn(0).data()}")
             case _:
                 pass
+        if self.currentRoot() != previous_root:
+            self.currentChanged.emit(self.currentRoot(), previous_root)
+        self.showCurrentRootEvent(self.currentRoot(), [])
 
-    def _on_selection_current_changed(self, current: QModelIndex, previous: QModelIndex):
+    def _on_selection_current_changed(
+        self, current: QModelIndex, previous: QModelIndex,
+    ) -> None:
         if self._lock_switch.isChecked():
-            print("- Lock is checked, cant set current node")
             return
         
         if self._selection_behaviour != self.SelectionBehaviour.Current:
             return 
             
-        self._current_root = current
-        self._lock_switch.setText(f"{self._current_root.siblingAtColumn(0).data()}")
-        self.currentChanged.emit(self._current_root, previous)
-        self.showCurrentRootEvent(self._current_root, [])
+        previous_root = self.currentRoot()
+        self._current_root = QPersistentModelIndex(current)
+        self._lock_switch.setText(f"{self.currentRoot().siblingAtColumn(0).data()}")
+        if current != previous_root:
+            self.currentChanged.emit(current, previous_root)
+        self.showCurrentRootEvent(self.currentRoot(), [])
 
     def selectionModel(self) -> QItemSelectionModel:
         return self._nodes_selection_model
@@ -195,9 +208,12 @@ class BaseDetailsView(QFrame):
             self._on_selection_changed(selection_model.selection(), QItemSelection())
             self._on_selection_current_changed(selection_model.currentIndex(), QModelIndex())
 
-    def _on_model_reset(self):
-        self._current_root = QModelIndex()
-        self.showCurrentRootEvent(self._current_root, [])
+    def _on_model_reset(self) -> None:
+        previous_root = self.currentRoot()
+        self._current_root = QPersistentModelIndex()
+        if previous_root.isValid():
+            self.currentChanged.emit(QModelIndex(), previous_root)
+        self.showCurrentRootEvent(QModelIndex(), [])
 
     def _on_data_changed(
         self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list[int],
@@ -213,14 +229,20 @@ class BaseDetailsView(QFrame):
 
         rows = range(topLeft.row(), bottomRight.row() + 1)
         if self._current_root.row() in rows:
-            self.showCurrentRootEvent(self._current_root, roles)
+            self.showCurrentRootEvent(self.currentRoot(), roles)
 
-    def _on_rows_removed(self, parent:QModelIndex, first: int, last: int):
-        if parent != self._current_root.parent():
-            return
-        
-        if self._current_root.row() >= first and self._current_root.row() <= last:
-            self.showCurrentRootEvent(self._current_root, [])
+    def _on_rows_about_to_be_removed(
+        self, parent: QModelIndex, first: int, last: int,
+    ) -> None:
+        index = self.currentRoot()
+        while index.isValid():
+            if index.parent() == parent and first <= index.row() <= last:
+                self._on_model_reset()
+                return
+            index = index.parent()
+
+    def _on_rows_removed(self, parent: QModelIndex, first: int, last: int) -> None:
+        self.showCurrentRootEvent(self.currentRoot(), [])
 
     def showCurrentRootEvent(self, index: QModelIndex, roles: list[int] = [])->None:
         # todo: make it an abstrat emthod
