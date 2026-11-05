@@ -11,7 +11,7 @@ from qtpy.QtCore import QCoreApplication
 
 from pygraphrt2 import Engine, Graph, Subscription
 from pygraphrt2.execution_plan import (
-    ContextKey, ContextStateCallback, ExecutionResult, NodeStateSnapshot, execute,
+    RequestKey, RequestStateCallback, ExecutionResult, NodeStateSnapshot, execute,
 )
 from PyGraphRT2.tests_ai.controlled_backend import ControlledBackend
 
@@ -26,24 +26,24 @@ class RecordingBackend(ControlledBackend):
         self, plan: dict[str, NodeStateSnapshot],
         initial_outputs: dict[str, Any] | None = None,
         *,
-        initial_contextual_outputs: dict[ContextKey, Any] | None = None,
-        on_context_state_changed: ContextStateCallback | None = None,
+        initial_request_outputs: dict[RequestKey, Any] | None = None,
+        on_request_state_changed: RequestStateCallback | None = None,
     ) -> Future[ExecutionResult]:
         self.plans.append(plan)
         self.initial_outputs.append(initial_outputs or {})
         return super().execute_plan(
             plan,
             initial_outputs,
-            initial_contextual_outputs=initial_contextual_outputs,
-            on_context_state_changed=on_context_state_changed,
+            initial_request_outputs=initial_request_outputs,
+            on_request_state_changed=on_request_state_changed,
         )
 
     def finish(self) -> None:
         self.executions[-1].set_result(execute(
             self.plans[-1],
             self.initial_outputs[-1],
-            initial_contextual_outputs=self.initial_contextual_outputs[-1],
-            on_context_state_changed=self.context_callbacks[-1],
+            initial_request_outputs=self.initial_request_outputs[-1],
+            on_request_state_changed=self.request_callbacks[-1],
         ))
         QCoreApplication.processEvents()
 
@@ -69,7 +69,7 @@ def test_initial_delivery_is_queued_and_follows_result_publication(
 
     def received(output: int) -> None:
         assert output == 42
-        assert engine._cache[node] == 42
+        assert engine._node_cache[node].value == 42
         assert subscription.active
         events.append("callback")
 
@@ -171,10 +171,10 @@ def test_superseding_work_preserves_every_unfinished_subscription(
     assert received == []
     backend.finish()
     assert 1 in received
-    assert engine._cache[first] == 1
+    assert engine._node_cache[first].value == 1
     if edit == "subscribed":
         assert 3 in received
-        assert engine._cache[second] == 3
+        assert engine._node_cache[second].value == 3
 
 
 def test_subscribing_does_not_discard_unrelated_manual_execution(
@@ -187,8 +187,8 @@ def test_subscribing_does_not_discard_unrelated_manual_execution(
     engine.subscribe(automatic, lambda _: None)
     QCoreApplication.processEvents()
     backend.finish()
-    assert engine._cache[manual] == 1
-    assert engine._cache[automatic] == 2
+    assert engine._node_cache[manual].value == 1
+    assert engine._node_cache[automatic].value == 2
 
 
 @pytest.mark.parametrize("action", ["unsubscribe", "delete"])
@@ -228,7 +228,7 @@ def test_unsubscribing_preserves_an_explicit_deferred_request(
     backend.evaluations[-1].set_result({})
     QCoreApplication.processEvents()
     backend.finish()
-    assert engine._cache[node] == 1
+    assert engine._node_cache[node].value == 1
     assert received == []
 
 
@@ -297,7 +297,7 @@ def test_callback_mutation_stops_stale_notifications(
         QCoreApplication.processEvents()
         backend.finish()
         assert received == [2]
-        assert engine._cache[node] == 2
+        assert engine._node_cache[node].value == 2
 
 
 def test_cached_dependency_does_not_notify_again(
@@ -375,7 +375,7 @@ def test_threaded_subscription_runs_callback_on_the_owning_thread(qtbot: QtBot) 
     try:
         engine.subscribe(node, lambda output: received.append((output, get_ident())))
         qtbot.waitUntil(lambda: bool(received))
-        assert received == [(engine._cache[node], owner_thread)]
+        assert received == [(engine._node_cache[node].value, owner_thread)]
         assert received[0][0] != owner_thread
     finally:
         engine.close()

@@ -32,6 +32,7 @@ def hello_world():
     
     return graph, (the_name, the_greeting, hello)
 
+
 def test_graph_structure(hello_world):
     graph, (the_name, the_greeting, hello) = hello_world
     # test graph structure
@@ -39,8 +40,10 @@ def test_graph_structure(hello_world):
     assert graph.in_links(hello) == {the_name: {0}}
     assert graph.out_links(the_name) == {hello: {0}}
 
+
 def test_inline_backend(hello_world):
     raise NotImplementedError()
+
     
 @pytest.mark.asyncio
 async def test_threaded_backend(hello_world):
@@ -99,6 +102,7 @@ def test_inline_scriptmodule():
     assert track_changes['added'] == []
     assert set(track_changes['removed']) == expected_operators
     assert track_changes['updated'] == []
+
 
 @pytest.mark.asyncio
 async def test_async_scriptmodule():

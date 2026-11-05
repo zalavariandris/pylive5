@@ -2,7 +2,7 @@ from typing import Any, Callable
 
 from .graph import Graph, NodeRef
 from .execution_plan import (
-    ContextKey, ContextStateCallback, ExecutionResult, NodeStateSnapshot, NodeOutput,
+    RequestKey, RequestStateCallback, ExecutionResult, NodeStateSnapshot, NodeOutput,
 )
 from concurrent.futures import Future, ThreadPoolExecutor
 from .inline_scriptmodule import _get_all_callables_from_script
@@ -27,8 +27,8 @@ class ThreadedBackend:
         plan: dict[str, NodeStateSnapshot],
         initial_outputs: dict[str, Any] | None = None,
         *,
-        initial_contextual_outputs: dict[ContextKey, Any] | None = None,
-        on_context_state_changed: ContextStateCallback | None = None,
+        initial_request_outputs: dict[RequestKey, Any] | None = None,
+        on_request_state_changed: RequestStateCallback | None = None,
     ) -> Future[ExecutionResult]:
         if self._latest_future is not None:
             self._latest_future.cancel()
@@ -37,8 +37,8 @@ class ThreadedBackend:
             execute,
             plan,
             initial_outputs=initial_outputs,
-            initial_contextual_outputs=initial_contextual_outputs,
-            on_context_state_changed=on_context_state_changed,
+            initial_request_outputs=initial_request_outputs,
+            on_request_state_changed=on_request_state_changed,
         )
 
         self._latest_future = future

@@ -6,7 +6,7 @@ from typing import Any
 
 from pygraphrt2 import Graph
 from pygraphrt2.execution_plan import (
-    ContextKey, ContextStateCallback, ExecutionResult, NodeStateSnapshot,
+    RequestKey, RequestStateCallback, ExecutionResult, NodeStateSnapshot,
 )
 
 
@@ -14,8 +14,8 @@ class ControlledBackend:
     def __init__(self, graph: Graph) -> None:
         self.evaluations: list[Future[dict[str, Callable[..., Any]]]] = []
         self.executions: list[Future[ExecutionResult]] = []
-        self.initial_contextual_outputs: list[dict[ContextKey, Any]] = []
-        self.context_callbacks: list[ContextStateCallback | None] = []
+        self.initial_request_outputs: list[dict[RequestKey, Any]] = []
+        self.request_callbacks: list[RequestStateCallback | None] = []
 
     def evaluate(
         self, source: str, *, name: str = "<script>",
@@ -28,13 +28,13 @@ class ControlledBackend:
         self, plan: dict[str, NodeStateSnapshot],
         initial_outputs: dict[str, Any] | None = None,
         *,
-        initial_contextual_outputs: dict[ContextKey, Any] | None = None,
-        on_context_state_changed: ContextStateCallback | None = None,
+        initial_request_outputs: dict[RequestKey, Any] | None = None,
+        on_request_state_changed: RequestStateCallback | None = None,
     ) -> Future[ExecutionResult]:
         future: Future[ExecutionResult] = Future()
         self.executions.append(future)
-        self.initial_contextual_outputs.append(initial_contextual_outputs or {})
-        self.context_callbacks.append(on_context_state_changed)
+        self.initial_request_outputs.append(initial_request_outputs or {})
+        self.request_callbacks.append(on_request_state_changed)
         return future
 
     def close(self) -> None:

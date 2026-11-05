@@ -11,7 +11,7 @@ from qtpy.QtCore import QCoreApplication
 
 from pygraphrt2 import Engine, Graph, NodeRef, ScriptOperatorRef
 from pygraphrt2.execution_plan import (
-    ContextKey, ContextStateCallback, ExecutionResult, NodeStateSnapshot, evaluate, execute,
+    RequestKey, RequestStateCallback, ExecutionResult, NodeStateSnapshot, evaluate, execute,
 )
 from pygraphrt2.threaded_backend import ThreadedBackend
 
@@ -39,8 +39,8 @@ class ControlledBackend(ThreadedBackend):
         self, plan: dict[str, NodeStateSnapshot],
         initial_outputs: dict[str, Any] | None = None,
         *,
-        initial_contextual_outputs: dict[ContextKey, Any] | None = None,
-        on_context_state_changed: ContextStateCallback | None = None,
+        initial_request_outputs: dict[RequestKey, Any] | None = None,
+        on_request_state_changed: RequestStateCallback | None = None,
     ) -> Future[ExecutionResult]:
         future: Future[ExecutionResult] = Future()
         self.plans.append(plan)

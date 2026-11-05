@@ -1,4 +1,4 @@
-"""Cached contextual callables still expose active upstream work to the UI."""
+"""Cached request functions still expose active upstream work to the UI."""
 
 from collections.abc import Callable
 from threading import Event, get_ident
@@ -7,12 +7,12 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
 
-from pygraphrt2 import Engine, contextual
+from pygraphrt2 import Engine
 from pyflow5.core.node_execution_state import NodeExecutionState
 from pyflow5.models.pygraphrt_graphmodel import PyGraphRTGraphModel
 
 
-def test_frame_changes_highlight_contextual_ancestors_and_cache_hits_stay_idle(
+def test_frame_changes_highlight_request_ancestors_and_cache_hits_stay_idle(
     qtbot: QtBot,
 ) -> None:
     engine = Engine()
@@ -22,7 +22,6 @@ def test_frame_changes_highlight_contextual_ancestors_and_cache_hits_stay_idle(
     calls: list[int] = []
 
     def source() -> Callable[[int], int]:
-        @contextual
         def compute(frame: int) -> int:
             calls.append(frame)
             if frame == 2:
@@ -35,7 +34,6 @@ def test_frame_changes_highlight_contextual_ancestors_and_cache_hits_stay_idle(
         return compute
 
     def blur(video: Callable[[int], int]) -> Callable[[int], int]:
-        @contextual
         def compute(frame: int) -> int:
             value = video(frame)
             if frame == 2:

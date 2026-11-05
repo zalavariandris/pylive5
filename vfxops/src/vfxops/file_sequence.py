@@ -24,7 +24,7 @@ class FileSequence:
 
     def get_path(self, frame:int) -> Path:
         if frame < self.first or frame > self.last:
-            raise IndexError("Frame out of range")
+            raise IndexError(f"Frame {frame} out of range [{self.first}-{self.last}]")
         return Path(self.pattern % frame)
 
     @staticmethod

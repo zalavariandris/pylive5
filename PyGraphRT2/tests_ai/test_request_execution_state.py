@@ -1,41 +1,38 @@
-"""Contextual activity reflects computation, with safe execution lifetimes."""
-
-from collections.abc import Callable
+"""Request state reflects computation, with safe execution lifetimes."""
 
 import pytest
 from qtpy.QtCore import QCoreApplication
 
-from pygraphrt2 import Engine, Graph, NodeRef, contextual
+from pygraphrt2 import Engine, Graph, NodeRef, Requestable
+from pygraphrt2.engine import _CacheEntry
 from pygraphrt2.execution_plan import (
-    ContextKey, NodeExecutionError, NodeOutput, NodeStateSnapshot, execute,
+    RequestKey, NodeExecutionError, NodeOutput, NodeStateSnapshot, execute,
 )
 from PyGraphRT2.tests_ai.controlled_backend import ControlledBackend
 
 
-def test_contextual_notifications_skip_both_caches_and_use_current_callback() -> None:
-    events: list[tuple[ContextKey, bool]] = []
+def test_request_notifications_skip_both_caches_and_use_current_callback() -> None:
+    events: list[tuple[RequestKey, bool]] = []
     calls: list[int] = []
 
-    def source() -> Callable[[int], None]:
-        @contextual
-        def compute(frame: int) -> None:
+    class Source(Requestable):
+        def __call__(self, frame: int) -> None:
             calls.append(frame)
-        return compute
 
-    def render(video: Callable[[int], None], frame: int) -> tuple[None, None]:
+    def render(video: Source, frame: int) -> tuple[None, None]:
         return video(frame), video(frame)
 
-    def report(key: ContextKey, running: bool) -> None:
+    def report(key: RequestKey, running: bool) -> None:
         events.append((key, running))
 
     render_plan = {
         "render": NodeStateSnapshot(render, [NodeOutput("source"), 1]),
     }
     result = execute(
-        {"source": NodeStateSnapshot(source), **render_plan},
-        on_context_state_changed=report,
+        {"source": NodeStateSnapshot(Source), **render_plan},
+        on_request_state_changed=report,
     )
-    assert events == [(("source", 1), True), (("source", 1), False)]
+    assert events == [(("source", ((1,), ())), True), (("source", ((1,), ())), False)]
     assert calls == [1]
     assert result.outputs["render"] == (None, None)
 
@@ -43,61 +40,62 @@ def test_contextual_notifications_skip_both_caches_and_use_current_callback() ->
     execute(
         render_plan,
         initial_outputs={"source": result.outputs["source"]},
-        initial_contextual_outputs=result.contextual_outputs,
-        on_context_state_changed=report,
+        initial_request_outputs=result.request_outputs,
+        on_request_state_changed=report,
     )
     assert calls == [1]
     assert events == []
 
-    new_events: list[tuple[ContextKey, bool]] = []
+    new_events: list[tuple[RequestKey, bool]] = []
     execute(
         {"render": NodeStateSnapshot(render, [NodeOutput("source"), 2])},
         initial_outputs={"source": result.outputs["source"]},
-        initial_contextual_outputs=result.contextual_outputs,
-        on_context_state_changed=lambda key, running: new_events.append((key, running)),
+        initial_request_outputs=result.request_outputs,
+        on_request_state_changed=lambda key, running: new_events.append((key, running)),
     )
     assert calls == [1, 2]
     assert events == []
-    assert new_events == [(("source", 2), True), (("source", 2), False)]
+    assert new_events == [(("source", ((2,), ())), True), (("source", ((2,), ())), False)]
 
 
-def test_contextual_failure_finishes_nested_calls_and_restores_runtime() -> None:
-    events: list[tuple[ContextKey, bool]] = []
+def test_request_failure_finishes_nested_calls_and_restores_runtime() -> None:
+    events: list[tuple[RequestKey, bool]] = []
 
-    def source() -> Callable[[int], int]:
-        @contextual
-        def compute(frame: int) -> int:
+    class Source(Requestable):
+        def __call__(self, frame: int) -> int:
             raise ValueError("bad frame")
-        return compute
 
-    def blur(video: Callable[[int], int]) -> Callable[[int], int]:
-        @contextual
-        def compute(frame: int) -> int:
-            return video(frame)
-        return compute
+    class Blur(Requestable):
+        def __init__(self, video: Source) -> None:
+            self.video = video
+
+        def __call__(self, frame: int) -> int:
+            return self.video(frame)
 
     outputs = execute({
-        "source": NodeStateSnapshot(source),
-        "blur": NodeStateSnapshot(blur, [NodeOutput("source")]),
+        "source": NodeStateSnapshot(Source),
+        "blur": NodeStateSnapshot(Blur, [NodeOutput("source")]),
     }).outputs
     with pytest.raises(NodeExecutionError) as failure:
         execute(
             {"render": NodeStateSnapshot(lambda video: video(3), [NodeOutput("blur")])},
             initial_outputs=outputs,
-            on_context_state_changed=lambda key, running: events.append((key, running)),
+            on_request_state_changed=lambda key, running: events.append((key, running)),
         )
     assert failure.value.node_name == "source"
     assert isinstance(failure.value.error, ValueError)
     assert events == [
-        (("blur", 3), True), (("source", 3), True),
-        (("source", 3), False), (("blur", 3), False),
+        (("blur", ((3,), ())), True), (("source", ((3,), ())), True),
+        (("source", ((3,), ())), False), (("blur", ((3,), ())), False),
     ]
-    with pytest.raises(RuntimeError, match="active execution"):
+    # Outside an execution a call is a plain, unmanaged call.
+    with pytest.raises(ValueError, match="bad frame"):
         outputs["blur"](3)
+    assert len(events) == 4
 
 
 @pytest.mark.parametrize("action", ["edit", "close"])
-def test_contextual_activity_counts_nested_calls_and_ignores_stale_events(
+def test_request_activity_counts_nested_calls_and_ignores_stale_events(
     qapp: object, action: str,
 ) -> None:
     graph = Graph()
@@ -106,12 +104,12 @@ def test_contextual_activity_counts_nested_calls_and_ignores_stale_events(
     engine.set_auto_execute(False)
     source = engine.add_node(lambda: None, name="source")
     target = engine.add_node(lambda value: value, args=(source,), name="target")
-    engine._cache.save(source, None)
+    engine._node_cache.save(source, _CacheEntry(None))
     notifications: list[frozenset[NodeRef]] = []
     engine.execution_pending_changed.connect(lambda: notifications.append(engine.pending_nodes()))
     try:
         engine.execute_nodes(target)
-        notify = backend.context_callbacks[-1]
+        notify = backend.request_callbacks[-1]
         assert notify is not None
         notify((source.name(), 1), True)
         notify((source.name(), 2), True)
@@ -140,7 +138,7 @@ def test_contextual_activity_counts_nested_calls_and_ignores_stale_events(
 
         if action == "edit":
             engine.execute_nodes(target)
-            current_notify = backend.context_callbacks[-1]
+            current_notify = backend.request_callbacks[-1]
             assert current_notify is not None
             current_notify((source.name(), 5), True)
             notify((source.name(), 4), False)

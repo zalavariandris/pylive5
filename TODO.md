@@ -1,9 +1,10 @@
 
 ## Features
-- [ ] consider detecting contextual operators by its return value (or hint)
+- [x] consider detecting contextual operators by its return value (or hint)
       a contextual decorator basically tells the engine, that it should manage the returned calalble cache, 
       and helps the engine, to report its execution state. If it does not change behaviour, we could simply 
       check when an operator is executed, then it return a callable, the engine could simply
+      PyGraphRT now manages functions returning functions as well.
 - [ ] copy paste nodes in the graph
 - [x] add ndoe cache to PyGraphRT2
 - [ ] try to use the execution_plan in the inline_backend.

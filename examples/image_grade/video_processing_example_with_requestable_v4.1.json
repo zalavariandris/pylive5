@@ -1,0 +1,209 @@
+{
+    "version": 4,
+    "script": {
+        "name": "<script>",
+        "source": "from vfxops.io import read_image\nfrom vfxops.draw import gradient\nfrom vfxops.color import grade\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.merge import merge_over\nfrom vfxops.file_sequence import FileSequence\nimport pathlib\n\ndef noop(val):\n    return val\n    \nfrom pygraphrt2 import Requestable\n\nclass ReadVideo(Requestable):\n    def __init__(self, path: pathlib.Path):\n        self._seq = FileSequence.from_single_frame(path)\n        \n    def __call__(self, frame:int):\n        frame_path = self._seq.get_path(frame)\n        return read_image(frame_path)\n        \nclass BlurVideo(Requestable):\n    def __init__(self, video:'Video', size:float=0.0):\n        self.video=video\n        self.size = size\n        \n    def __call__(self, frame:int):\n        img = self.video(frame)\n        return gaussian_blur(img, self.size)\n        \nclass FrameBlend(Requestable):\n    def __init__(self, video, duration:int):\n        self.video = video\n        self.duration = duration\n        \n    def __call__(self, frame:int):\n        img = self.video(frame)\n        for i in range(self.duration):\n            left = self.video(frame-i)\n            right = self.video(frame+i)\n            \n            img = merge_over(img, merge_over(left, right, 0.5), 0.5)\n        return img\n        \nclass TimeOffset(Requestable):\n    def __init__(self, video, offset:int=0):\n        self.video = video\n        self.offset = offset\n        \n    def __call__(self, frame:int):\n        return self.video(frame+self.offset)\n        \nclass MergeVideo(Requestable):\n    def __init__(self, A, B, mix:float=0.5):\n        self.A = A\n        self.B = B\n        self.mix = mix\n        \n    def __call__(self, frame:int):\n        imgA = self.A(frame)\n        imgB = self.B(frame)\n        return merge_over(imgA, imgB, self.mix)\n        \ndef read_video(path: pathlib.Path):\n    seq = FileSequence.from_single_frame(path)\n    \n    def wrapped(frame:int):\n        frame_path = seq.get_path(frame)\n        return read_image(frame_path)\n    return wrapped\n    \ndef blur_video(video, size:float=0.0):\n    def wrapped(frame:int):\n        img = video(frame)\n        return gaussian_blur(img, size)\n    return wrapped\n    \ndef time_offset(video, offset:int=0):\n    def wrapper(frame):\n        return video(frame+offset)\n    return wrapper\n    \ndef merge_video(A, B, mix:float=0.5):\n    def wrapper(frame:int):\n        imgA = A(frame)\n        imgB = B(frame)\n        return merge_over(imgA, imgB, mix)\n    return wrapper\n    \ndef get_image_frame(video, frame:int=0):\n    return video(frame)\n    \n__all__ = [\n    'time_offset',\n    'noop',\n    'read_video',\n    'blur_video',\n    'get_image_frame',\n    'merge_video',\n    'read_image',\n    'grade',\n    'gradient',\n    'gaussian_blur',\n    'ReadVideo',\n    'BlurVideo',\n    'TimeOffset',\n    'MergeVideo',\n    'FrameBlend'\n]"
+    },
+    "graph": {
+        "nodes": {
+            "read_video": {
+                "operator": "read_video",
+                "kwargs": {
+                    "path": {
+                        "type": "literal",
+                        "value": {
+                            "type": "path",
+                            "value": "assets\\SMPTE_Color_Bars_animation\\SMPTE_Color_Bars_animation_00000.png"
+                        }
+                    }
+                },
+                "position": [
+                    0.0,
+                    -240.0
+                ]
+            },
+            "get_image_frame": {
+                "operator": "get_image_frame",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "merge_video"
+                    },
+                    "frame": {
+                        "type": "literal",
+                        "value": 12
+                    }
+                },
+                "position": [
+                    2.0,
+                    87.0
+                ]
+            },
+            "blur_video": {
+                "operator": "blur_video",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "read_video"
+                    },
+                    "size": {
+                        "type": "literal",
+                        "value": 9.0
+                    }
+                },
+                "position": [
+                    68.0,
+                    -151.0
+                ]
+            },
+            "noop": {
+                "operator": "noop",
+                "kwargs": {
+                    "val": {
+                        "type": "node",
+                        "name": "get_image_frame"
+                    }
+                },
+                "position": [
+                    2.0,
+                    207.0
+                ]
+            },
+            "merge_video": {
+                "operator": "merge_video",
+                "kwargs": {
+                    "B": {
+                        "type": "node",
+                        "name": "blur_video"
+                    },
+                    "A": {
+                        "type": "node",
+                        "name": "time_offset"
+                    }
+                },
+                "position": [
+                    2.0,
+                    -33.0
+                ]
+            },
+            "time_offset": {
+                "operator": "time_offset",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "read_video"
+                    },
+                    "offset": {
+                        "type": "literal",
+                        "value": 5
+                    }
+                },
+                "position": [
+                    -64.0,
+                    -150.0
+                ]
+            },
+            "ReadVideo": {
+                "operator": "ReadVideo",
+                "kwargs": {
+                    "path": {
+                        "type": "literal",
+                        "value": {
+                            "type": "path",
+                            "value": "assets\\SMPTE_Color_Bars_animation\\SMPTE_Color_Bars_animation_00000.png"
+                        }
+                    }
+                },
+                "position": [
+                    218.0,
+                    -253.5
+                ]
+            },
+            "get_image_frame_0": {
+                "operator": "get_image_frame",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "FrameBlend"
+                    },
+                    "frame": {
+                        "type": "literal",
+                        "value": 13
+                    }
+                },
+                "position": [
+                    228.0,
+                    196.5
+                ]
+            },
+            "BlurVideo": {
+                "operator": "BlurVideo",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "ReadVideo"
+                    },
+                    "size": {
+                        "type": "literal",
+                        "value": 9.0
+                    }
+                },
+                "position": [
+                    487.0,
+                    -118.5
+                ]
+            },
+            "MergeVideo": {
+                "operator": "MergeVideo",
+                "kwargs": {
+                    "A": {
+                        "type": "node",
+                        "name": "TimeOffset"
+                    },
+                    "B": {
+                        "type": "node",
+                        "name": "BlurVideo"
+                    }
+                },
+                "position": [
+                    421.0,
+                    61.5
+                ]
+            },
+            "TimeOffset": {
+                "operator": "TimeOffset",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "ReadVideo"
+                    },
+                    "offset": {
+                        "type": "literal",
+                        "value": 5
+                    }
+                },
+                "position": [
+                    350.0,
+                    -45.5
+                ]
+            },
+            "FrameBlend": {
+                "operator": "FrameBlend",
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "ReadVideo"
+                    },
+                    "duration": {
+                        "type": "literal",
+                        "value": 9
+                    }
+                },
+                "position": [
+                    215.25,
+                    -15.0
+                ]
+            }
+        }
+    }
+}

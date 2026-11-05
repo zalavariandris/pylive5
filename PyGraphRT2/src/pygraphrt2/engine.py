@@ -1,24 +1,9 @@
 from concurrent.futures import Future
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import logging
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Hashable, Iterable, Mapping
 from pygraphrt2.threaded_backend import ThreadedBackend
 
-
-# class ContextOperator:
-#     def __init__(self, *args, **kwargs) -> None:
-#         ...
-
-#     def compute(self, ctx):
-#         ...
-
-# @graph.node(...)
-# def blur(img, radius):
-#     @graph.context(ctx)
-#     def compute(self, ctx):
-#         ...
-
-#     return compute
 
 
 from qtpy.QtCore import Qt, QObject, QTimer, Signal, Slot
@@ -28,11 +13,18 @@ from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
 from .relations import ManyToOneRelation
 
 from .execution_plan import prepare
-from .execution_plan import ContextKey, ExecutionResult, NodeExecutionError
+from .execution_plan import RequestKey, ExecutionResult, NodeExecutionError
 from .exceptions import ExecutionFailure
-from .graph_cache import GraphCache
+from .abstract_cache import AbstractCache
+from .memory_cache import MemoryCache
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _CacheEntry:
+    value: Any
+    duration_seconds: float | None = None
 
 
 class Subscription:
@@ -60,6 +52,14 @@ class Subscription:
 
 
 class Engine(QObject):
+    """Coordinate graph execution and optional reuse of accepted results.
+
+    Caches for forward and request computations default to separate MemoryCache
+    instances. Pass NoCache instances to disable reuse between executions. Execution-local
+    outputs are always retained, independently of these storage policies.
+    Cache values are borrowed and writes happen on the engine's owning thread.
+    """
+
     script_changed = Signal(str)
 
     operators_added = Signal(list)
@@ -80,20 +80,28 @@ class Engine(QObject):
 
     _evaluation_finished = Signal(int, object)
     _execution_finished = Signal(int, object, object)
-    _context_state_changed = Signal(int, object, bool)
+    _request_state_changed = Signal(int, object, bool)
 
     def __init__(
         self, 
         graph: Graph | None = None, 
         registry: InlineScriptModule | None = None,
         backend: ThreadedBackend | None = None,
+        *,
+        node_cache: AbstractCache[NodeRef, _CacheEntry] | None = None,
+        request_cache: AbstractCache[tuple[NodeRef, Hashable], _CacheEntry] | None = None,
     ) -> None:
         super().__init__()
         self._registry = registry if registry is not None else InlineScriptModule()
         self._graph = graph if graph is not None else Graph()
 
         self._backend = backend if backend is not None else ThreadedBackend(self._graph)
-        self._cache = GraphCache()
+        self._node_cache: AbstractCache[NodeRef, _CacheEntry] = (
+            node_cache if node_cache is not None else MemoryCache()
+        )
+        self._request_cache: AbstractCache[tuple[NodeRef, Hashable], _CacheEntry] = (
+            request_cache if request_cache is not None else MemoryCache()
+        )
         self._closed = False
         self._evaluation_id = 0
         self._evaluation_pending = False
@@ -102,7 +110,7 @@ class Engine(QObject):
         self._execution_id = 0
         self._execution_future: Future[ExecutionResult] | None = None
         self._executing_nodes: set[NodeRef] = set()
-        self._contextual_counts: dict[NodeRef, int] = {}
+        self._active_request_counts: dict[NodeRef, int] = {}
         self._auto_execute = True
         self._subscriptions: dict[NodeRef, list[Subscription]] = {}
         self._pending_notifications: set[Subscription] = set()
@@ -117,8 +125,8 @@ class Engine(QObject):
             self._on_execution_finished,
             Qt.ConnectionType.QueuedConnection,
         )
-        self._context_state_changed.connect(
-            self._on_context_state_changed,
+        self._request_state_changed.connect(
+            self._on_request_state_changed,
             Qt.ConnectionType.QueuedConnection,
         )
         self._operator_to_nodes = ManyToOneRelation[NodeRef, ScriptOperatorRef]()
@@ -153,9 +161,9 @@ class Engine(QObject):
     def pending_nodes(self) -> frozenset[NodeRef]:
         """Snapshot of requested work, including targets waiting for evaluation."""
         pending = self._executing_nodes | self._pending_targets
-        pending.update(self._contextual_counts)
+        pending.update(self._active_request_counts)
         if self._evaluation_pending or self._subscription_timer.isActive():
-            pending.update(node for node in self._subscription_targets() if node not in self._cache)
+            pending.update(node for node in self._subscription_targets() if node not in self._node_cache)
         return frozenset(pending)
 
     def set_script(self, script:str):
@@ -253,7 +261,7 @@ class Engine(QObject):
     def _remove_node_operator_mappings(self, nodes: list[NodeRef]) -> None:
         # Graph emits nodes_changed for surviving consumers after removing links.
         self._invalidate_execution()
-        self._cache.invalidate(nodes)
+        self._invalidate_cached_nodes(nodes)
         for node in nodes:
             operator = self._operator_to_nodes.parent_of(node)
             if operator is not None:
@@ -272,10 +280,24 @@ class Engine(QObject):
         if not invalidated:
             return
 
-        self._cache.invalidate(invalidated)
+        self._invalidate_cached_nodes(invalidated)
+        self._pending_notifications.update(
+            subscription
+            for node in invalidated
+            for subscription in self._subscriptions.get(node, ())
+        )
         self._invalidate_execution()
         self.nodes_invalidated.emit(invalidated)
         self._schedule_subscriptions()
+
+    def _invalidate_cached_nodes(self, nodes: Iterable[NodeRef]) -> None:
+        """Forget forward stage and request stage results for the affected nodes."""
+        affected = set(nodes)
+        for node in affected:
+            self._node_cache.remove(node)
+        for key in tuple(self._request_cache):
+            if key[0] in affected:
+                self._request_cache.remove(key)
  
     # Execution backend
     def _invalidate_evaluation(self) -> None:
@@ -288,12 +310,12 @@ class Engine(QObject):
     def _invalidate_execution(self) -> int:
         self._execution_id += 1
         execution_id = self._execution_id
-        had_pending_execution = bool(self._executing_nodes or self._contextual_counts)
+        had_pending_execution = bool(self._executing_nodes or self._active_request_counts)
         if self._execution_future is not None:
             self._execution_future.cancel()
             self._execution_future = None
         self._executing_nodes.clear()
-        self._contextual_counts.clear()
+        self._active_request_counts.clear()
         if had_pending_execution:
             self.execution_pending_changed.emit()
         return execution_id
@@ -398,7 +420,9 @@ class Engine(QObject):
             plan, mapping, initial_outputs = prepare(
                 self._graph, 
                 targets,
-                cached_outputs=self._cache
+                cached_outputs={
+                    node: entry.value for node, entry in self._node_cache.items()
+                },
             )
             # Workers use captured callables, never the live GUI registry.
             for name, snapshot in plan.items():
@@ -413,28 +437,27 @@ class Engine(QObject):
                     )
             self._executing_nodes = {mapping[name] for name in plan}
 
-            # Cached contextual callables can request ancestors outside the plan.
+            # Cached request callables can request ancestors outside the plan.
             mapping.update({
                 node.name(): node
                 for node in self._graph.ancestors(*targets)
             })
 
-            initial_contextual_outputs = {
-                (node.name(), context): value
-                for (node, context), value
-                in self._cache.contextual_outputs().items()
+            initial_request_outputs = {
+                (node.name(), request): entry.value
+                for (node, request), entry in self._request_cache.items()
                 if node.name() in mapping
             }
 
-            def on_context_state_changed(key: ContextKey, running: bool) -> None:
+            def on_request_state_changed(key: RequestKey, running: bool) -> None:
                 # Only the queued Qt slot mutates execution state.
-                self._context_state_changed.emit(execution_id, mapping[key[0]], running)
+                self._request_state_changed.emit(execution_id, mapping[key[0]], running)
 
             future = self._backend.execute_plan(
                 plan,
                 initial_outputs=initial_outputs,
-                initial_contextual_outputs=initial_contextual_outputs,
-                on_context_state_changed=on_context_state_changed,
+                initial_request_outputs=initial_request_outputs,
+                on_request_state_changed=on_request_state_changed,
             )
         except Exception as error:
             self._executing_nodes.clear()
@@ -454,19 +477,19 @@ class Engine(QObject):
             self.execution_pending_changed.emit()
 
     @Slot(int, object, bool)
-    def _on_context_state_changed(
+    def _on_request_state_changed(
         self, execution_id: int, node: NodeRef, running: bool,
     ) -> None:
         if self._closed or execution_id != self._execution_id:
             return
 
-        # One node may have nested contextual computations in progress.
-        was_running = node in self._contextual_counts
-        count = self._contextual_counts.get(node, 0) + (1 if running else -1)
+        # One node may have nested request computations in progress.
+        was_running = node in self._active_request_counts
+        count = self._active_request_counts.get(node, 0) + (1 if running else -1)
         if count > 0:
-            self._contextual_counts[node] = count
+            self._active_request_counts[node] = count
         else:
-            self._contextual_counts.pop(node, None)
+            self._active_request_counts.pop(node, None)
 
         if was_running != (count > 0):
             self.execution_pending_changed.emit()
@@ -483,10 +506,10 @@ class Engine(QObject):
             return
 
         self._execution_future = None
-        had_pending_execution = bool(self._executing_nodes or self._contextual_counts)
+        had_pending_execution = bool(self._executing_nodes or self._active_request_counts)
         executing_nodes = self._executing_nodes
         self._executing_nodes = set()
-        self._contextual_counts.clear()
+        self._active_request_counts.clear()
         if future.cancelled():
             self.execution_pending_changed.emit()
             return
@@ -510,10 +533,10 @@ class Engine(QObject):
             }
 
             for node, value in outputs.items():
-                self._cache.save(node, value)
+                self._node_cache.save(node, _CacheEntry(value))
 
-            for (name, context), value in plan_outputs.contextual_outputs.items():
-                self._cache.save_context(mapping[name], context, value)
+            for (name, request), value in plan_outputs.request_outputs.items():
+                self._request_cache.save((mapping[name], request), _CacheEntry(value))
 
             subscriptions = [
                 subscription
@@ -554,7 +577,7 @@ class Engine(QObject):
 
         Callbacks receive the node's output on the engine's Qt thread, after
         the cache and nodes_executed observers have been updated. Values are
-        borrowed from the cache, including None; do not mutate them. Later
+        borrowed from the execution result, including None; do not mutate them. Later
         notifications follow recomputation; cached dependencies are not repeated.
         """
         if self._closed:
@@ -623,8 +646,7 @@ class Engine(QObject):
             return ()
         return tuple(
             node for node, subscriptions in self._subscriptions.items()
-            if node not in self._cache
-            or any(subscription in self._pending_notifications for subscription in subscriptions)
+            if any(subscription in self._pending_notifications for subscription in subscriptions)
         )
 
     def _schedule_subscriptions(self) -> None:

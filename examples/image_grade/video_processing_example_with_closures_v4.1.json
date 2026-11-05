@@ -1,0 +1,102 @@
+{
+    "version": 4,
+    "script": {
+        "name": "<script>",
+        "source": "from vfxops.io import read_image\nfrom vfxops.draw import gradient\nfrom vfxops.color import grade\nfrom vfxops.filter import gaussian_blur\nfrom vfxops.merge import merge_over\nfrom vfxops.file_sequence import FileSequence\nimport pathlib\nf\n\ndef noop(val):\n    return val\n\ndef read_video(path: pathlib.Path):\n    seq = FileSequence.from_single_frame(path)\n    def wrapped(frame:int):\n        frame_path = seq.get_path(frame)\n        return read_image(frame_path)\n    return wrapped\n    \ndef blur_video(video, size:float=0.0):\n    def wrapped(frame:int):\n        img = video(frame)\n        return gaussian_blur(img, size)\n    return wrapped\n    \ndef time_offset(video, offset:int=0):\n    def wrapper(frame):\n        return video(frame+offset)\n    return wrapper\n    \ndef merge_video(A, B, mix:float=0.5):\n    def wrapper(frame:int):\n        imgA = A(frame)\n        imgB = B(frame)\n        return merge_over(imgA, imgB, mix)\n    return wrapper\n    \ndef get_image_frame(video, frame:int=0):\n    return video(frame)\n    \n__all__ = [\n    'time_offset',\n    'noop',\n    'read_video',\n    'blur_video',\n    'get_image_frame',\n    'merge_video',\n    'read_image',\n    'grade',\n    'gradient',\n    'gaussian_blur'\n]"
+    },
+    "graph": {
+        "nodes": {
+            "read_video": {
+                "kwargs": {
+                    "path": {
+                        "type": "literal",
+                        "value": {
+                            "type": "path",
+                            "value": "assets\\SMPTE_Color_Bars_animation\\SMPTE_Color_Bars_animation_00000.png"
+                        }
+                    }
+                },
+                "position": [
+                    0.0,
+                    -240.0
+                ]
+            },
+            "get_image_frame": {
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "merge_video"
+                    },
+                    "frame": {
+                        "type": "literal",
+                        "value": 12
+                    }
+                },
+                "position": [
+                    0.0,
+                    120.0
+                ]
+            },
+            "blur_video": {
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "read_video"
+                    },
+                    "size": {
+                        "type": "literal",
+                        "value": 9.0
+                    }
+                },
+                "position": [
+                    60.0,
+                    -120.0
+                ]
+            },
+            "noop": {
+                "kwargs": {
+                    "val": {
+                        "type": "node",
+                        "name": "get_image_frame"
+                    }
+                },
+                "position": [
+                    0.0,
+                    240.0
+                ]
+            },
+            "merge_video": {
+                "kwargs": {
+                    "B": {
+                        "type": "node",
+                        "name": "blur_video"
+                    },
+                    "A": {
+                        "type": "node",
+                        "name": "time_offset"
+                    }
+                },
+                "position": [
+                    0.0,
+                    0.0
+                ]
+            },
+            "time_offset": {
+                "kwargs": {
+                    "video": {
+                        "type": "node",
+                        "name": "read_video"
+                    },
+                    "offset": {
+                        "type": "literal",
+                        "value": 5
+                    }
+                },
+                "position": [
+                    -60.0,
+                    -120.0
+                ]
+            }
+        }
+    }
+}
