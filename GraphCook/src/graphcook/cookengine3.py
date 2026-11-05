@@ -201,6 +201,7 @@ if __name__ == "__main__":
 
     def blend(ctx):
         f = ctx.frame
+        
         return (0.25 * ctx.input("source", f - 1)
                 + 0.50 * ctx.input("source", f)
                 + 0.25 * ctx.input("source", f + 1))
