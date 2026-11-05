@@ -80,9 +80,14 @@ def operator(func):
     ...
 
 @operator
-def blur(source: Video, radius:int):
+def blur_op(source: Video, radius:int):
     ctx = Context.current()
-    frame:int = ctx.get('frame')
-    source_frame = get_video_frame(source, frame)
-    blurred_frame = cv2.GaussianBlur(source_frame, (radius, radius), 0)
-    return blurred_frame
+    requested_frames:list[int] = ctx.get('frames')
+
+    result_video = Video()
+    for frame in requested_frames:
+        source_frame = get_video_frame(source, frame)
+        blurred_frame = cv2.GaussianBlur(source_frame, (radius, radius), 0)
+        result_video.frames[frame] = blurred_frame
+
+    return result_video
