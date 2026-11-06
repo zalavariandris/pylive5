@@ -1,0 +1,20 @@
+digraph reactive {
+  rankdir=LR;
+  n6 [label="output #6", shape=doubleoctagon];
+  n5 [label="blend_frames #5", shape=ellipse];
+  n2 [label="frame #2", shape=box];
+  n2 -> n5;
+  n3 [label="strength #3", shape=box];
+  n3 -> n5;
+  n4 [label="read_video #4", shape=ellipse];
+  n1 [label="path #1", shape=box];
+  n1 -> n4;
+  n4 -> n5;
+  n12 [label="image_blend #12", shape=ellipse];
+  n7 [label="read_frame #7", shape=ellipse];
+  n7 -> n12;
+  n10 [label="read_frame #10", shape=ellipse];
+  n10 -> n12;
+  n12 -> n5;
+  n5 -> n6;
+}
