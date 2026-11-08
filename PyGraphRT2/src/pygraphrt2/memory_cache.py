@@ -1,11 +1,9 @@
 """In-memory storage with explicit writes and shallow snapshots."""
-
-from collections.abc import Hashable, Iterator, Mapping
 from .abstract_cache import AbstractCache
+from collections.abc import Hashable, Iterator, Mapping
+
 
 class MemoryCache[K: Hashable, V](AbstractCache[K, V]):
-    """Store borrowed values until explicitly removed; no automatic eviction."""
-
     def __init__(self, initial: Mapping[K, V] | None = None) -> None:
         self._entries: dict[K, V] = dict(initial) if initial is not None else {}
 
