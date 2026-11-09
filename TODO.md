@@ -224,7 +224,9 @@ Keep execution synchronous for now, but let the UI consume signals so it can sup
     - [ ] blur
 
 - [ ] Image CornerPin
-
+  with gizmos in the viewer
+  
+- [ ] create a video tracker, and planar solver, to match
 
 ## DEV
 

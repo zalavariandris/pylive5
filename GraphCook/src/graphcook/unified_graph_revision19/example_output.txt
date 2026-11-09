@@ -1,0 +1,24 @@
+event job add started
+event job add computed
+event job double started
+event job double computed
+event executed add 
+event executed double 
+Eager: 10
+event invalidated double 
+event invalidated add 
+event job add started
+event job add computed
+event job double started
+event job double computed
+event executed add 
+event executed double 
+After editing: 26
+event invalidated double 
+event job add cache_hit
+event job double started
+event job double computed
+event executed double 
+After reloading operator: 39
+Hybrid first: {2: 101, 3: 102}
+Hybrid expanded: {3: 102, 4: 103}

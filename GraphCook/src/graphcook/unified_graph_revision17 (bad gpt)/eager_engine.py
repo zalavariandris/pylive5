@@ -134,15 +134,23 @@ class EagerJob:
         return self._memo[self.node]
 
 class EagerEngine(Engine[EagerOperator, Any]):
-    def __init__(self, graph: EagerGraph,
-                 cache: CacheProtocol[EagerOperator, Any] | None = None):
-        super().__init__(graph, cache if cache is not None else MemoryCache())
+    def __init__(self, 
+        graph: EagerGraph,
+        cache: CacheProtocol[EagerOperator, Any] | None = None
+    ):
+        super().__init__(
+            graph, 
+            cache if cache is not None else MemoryCache()
+        )
 
     def evaluate(self, node: EagerOperator) -> Any:
         generation = self._generation
         job = EagerJob(
-            copy_graph(self.graph), node, dict(self.cache),
-            job_id=uuid4(), on_event=self._on_job_event,
+            copy_graph(self.graph), 
+            node, 
+            cached=dict(self.cache),
+            job_id=uuid4(), 
+            on_event=self._on_job_event,
         )
         try:
             value = job.run()

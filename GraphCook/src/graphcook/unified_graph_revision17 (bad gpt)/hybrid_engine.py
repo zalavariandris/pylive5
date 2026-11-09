@@ -256,16 +256,25 @@ class HybridJob:
         return self.evaluate(self.root, ctx)
 
 class HybridEngine(Engine[HybridOperator, CacheEntry]):
-    def __init__(self, graph: HybridGraph, context: Context,
-                 cache: CacheProtocol[HybridOperator, CacheEntry] | None = None):
-        super().__init__(graph, cache if cache is not None else MemoryCache())
+    def __init__(self, 
+        graph: HybridGraph, 
+        context: Context,
+        cache: CacheProtocol[HybridOperator, CacheEntry] | None = None
+    ):
+        super().__init__(
+            graph, 
+            cache if cache is not None else MemoryCache()
+        )
         self.context = context
 
     def evaluate(self, node: HybridOperator) -> ContextualResult:
         generation = self._generation
         job = HybridJob(
-            copy_graph(self.graph), node, dict(self.cache),
-            job_id=uuid4(), on_event=self._on_job_event,
+            copy_graph(self.graph), 
+            node, 
+            cached=dict(self.cache),
+            job_id=uuid4(), 
+            on_event=self._on_job_event,
         )
         try:
             value = job.run(self.context)
@@ -283,7 +292,10 @@ class HybridEngine(Engine[HybridOperator, CacheEntry]):
             self.cache.remove(node)
 
     def _store(self, result: ExecutionResult[HybridOperator, CacheEntry]) -> None:
-        self.cache.save(result.node, merge_entry(self.cache.get(result.node), result))
+        self.cache.save(
+            result.node, 
+            merge_entry(self.cache.get(result.node), result)
+        )
 
     def set_context(self, context: Context) -> None:
         self.context = context
