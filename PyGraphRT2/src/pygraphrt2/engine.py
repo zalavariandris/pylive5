@@ -10,7 +10,7 @@ from qtpy.QtCore import Qt, QObject, QTimer, Signal, Slot
 
 from .graph import Graph, NodeRef
 from .inline_scriptmodule import InlineScriptModule, ScriptOperatorRef
-from .relations import ManyToOneRelation
+from myutils.relations import ManyToOneRelation
 
 from .execution_plan import prepare
 from .execution_plan import RequestKey, ExecutionResult, NodeExecutionError
