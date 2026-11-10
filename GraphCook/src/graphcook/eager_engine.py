@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Callable
 
 from .base_engine import (
     BaseEngine, 
@@ -17,18 +17,34 @@ from .graph import NodeT
 from .observable_graph import ObservableGraph, GraphChange
 
 
-class EagerProvider(OperatorProvider):
-    """A simple eager operator provider."""
+class EagerScriptProvider(OperatorProvider):
+    def __init__(self, script: str):
+        self.script = script
+        self._functions = dict()
+        self._exec()
+
+    def _exec(self):
+        namespace = {}
+        exec(self.script, namespace)
+        self._functions = {k: v for k, v in namespace.items() if callable(v)}
+
+    def operator(self, name:str) -> OperatorHandle:
+        return OperatorHandle(name)
 
     def resolve(self, handle: OperatorHandle) -> Any:
-        return handle.operator
-
+        try:
+            return self._functions[handle.name]
+        except KeyError:
+            raise ValueError(f"Function for handle {handle} not found.")
 
 class EagerEngine(BaseEngine[NodeT]):
-    def __init__(self, graph: ObservableGraph[NodeT], provider: OperatorProvider,
-                 cache: CacheProtocol[NodeT, Any] | None = None) -> None:
-        super().__init__(graph, provider)
-        self.cache: CacheProtocol[NodeT, Any] = cache if cache is not None else MemoryCache()
+    def __init__(self, script:str):
+        super().__init__(
+            ObservableGraph(), 
+            EagerScriptProvider(script)
+        )
+        self._script = script
+        self.cache = MemoryCache()
         self._cache_revisions: dict[NodeT, int] = {}
         self._revision_counter = 0
 
@@ -89,3 +105,11 @@ class EagerEngine(BaseEngine[NodeT]):
                 if (finished in live_nodes and
                         self._cache_revisions.get(finished, 0) == revisions.get(finished, 0)):
                     self.cache.save(finished, result)
+
+    def node(self, funcname, **kwargs):
+        from graphcook.observable_graph import ObservableGraph
+        G = ObservableGraph()
+        script = self._script
+        engine = EagerEngine[Callable](script)
+        self.graph.add_node()
+        return engine.node(funcname, **kwargs)

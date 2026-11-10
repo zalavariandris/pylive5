@@ -1,19 +1,29 @@
+from graphcook.provider import OperatorHandle, OperatorProvider
 import pytest
 from graphcook.eager_engine import EagerEngine
-from typing import Callable
+from typing import Any, Callable
 from textwrap import dedent
 
-class EagerScriptProvider:
-    ...
+
 
 def test_eager_engine():
     from graphcook.observable_graph import ObservableGraph
     G = ObservableGraph()
     script = dedent("""
-    def _the_name
+    def the_name():
+        return "Mása"
+
+    def the_greeting():
+        return "Hey"
+
+    def hello_world(name:str, greeting:str='Hello'):
+            return f"{greeting}, {name}!"
     """)
-    provider = EagerScriptProvider(script)
-    engine = EagerEngine[Callable]()
+
+    engine = EagerEngine[Callable](script)
+    the_name = engine.node("the_name")
+    the_greeting = engine.node("the_greeting")
+    hello_world = engine.node("hello_world", name=the_name, greeting=the_greeting)
 
 if __name__ == "__main__":
     pytest.main([__file__])
