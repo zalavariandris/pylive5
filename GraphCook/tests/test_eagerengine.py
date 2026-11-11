@@ -10,7 +10,7 @@ def test_eager_engine():
     from graphcook.observable_graph import ObservableGraph
 
 
-    engine = EagerEngine("""
+    engine = EagerEngine(dedent("""
     def the_name():
         return "Mása"
 
@@ -19,7 +19,8 @@ def test_eager_engine():
 
     def hello_world(name:str, greeting:str='Hello'):
             return f"{greeting}, {name}!"
-    """)
+    """))
+    
     the_name = engine.node("the_name")
     the_greeting = engine.node("the_greeting")
     hello_world = engine.node("hello_world", name=the_name, greeting=the_greeting)
