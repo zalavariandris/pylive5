@@ -110,6 +110,14 @@ class EagerEngine(BaseEngine[NodeT]):
         from graphcook.observable_graph import ObservableGraph
         G = ObservableGraph()
         script = self._script
-        engine = EagerEngine[Callable](script)
-        self.graph.add_node()
+        engine = EagerEngine[str](script)
+        # generate random_id for node
+        import uuid
+        node_id = str(uuid.uuid4())
+        self.graph.add_node(
+            node_id, 
+            **{
+                OPERATOR_ATTRIBUTE: funcname
+            }
+        )
         return engine.node(funcname, **kwargs)

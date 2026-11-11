@@ -24,6 +24,8 @@ def test_eager_engine():
     the_name = engine.node("the_name")
     the_greeting = engine.node("the_greeting")
     hello_world = engine.node("hello_world", name=the_name, greeting=the_greeting)
+    result = engine.evaluate(hello_world)
+    assert result == "Hey, Mása!"
 
 if __name__ == "__main__":
     pytest.main([__file__])
