@@ -8,8 +8,9 @@ from textwrap import dedent
 
 def test_eager_engine():
     from graphcook.observable_graph import ObservableGraph
-    G = ObservableGraph()
-    script = dedent("""
+
+
+    engine = EagerEngine("""
     def the_name():
         return "Mása"
 
@@ -19,13 +20,13 @@ def test_eager_engine():
     def hello_world(name:str, greeting:str='Hello'):
             return f"{greeting}, {name}!"
     """)
-
-    engine = EagerEngine[Callable](script)
     the_name = engine.node("the_name")
     the_greeting = engine.node("the_greeting")
     hello_world = engine.node("hello_world", name=the_name, greeting=the_greeting)
     result = engine.evaluate(hello_world)
     assert result == "Hey, Mása!"
+
+    engine.evaluate(hello_world)
 
 if __name__ == "__main__":
     pytest.main([__file__])
