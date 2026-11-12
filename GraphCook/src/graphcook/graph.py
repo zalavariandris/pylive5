@@ -20,6 +20,11 @@ class Link(Generic[NodeT]):
     target: NodeT
     inlet: str
 
+    def __iter__(self):
+        yield self.source
+        yield self.target
+        yield self.inlet
+
 
 class GraphProtocol(Protocol[NodeT]):
     def nodes(self) -> Iterable[NodeT]: ...
@@ -36,6 +41,53 @@ class MutableGraphProtocol(GraphProtocol[NodeT], Protocol[NodeT]):
 
 class ObservableGraphProtocol(GraphProtocol[NodeT], Protocol[NodeT]):
     def listen(self, callback: Callable[[GraphChange[NodeT]], None]) -> Callable[[], None]:
+
+def ancestors(graph: GraphProtocol[NodeT], node: NodeT) -> set[NodeT]:
+    if node not in graph.nodes():
+        raise ValueError("Node is not in graph")
+    found, pending = set(), [link.source for link in graph.in_links(node)]
+    while pending:
+        current = pending.pop()
+        if current not in found:
+            found.add(current)
+            pending.extend(link.source for link in graph.in_links(current))
+    return found
+
+
+def descendants(graph: GraphProtocol[NodeT], node: NodeT) -> set[NodeT]:
+    if node not in graph.nodes():
+        raise ValueError("Node is not in graph")
+    found, pending = set(), [link.target for link in graph.out_links(node)]
+    while pending:
+        current = pending.pop()
+        if current not in found:
+            found.add(current)
+            pending.extend(link.target for link in graph.out_links(current))
+    return found
+
+
+def topological_sort(graph: GraphProtocol[NodeT], root: NodeT | None = None) -> tuple[NodeT, ...]:
+    if root is not None and root not in graph.nodes():
+        raise ValueError("Root is not in graph")
+    visited, active, order = set(), set(), []
+
+    def visit(node: NodeT) -> None:
+        if node in active:
+            raise ValueError("Graph contains a cycle")
+        if node in visited:
+            return
+        active.add(node)
+        for link in graph.in_links(node):
+            visit(link.source)
+        active.remove(node)
+        visited.add(node)
+        order.append(node)
+
+    for node in (root,) if root is not None else graph.nodes():
+        visit(node)
+    return tuple(order)
+
+
 
 class Graph(Generic[NodeT]):
     """Stores node attributes and one incoming link per (target, input)."""
@@ -56,7 +108,6 @@ class Graph(Generic[NodeT]):
     def in_links(self, dst: NodeT) -> Iterable[Link[NodeT]]:
         for inlet, src in self._inputs[dst].items():
             yield Link(src, dst, inlet)
-
 
     def links(self) -> Iterable[Link[NodeT]]:
         for dst, inlets in self._inputs.items():

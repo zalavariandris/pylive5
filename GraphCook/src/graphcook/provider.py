@@ -1,4 +1,4 @@
-from typing import Callable, Any, Protocol, Mapping
+from typing import Callable, Any, Iterable, Protocol, Mapping
 from dataclasses import dataclass
 
 
@@ -31,5 +31,6 @@ class ProviderSnapshot:
 
 
 class OperatorProvider(Protocol):
-    def snapshot(self) -> ProviderSnapshot: ...
+    def operators(self) -> Iterable[OperatorHandle]: ...
+    def resolve(self, handle: OperatorHandle) -> Any: ...
     def listen(self, callback: Callable[[ProviderChange], None]) -> Callable[[], None]: ...
