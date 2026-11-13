@@ -33,11 +33,11 @@ class EngineChange(Generic[NodeT]):
     ...
 
 class EngineGraphInterface(
-    Generic[NodeT], 
-    MutableGraph[NodeT], 
-    ObservableGraphProtocol[NodeT], 
-    Protocol[NodeT]
-):...
+    MutableGraphProtocol[NodeT],
+    ObservableGraphProtocol[NodeT],
+    Protocol[NodeT],
+):
+    pass
 
 class EngineProviderInterface(
     Generic[OperatorT], 
@@ -46,7 +46,7 @@ class EngineProviderInterface(
     Protocol[OperatorT]
 ): ...
 
-class EngineInterface(Generic[NodeT, OperatorT], Protocol):
+class EngineInterface(Protocol[NodeT, OperatorT]):
     def graph(self) -> EngineGraphInterface[NodeT]: ...
     def provider(self) -> EngineProviderInterface[OperatorT]: ...
     def set_script(self, script: str) -> None: ...
