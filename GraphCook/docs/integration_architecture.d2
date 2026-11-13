@@ -1,0 +1,119 @@
+vars: {
+  d2-config: {
+    layout-engine: elk   # dagre (default), elk, or tala (tala needs a separate install)
+    theme-id: 0          # 0 = Neutral default; see `d2 themes` for the full list
+    dark-theme-id: 200   # optional theme used when the viewer is in dark mode
+    pad: 50              # padding around the diagram, in pixels
+    sketch: true         # hand-drawn look
+    center: true        # center the diagram in the SVG
+  }
+}
+direction: right
+
+Backend {
+    Engine {
+        Graph{
+            shape: class
+            graph: "[ReadableGraph, MutableGraph]"
+            listen(listener): "Callable[[GraphChange], None]"
+        }
+    }
+}
+
+
+FRONTEND {
+    shape: rectangle
+    style.multiple: true
+    QDomainModel{
+        Provider(QListModel) {
+            shape: class
+            operators: 'Iterable[OperatorT]'
+            operators_added: 'Signal[OperatorT]'
+            operators_removed: 'Signal[OperatorT]'
+            operator_changed: 'Signal[OperatorT]'
+        }
+        Graph(GraphModel) {
+            shape: class
+            nodes: 'Iterable[NodeT]'
+            inlinks: 'Iterable[LinkT]'
+            outlinks: 'Iterable[LinkT]'
+            nodes_added: Signal
+            nodes_removed: Signal
+            node_atribute_changed: Signal
+            add_node(NodeT)
+            remove_node(NodeT)
+            set_attr(NodeT, str, Any)
+            unset_attr(NodeT, str)
+            add_link(LinkT)
+            remove_link(LinkT)
+        }
+        
+    }
+    vars: {status: future}
+}
+
+
+Contract {
+    graph {
+        ReadableGraph{
+            shape: class
+            + nodes: 'Iterable[NodeT]'
+            + attributes: 'Mapping[NodeT, Any]'
+            + in_links: 'Iterable[LinkT]'
+            + out_links: 'Iterable[LinkT]'
+            + links: 'Iterable[LinkT]'
+        }
+        MutableGraph {
+            shape: class
+            add_node
+            remove_node
+            add_link
+            remove_link
+            set
+            unset
+        }
+        GraphChange {
+            shape: class
+            nodes: 'SetChange[NodeT]'
+            links: 'SetChange[NodeT]'
+            attributes: 'dict[MappingChange[NodeT, Any]]'
+        }
+        Serialization{
+        }
+    }
+
+    Provider {
+        shape: class
+        operators
+        added
+        removed
+        tooltip: expose available operators
+    }
+}
+
+Backend.Engine.graph -> Contract.graph.ReadableGraph
+Backend.Engine.graph -> Contract.graph.MutableGraph
+Backend.Engine.listen -> Contract.graph.GraphChange
+
+
+Contract.graph.ReadableGraph -> FRONTEND.QDomainModel:  📖
+Contract.graph.MutableGraph <- FRONTEND.QDomainModel:  ✏️
+Contract.graph.GraphChange -> FRONTEND.QDomainModel:  👂
+
+
+Interaction {
+    shape: sequence_diagram
+    alice -> bob: What does it mean\nto be well-adjusted?
+    bob -> alice: The ability to play bridge or\ngolf as if they were games.
+}
+
+ReadableGraphInterface{
+    NodeT {
+        shape: circle
+        style.multiple: true
+    }
+    links {
+        shape: rectangle
+        style.multiple: true
+    }
+}

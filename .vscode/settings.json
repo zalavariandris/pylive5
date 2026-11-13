@@ -4,5 +4,6 @@
         "GraphCook"
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.testing.pytestEnabled": true,
+    "D2.previewLayout": "elk"
 }
