@@ -3,10 +3,10 @@ from types import MappingProxyType
 from typing import Any, Literal, Callable, Generic, Hashable, Iterable, Mapping, Protocol, Set, TypeVar
 
 
-from .base_engine import UNSET
-from .graph import MutableGraph
+from .core.base_engine import UNSET
+from .core.graph import MutableGraph
 from .observable_graph import ObservableGraph
-from .changes import SetChanges, MappingChanges
+from .core.changes import SetChanges, MappingChanges
 
 NodeT = TypeVar("NodeT", bound=Hashable)
 OperatorT = TypeVar("OperatorT", bound=Hashable)

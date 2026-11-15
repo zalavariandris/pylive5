@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from typing import Any, Generic, Literal, Protocol
 
 from .graph import NodeT
-from .observable_graph import GraphChange, ObservableGraph
-from .graph_index import GraphAttributeIndex
+from ..observable_graph import GraphChange, ObservableGraph
+from ..graph_index import GraphAttributeIndex
 
 OPERATOR_ATTRIBUTE = "__operator__"
 UNSET = object()  # A computed result may legitimately be None.
 
-from .provider import (
+from ..provider import (
     OperatorHandle,
     OperatorProvider,
     ProviderChange,
@@ -39,8 +39,8 @@ class BaseEngine(Generic[NodeT]):
         self._provider = provider
         self._listeners: list[Callable[[EngineChange[NodeT]], None]] = []
         self._operator_index = GraphAttributeIndex(graph, OPERATOR_ATTRIBUTE, OperatorHandle)
-        self._unlisten_graph = graph.listen(self._handle_graph_change)
-        self._unlisten_provider = provider.listen(self._handle_provider_change)
+        self._unlisten_graph = graph.listen(self._graph_change_hook)
+        self._unlisten_provider = provider.listen(self._provider_change_hook)
 
     @property
     def provider(self) -> OperatorProvider:
@@ -83,7 +83,7 @@ class BaseEngine(Generic[NodeT]):
         """Optional hook for engine-specific state (such as a cache)."""
         pass
 
-    def _handle_graph_change(self, change: GraphChange[NodeT]) -> None:
+    def _graph_change_hook(self, change: GraphChange[NodeT]) -> None:
         self._operator_index.update(change)
         dirty = set(change.nodes.added) | set(change.nodes.removed)
         dirty.update(change.attributes)
@@ -91,7 +91,7 @@ class BaseEngine(Generic[NodeT]):
         dirty.update(link.target for link in change.links.removed)
         self.invalidate(dirty)
 
-    def _handle_provider_change(self, change: ProviderChange) -> None:
+    def _provider_change_hook(self, change: ProviderChange) -> None:
         if change.unknown:
             self.invalidate(self.graph.nodes())
             return

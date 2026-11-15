@@ -1,9 +1,9 @@
 """Derived, explicitly updated index of a node attribute's hashable values."""
 from __future__ import annotations
 
-from typing import Generic, Hashable, TypeVar
+from typing import Generic, Hashable, Mapping, TypeVar
 
-from .graph import GraphProtocol, NodeT
+from .core.graph import GraphProtocol, NodeT
 from .observable_graph import ObservableGraph, GraphChange
 from myutils.relations import ManyToOneRelation
 
@@ -20,7 +20,7 @@ class GraphAttributeIndex(Generic[NodeT, ValueT]):
     update it before acting on the same change (e.g. cache invalidation).
     """
 
-    def __init__(self, graph: GraphProtocol[NodeT], attribute: str,
+    def __init__(self, graph: GraphProtocol[NodeT, Mapping[str, object]], attribute: str,
                  value_type: type[ValueT]) -> None:
         self.graph = graph
         self.attribute = attribute

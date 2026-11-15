@@ -1,11 +1,11 @@
 from typing import Hashable
 
-from qdageditor5.models.standard_dag_model import StandardDAGModel
+from qdageditor5.models.abstract_dag_model import AbstractDAGModel
 
 from grandalf.graphs import Vertex,Edge,Graph,graph_core
 from grandalf.layouts import SugiyamaLayout
 
-def __model_to_grandalf_graph(model: "StandardDAGModel") -> "Graph":
+def __model_to_grandalf_graph(model: AbstractDAGModel) -> "Graph":
     """
     Layout the graph model using grandalf library.
     Returns a dictionary mapping node keys to (x, y) positions.
@@ -28,7 +28,7 @@ def __model_to_grandalf_graph(model: "StandardDAGModel") -> "Graph":
 
     return Graph(list(vertex_map.values()), reversed(edges))
 
-def layout_graph_model_with_grandalf(model: "StandardDAGModel") -> dict[Hashable, tuple[float, float]]:
+def layout_graph_model_with_grandalf(model: AbstractDAGModel) -> dict[Hashable, tuple[float, float]]:
     # == Convert the model to a grandalf graph ==
     G = __model_to_grandalf_graph(model)
 

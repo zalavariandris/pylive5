@@ -3,10 +3,10 @@ from typing import  Generic, Mapping, Callable
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from dataclasses import dataclass, field
-from .graph import Graph, NodeT, Link
+from .core.graph import Graph, NodeT, Link
 
 
-from .changes import (
+from .core.changes import (
     SetChanges,
     ValueChange,
     MappingChanges
@@ -26,9 +26,8 @@ class GraphChange(Generic[NodeT]):
 
         
 class ObservableGraph(Graph[NodeT]):
-    """
-    add observable graph functionality to Graph, notifying listeners of changes
-    note: a node removal does not trigger connected link removal signals.
+    """Observable graph whose events describe completed mutations.
+    Node-removal events include all incident links removed with the node.
     """
     def __init__(self) -> None:
         super().__init__()
@@ -51,27 +50,30 @@ class ObservableGraph(Graph[NodeT]):
         ))
 
     def remove_node(self, node: NodeT) -> None:
+        removed_links = set(self.in_links(node)).union(self.out_links(node))
         super().remove_node(node)
 
         self._notify(GraphChange(
-            nodes=SetChanges(removed=set([node]))
+            nodes=SetChanges(removed=set([node])),
+            links=SetChanges(removed=removed_links)
         ))
 
     def set(self, node: NodeT, **attributes: object) -> None:
         old = self.attributes(node)
+        updates = attributes
 
-        if not attributes:
+        if not updates:
             return
 
         added = {
             key: value
-            for key, value in attributes.items()
+            for key, value in updates.items()
             if key not in old
         }
 
         changed = {
             key: ValueChange(old[key], value)
-            for key, value in attributes.items()
+            for key, value in updates.items()
             if key in old
         }
 

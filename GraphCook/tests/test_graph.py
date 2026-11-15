@@ -1,5 +1,5 @@
 import pytest
-from graphcook.graph import Graph
+from graphcook.core.graph import Graph
 
 
 @pytest.fixture

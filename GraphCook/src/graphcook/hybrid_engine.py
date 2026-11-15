@@ -8,11 +8,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic, Literal, Protocol, Self
 
-from .base_engine import (BaseEngine, EngineChange, OPERATOR_ATTRIBUTE,
+from .core.base_engine import (BaseEngine, EngineChange, OPERATOR_ATTRIBUTE,
                          OperatorHandle, OperatorProvider, ProviderSnapshot, UNSET,
                          UnresolvedOperatorError)
-from .cache import CacheProtocol, MemoryCache
-from .graph import Graph, NodeT, ObservableGraph
+from .core.cache import CacheProtocol, MemoryCache
+from .core.graph import Graph, NodeT, ObservableGraph
 
 
 class Context(Protocol):

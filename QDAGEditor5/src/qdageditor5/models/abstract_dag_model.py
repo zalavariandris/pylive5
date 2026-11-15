@@ -149,9 +149,9 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         """Return the header data for the given node and role."""
         pass
     
-    def nodePosition(self, node: NodeName) -> QPointF:
-        """Return the position of the given node as a QPointF."""
-        return QPointF(0, 0)
+    def nodePosition(self, node: NodeName) -> QPointF | None:
+        """Return the model position, or None for view-managed positioning."""
+        return None
     
     def setNodePosition(self, node: NodeName, position: QPointF|None) -> bool:
         return False

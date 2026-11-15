@@ -1,0 +1,71 @@
+classes: {
+    aggregation: {
+        target-arrowhead.shape: diamond
+    }
+    inheritance: {
+        target-arrowhead: {
+            shape: triangle
+            style.filled: false
+        }
+    }
+    realization: {
+        target-arrowhead.shape: triangle
+        target-arrowhead.style.filled: false
+        style.stroke-dash: 5
+    }
+    dependency: {
+        target-arrowhead.shape: arrow
+        style.stroke-dash: 5
+    }
+    association: {
+        style.stroke-dash: 0
+    }
+    directed_association: {
+        target-arrowhead.shape: arrow
+        style.stroke-dash: 0
+    }
+    aggregation: {
+        target-arrowhead.shape: diamond
+        target-arrowhead.style.filled: false
+        style.stroke-dash: 0
+    }
+    composition: {
+        target-arrowhead.shape: diamond
+        target-arrowhead.style.filled: true
+        style.stroke-dash: 0
+    }
+}
+
+ReadableGraph{
+    shape: class
+    + nodes: 'Iterable[NodeT]'
+    + attributes: 'Mapping[NodeT, Any]'
+    + links: 'Iterable[LinkT]'
+    + in_links(NodeT): 'Iterable[LinkT]'
+    + out_links(NodeT): 'Iterable[LinkT]'
+}
+
+MutableGraph {
+    shape: class
+    add_node(NodeT)
+    remove_node(NodeT)
+    add_link(NodeT, NodeT, InletT)
+    remove_link(NodeT, NodeT, InletT)
+    set(NodeT, InletT, Any)
+    unset(NodeT, InletT)
+}
+
+Observable: {
+    shape: class
+    listen(): None
+}
+
+Engine {
+    shape: class
+    +breed: string
+    +bark(): void
+}
+
+Engine -> ReadableGraph: conforms {class: realization}
+Engine -> MutableGraph: conforms {class: realization}
+Engine -> Observable: conforms {class: realization}
