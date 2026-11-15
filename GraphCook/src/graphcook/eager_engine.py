@@ -108,6 +108,7 @@ class NodeSignature(TypedDict):
     
 from .graph_index import GraphAttributeIndex
 
+
 class EagerEngine:
     def __init__(self, script:str):
         self._graph = ObservableGraph[NodeId]()
@@ -115,7 +116,7 @@ class EagerEngine:
         self._cache = MemoryCache[NodeId, Any]()
         self._listeners: list[Callable[[EagerEngineChange], None]] = []
 
-        self._operator_index = GraphAttributeIndex(self._graph, 'operator', OperatorHandle)
+        self._operator_index = GraphAttributeIndex[NodeId, OperatorHandle](self._graph, 'operator', OperatorHandle)
 
         self._unsubscribe_graph = self._graph.listen(self._handle_graph_change)
         self._unsubscribe_provider = self._provider.listen(self._handle_provider_change)
@@ -234,15 +235,15 @@ class EagerEngine:
             inlets=inlets
         )
 
-    def in_links(self, node: NodeId) -> Iterable[(NodeId, NodeId, str)]:
+    def in_links(self, node: NodeId) -> Iterable[tuple[NodeId, NodeId, str]]:
         for link in self._graph.in_links(node):
             yield (link.source, link.target, link.inlet)
 
-    def out_links(self, node: NodeId) -> Iterable[(NodeId, NodeId, str)]:
+    def out_links(self, node: NodeId) -> Iterable[tuple[NodeId, NodeId, str]]:
         for link in self._graph.out_links(node):
             yield (link.source, link.target, link.inlet)
 
-    def links(self) -> Iterable[(NodeId, NodeId, str)]:
+    def links(self) -> Iterable[tuple[NodeId, NodeId, str]]:
         for link in self._graph.links():
             yield (link.source, link.target, link.inlet)
 

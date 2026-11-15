@@ -20,7 +20,7 @@ class GraphAttributeIndex(Generic[NodeT, ValueT]):
     update it before acting on the same change (e.g. cache invalidation).
     """
 
-    def __init__(self, graph: GraphProtocol[NodeT, Mapping[str, object]], attribute: str,
+    def __init__(self, graph: GraphProtocol[NodeT], attribute: str,
                  value_type: type[ValueT]) -> None:
         self.graph = graph
         self.attribute = attribute
