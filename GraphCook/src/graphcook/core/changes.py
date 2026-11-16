@@ -10,7 +10,7 @@ ValueT = TypeVar("ValueT")
 @dataclass(frozen=True)
 class SetChanges(Generic[ValueT]):
     """Membership changes in an unordered collection."""
-    added: set[ValueT] = field(default_factory=set)
+    added:   set[ValueT] = field(default_factory=set)
     removed: set[ValueT] = field(default_factory=set)
 
 

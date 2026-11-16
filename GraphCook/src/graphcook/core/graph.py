@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Generic, Hashable, Iterable, Mapping, Protocol, Set
 from typing_extensions import TypeVar
+from typing import NamedTuple
 
 NodeT = TypeVar("NodeT", bound=Hashable)
 # TypedDict is compatible with Mapping, but not with mutable dict annotations.
@@ -17,17 +18,11 @@ class Node:
     """Convenient identity-based node. Any hashable object may also be a node."""
     label: str = ""
 
-
-@dataclass(frozen=True)
-class Link(Generic[NodeT]):
+class Link(Generic[NodeT], NamedTuple):
     source: NodeT
     target: NodeT
     inlet: str
 
-    def __iter__(self):
-        yield self.source
-        yield self.target
-        yield self.inlet
 
 
 class GraphProtocol(Protocol[NodeT]):
@@ -73,10 +68,16 @@ def descendants(graph: GraphProtocol[NodeT], node: NodeT) -> set[NodeT]:
     return found
 
 
-def topological_sort(graph: GraphProtocol[NodeT], root: NodeT | None = None) -> tuple[NodeT, ...]:
-    if root is not None and root not in graph.nodes():
-        raise ValueError("Root is not in graph")
-    visited, active, order = set(), set(), []
+def topological_sort(graph: GraphProtocol[NodeT], *roots: NodeT) -> tuple[NodeT, ...]:
+    nodes = tuple(graph.nodes())
+    known_nodes = set(nodes)
+    for root in roots:
+        if root not in known_nodes:
+            raise ValueError(f"Root is not in graph: {root!r}")
+
+    visited: set[NodeT] = set()
+    active: set[NodeT] = set()
+    order: list[NodeT] = []
 
     def visit(node: NodeT) -> None:
         if node in active:
@@ -90,10 +91,10 @@ def topological_sort(graph: GraphProtocol[NodeT], root: NodeT | None = None) -> 
         visited.add(node)
         order.append(node)
 
-    for node in (root,) if root is not None else graph.nodes():
+    for node in roots if roots else nodes:
         visit(node)
-    return tuple(order)
 
+    return tuple(order)
 
 
 class Graph(Generic[NodeT]):
@@ -202,6 +203,6 @@ class Graph(Generic[NodeT]):
         """Update the node's dictionary with keyword attributes."""
         self._nodes[node].update(attributes)
 
-    def unset(self, node: NodeT, name: Hashable) -> None:
+    def unset(self, node: NodeT, name: str) -> None:
         """Remove one attribute; missing nodes or keys raise KeyError."""
         del self._nodes[node][name]

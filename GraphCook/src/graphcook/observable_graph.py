@@ -17,8 +17,8 @@ class GraphChange(Generic[NodeT]):
     """
     Independent changes to graph membership and per-node attributes.
     """
-    nodes: SetChanges[NodeT] = field(default_factory=SetChanges)
-    links: SetChanges[Link[NodeT]] = field(default_factory=SetChanges)
+    nodes: SetChanges[NodeT] = field(default_factory=lambda: SetChanges[NodeT]())
+    links: SetChanges[tuple[NodeT, NodeT, str]] = field(default_factory=lambda: SetChanges[NodeT]())
     attributes: Mapping[NodeT, MappingChanges[str, object]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

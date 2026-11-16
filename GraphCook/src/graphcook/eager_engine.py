@@ -15,18 +15,18 @@ from .core.base_engine import (
 from .provider import UnresolvedOperatorError
 from .core.cache import CacheProtocol, MemoryCache
 from .core.graph import Graph, GraphProtocol, NodeT
-from .core.graph import topological_sort
+from .core.graph import descendants, topological_sort
 from .observable_graph import ObservableGraph, GraphChange
 
 from dataclasses import dataclass
 
 class EagerScriptProvider(OperatorProvider):
-    def __init__(self, script: str):
+    def __init__(self, script: str) -> None:
         self._script = script
         self._functions: dict[str, Callable[..., Any]] = dict()
         self._exec()
 
-    def _exec(self):
+    def _exec(self) -> None:
         namespace = {}
         exec(self._script, namespace)
         self._functions = {k: v for k, v in namespace.items() if callable(v)}
@@ -44,8 +44,14 @@ class EagerScriptProvider(OperatorProvider):
         return OperatorHandle(name)
 
     def set_script(self, script: str) -> None:
+        namespace: dict[str, Any] = {}
+        exec(script, namespace)
+        functions = {
+            name: value for name, value in namespace.items()
+            if callable(value)
+        }
         self._script = script
-        self._exec()
+        self._functions = functions
 
     def script(self) -> str:
         return self._script
@@ -87,12 +93,13 @@ class RunningState:
 
 @dataclass(frozen=True)
 class SucceededState:
+    value: Any
     duration_seconds: float | None = None
 
 
 @dataclass(frozen=True)
 class FailedState:
-    error: Exception
+    reason: Exception
 
 
 type NodeState = DirtyState | RunningState | SucceededState | FailedState
@@ -104,26 +111,42 @@ class NodeSignature(TypedDict):
     """Public node information, without computed results."""
     operator: OperatorHandle
     inlets: tuple[str, ...]
-    state: NodeState
     
 from .graph_index import GraphAttributeIndex
 
 
 class EagerEngine:
-    def __init__(self, script:str):
+    def __init__(self, script: str) -> None:
+        self._closed = True
         self._graph = ObservableGraph[NodeId]()
         self._provider = EagerScriptProvider(script)
         self._cache = MemoryCache[NodeId, Any]()
         self._listeners: list[Callable[[EagerEngineChange], None]] = []
 
-        self._operator_index = GraphAttributeIndex[NodeId, OperatorHandle](self._graph, 'operator', OperatorHandle)
+        self._operator_index = GraphAttributeIndex[NodeId, OperatorHandle](
+            self._graph, OPERATOR_ATTRIBUTE, OperatorHandle
+        )
 
         self._unsubscribe_graph = self._graph.listen(self._handle_graph_change)
         self._unsubscribe_provider = self._provider.listen(self._handle_provider_change)
 
+        self._effects:list[NodeId] = []
+        self._closed = False
+
     def _notify(self, change: EagerEngineChange) -> None:
-        for listener in self._listeners:
+        for listener in tuple(self._listeners):
             listener(change)
+
+    def _notify_state(self, node: NodeId, state: NodeState) -> None:
+        """Publish transient execution state; the previous state is unknown."""
+        self._notify(EagerEngineChange(
+            graph=GraphChange(attributes={
+                node: MappingChanges(changed={
+                    "state": ValueChange(old=None, new=state)
+                })
+            }),
+            script=None,
+        ))
 
     def listen(self, callback: Callable[[EagerEngineChange], None]) -> Callable[[], None]:
         self._listeners.append(callback)
@@ -132,9 +155,6 @@ class EagerEngine:
             self._listeners.remove(callback)
 
         return unsubscribe
-
-    def watch(self, node: NodeT, callback: Callable[[EagerEngineChange[NodeId]], None]) -> Callable[[], None]:
-        return self.listen(lambda change: callback(change) if change.node == node else None)
 
     def _handle_graph_change(self, change: GraphChange) -> None:
         # forward graph changes
@@ -146,9 +166,10 @@ class EagerEngine:
         dirty.update(link.target for link in change.links.removed)
         self.invalidate(dirty)
 
-    def _resolve_graph(self) -> Graph[NodeId]:
+    def _resolve_graph(self, *roots: NodeId) -> Graph[NodeId]:
+        nodes = topological_sort(self._graph, *roots)
         resolved_graph = Graph[NodeId]()
-        for node in self._graph.nodes():
+        for node in nodes:
             operator_handle = self._graph.attributes(node)[OPERATOR_ATTRIBUTE]
             assert isinstance(operator_handle, OperatorHandle)
             resolved_operator = self._provider.resolve(operator_handle)
@@ -162,48 +183,68 @@ class EagerEngine:
                 }
             )
 
-        for src, dst, inlet in self._graph.links():
-            assert isinstance(src, NodeId)
-            assert isinstance(dst, NodeId)
-            assert isinstance(inlet, str)
-            resolved_graph.add_link(src, dst, inlet)
+        for node in nodes:
+            for link in self._graph.in_links(node):
+                resolved_graph.add_link(link.source, link.target, link.inlet)
 
         return resolved_graph
 
-    def evaluate(self, node: NodeId) -> Any:
-        # resolve the graph, basically create a static graph, with real functions
-        
-        resolved_graph = self._resolve_graph()
+    def evaluate(self, *nodes: NodeId) -> None:
+        """Publish results as events and stop on the first evaluation failure."""
+        if not nodes:
+            raise ValueError("At least one node must be provided")
 
+        requested = tuple(dict.fromkeys(nodes))
+        live_nodes = set(self._graph.nodes())
+        for node in requested:
+            if node not in live_nodes:
+                raise ValueError(f"Root is not in graph: {node!r}")
 
-        memo:dict[NodeId, Any] = dict()        
-        for current in topological_sort(resolved_graph, node):
+        try:
+            resolved_graph = self._resolve_graph(*requested)
+        except (ValueError, UnresolvedOperatorError) as exc:
+            for node in requested:
+                self._notify_state(node, FailedState(reason=exc))
+            return
+
+        memo: dict[NodeId, Any] = {}
+        for current in topological_sort(resolved_graph, *requested):
             if current in self._cache:
                 memo[current] = self._cache[current]
+                if current in requested:
+                    self._notify_state(current, SucceededState(value=memo[current]))
+                continue
 
-            # resolve kwargs from memo
-            kwargs = resolved_graph.attributes(current)['kwargs']
+            attributes = resolved_graph.attributes(current)
+            kwargs = attributes['kwargs']
             assert isinstance(kwargs, dict)
+            # Links are authoritative for connected inputs, including after
+            # a connection represented by a NodeId attribute is removed.
             resolved_kwargs = {
-                k: memo[v] if isinstance(v, NodeId) else v
-                for k, v in kwargs.items()
+                key: value for key, value in kwargs.items()
+                if not isinstance(value, NodeId)
             }
+            for link in resolved_graph.in_links(current):
+                resolved_kwargs[link.inlet] = memo[link.source]
 
-            # get operator from node attribute
-            resolved_operator = resolved_graph.attributes(current)['operator']
+            resolved_operator = attributes['operator']
             assert callable(resolved_operator)
-
-            self._notify(EagerEngineChange("started", current))
+            self._notify_state(current, RunningState())
             try:
                 result = resolved_operator(**resolved_kwargs)
-                self._notify(EagerEngineChange("executed", current, result=result))
-                
             except Exception as exc:
-                self._notify(EagerEngineChange("failed", current, error=exc))
-                raise exc
-            else:
-                memo[current] = result
-                self._cache.save(current, result)
+                self._notify_state(current, FailedState(reason=exc))
+                downstream = descendants(resolved_graph, current)
+                for node in requested:
+                    if node in downstream:
+                        self._notify_state(node, FailedState(reason=exc))
+                # Stop processing further nodes
+                # if an exception occurs for the current node.
+                return
+
+            memo[current] = result
+            self._cache.save(current, result)
+            self._notify_state(current, SucceededState(value=result))
 
     # read graph
     def nodes(self) -> tuple[NodeId, ...]:
@@ -211,7 +252,8 @@ class EagerEngine:
 
     def attributes(self, node: NodeId) -> NodeSignature:
         attributes = self._graph.attributes(node)
-        operator: OperatorHandle|None = attributes.get(OPERATOR_ATTRIBUTE)
+        operator = attributes[OPERATOR_ATTRIBUTE]
+        assert isinstance(operator, OperatorHandle)
         inputs: dict = {
             k: v 
             for k, v in attributes.items() 
@@ -232,7 +274,7 @@ class EagerEngine:
 
         return NodeSignature(
             operator=operator,
-            inlets=inlets
+            inlets=tuple(dict.fromkeys(inlets)),
         )
 
     def in_links(self, node: NodeId) -> Iterable[tuple[NodeId, NodeId, str]]:
@@ -275,13 +317,18 @@ class EagerEngine:
     def add_link(self, src: NodeId, dst: NodeId, inlet: str) -> None:
         self._graph.add_link(src, dst, inlet)
 
-    def remove_link(
-        self,
-        src: NodeId,
-        dst: NodeId,
-        inlet: str,
-    ) -> None:
-        self._graph.remove_link(src, dst, inlet)
+    def remove_link(self, source: 'NodeId', target: 'NodeId', inlet: str) -> None:
+        self._graph.remove_link(source, target, inlet)
+
+    # auto evaluate
+    def effect(self, source: NodeId) -> None:
+        if source not in self._graph.nodes():
+            raise ValueError("Effect node is not in graph")
+        self._effects.append(source)
+
+    def remove_effect(self, source: NodeId) -> None:
+        if source in self._effects:
+            self._effects.remove(source)
 
     # read provider
     def operators(self) -> Iterable[OperatorHandle]:
@@ -289,14 +336,18 @@ class EagerEngine:
 
     # mutate provider
     def script(self) -> str:
-        return self._provider._script
+        return self._provider.script()
 
     def set_script(self, script: str) -> None:
-        self._script = script
+        old = self.script()
+        if old == script:
+            return
+        self._provider.set_script(script)
         self._notify(EagerEngineChange(
             graph=None, 
-            script=ValueChange(old=None, new=script)
+            script=ValueChange(old=old, new=script)
         ))
+        self.invalidate(self.nodes())
 
     def _handle_provider_change(self, change: ProviderChange) -> None:
         if change.unknown:
@@ -325,28 +376,22 @@ class EagerEngine:
 
         # Subclasses discard any state they need to before observers hear about it.
         self.invalidate_hook(frozenset(affected))
-        for node in affected:
-            self._notify(EagerEngineChange(
-                graph=GraphChange(
-                    attributes={
-                        node: MappingChanges(
-                            changed={
-                                'state': ValueChange(
-                                    old=None,
-                                    new=DirtyState()
-                                )
-                            }
-                        )
-                    }
-                ),
-                script=None
-            ))
+        self._effects = [node for node in self._effects if node in live_nodes]
+        for node in affected & live_nodes:
+            self._notify_state(node, DirtyState())
+
+        effects = tuple(node for node in self._effects if node in affected)
+        if effects:
+            self.evaluate(*effects)
 
     def invalidate_hook(self, nodes: frozenset[NodeId]) -> None:
         for node in nodes:
             self._cache.remove(node)
-    
+
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         self._unsubscribe_graph()
         self._unsubscribe_provider()
 
