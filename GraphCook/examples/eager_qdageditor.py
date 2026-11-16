@@ -275,6 +275,17 @@ class OutputViewer(QWidget):
             case DirtyState():
                 self._display.display("Waiting for evaluation")
 
+
+class InspectorView(QWidget):
+    def __init__(self, engine: EagerEngineProtocol, parent=None):
+        super().__init__(parent=parent)
+        self._engine = engine
+        engine.listen(self._handle_engine_change)
+
+    def _handle_engine_change(self, engine_change:EagerEngineChange):
+        # Implement how the inspector should react to engine changes
+        pass
+
 class EngineWindow(QMainWindow):
     def __init__(self, engine: EagerEngineProtocol):
         super().__init__()
