@@ -107,10 +107,21 @@ type NodeState = DirtyState | RunningState | SucceededState | FailedState
 
 from typing import TypedDict
 
-class NodeSignature(TypedDict):
+class InletSignature(TypedDict):
+    """Public inlet information."""
+    type: Any
+    default: Any
+
+class OperatorSignature(TypedDict):
+    """Public operator information."""
+    name: str
+    inlets: dict[str, InletSignature] # todo: move this to the operator's signature
+
+class EagerNodeSignature(TypedDict):
     """Public node information, without computed results."""
-    operator: OperatorHandle
-    inlets: tuple[str, ...]
+    operator: OperatorSignature
+    inputs: dict[str, Any]
+
     
 from .graph_index import GraphAttributeIndex
 
@@ -250,31 +261,55 @@ class EagerEngine:
     def nodes(self) -> tuple[NodeId, ...]:
         return self._graph.nodes()
 
-    def attributes(self, node: NodeId) -> NodeSignature:
+    def attributes(self, node: NodeId) -> EagerNodeSignature:
         attributes = self._graph.attributes(node)
         operator = attributes[OPERATOR_ATTRIBUTE]
         assert isinstance(operator, OperatorHandle)
-        inputs: dict = {
-            k: v 
-            for k, v in attributes.items() 
-            if k != OPERATOR_ATTRIBUTE
-        }
+        
+        
+        # inputs.update({
+        #     k: v 
+        #     for k, v in attributes.items() 
+        #     if k != OPERATOR_ATTRIBUTE
+        # })
 
-        inlets = []
-        for k in inputs.keys():
-            inlets.append(k)
-        # resolve the operator
+        
+        inlets:dict[str, InletSignature] = dict()
+        inputs:dict[str, Any] = dict()
+        for k, v in inputs.items():
+            inlets[k] = InletSignature(
+                type=type(v), 
+                default=inspect.Parameter.empty
+            )
+            inputs[k] = v
+
+        # collect inlets from the operator's signature
         if operator is not None:
             eager_provider = cast(EagerScriptProvider, self._provider)
             func = eager_provider.resolve(operator)
             import inspect
             sig = inspect.signature(func)
             for param in sig.parameters.values():
-                inlets.append(param.name)
+                inlets[param.name] = InletSignature(
+                    type=param.annotation,
+                    default=param.default
+                )
 
-        return NodeSignature(
-            operator=operator,
-            inlets=tuple(dict.fromkeys(inlets)),
+        # include any link target inlet, in case it was not already in the inputs
+        for link in self._graph.in_links(node):
+            if link.inlet not in inlets:
+                inlets[link.inlet] = InletSignature(
+                    type=Any,
+                    default=inspect.Parameter.empty
+                )
+            inputs[link.inlet] = link.source
+
+        return EagerNodeSignature(
+            operator=OperatorSignature(
+                name=operator.name,
+                inlets=inlets
+            ),
+            inputs=inputs
         )
 
     def in_links(self, node: NodeId) -> Iterable[tuple[NodeId, NodeId, str]]:
