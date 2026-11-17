@@ -5,6 +5,8 @@ import inspect
 from collections import deque
 from collections.abc import Mapping
 from typing import Any, Callable, Iterable, Literal, cast
+
+from myutils.source_diff import FunctionsDiff, ast_functions_diff
 from .core.changes import MappingChanges, ValueChange, SetChanges
 
 from .core.base_engine import (
@@ -20,9 +22,12 @@ from .core.graph import descendants, topological_sort
 from .observable_graph import ObservableGraph, GraphChange
 
 from dataclasses import dataclass
+from myutils.source_diff import ast_functions_diff
+
 
 class EagerScriptProvider(OperatorProvider):
     def __init__(self, script: str) -> None:
+        self._listeners: list[Callable[[ProviderChange], None]] = []
         self._script = script
         self._functions: dict[str, Callable[..., Any]] = dict()
         self._exec()
@@ -49,21 +54,60 @@ class EagerScriptProvider(OperatorProvider):
         return OperatorHandle(name)
 
     def set_script(self, script: str) -> None:
+        old = self._script
+        new = script
+        diff: FunctionsDiff = ast_functions_diff(old, new)
+        if diff.added or diff.removed or diff.changed:
+            # Notify listeners about the change
+            change = ProviderChange(
+                added=tuple(OperatorHandle(name) for name in diff.added),
+                removed=tuple(OperatorHandle(name) for name in diff.removed),
+                changed=tuple(OperatorHandle(name) for name in diff.changed),
+            )
+
         self._script = script
         self._exec()
+        if diff.added or diff.removed or diff.changed:
+            self._notify(change)
 
     def script(self) -> str:
         return self._script
 
+    def _notify(self, change: ProviderChange) -> None:
+        for listener in self._listeners:
+            listener(change)
+
     def listen(self, callback: Callable[[ProviderChange], None]) -> Callable[[], None]: 
         return lambda: None
+
+@dataclass(frozen=True)
+class ProviderDirtyState:
+    pass
+
+
+@dataclass(frozen=True)
+class ProviderRunningState:
+    progress: float | None = None  # 0–1; None means unknown
+
+
+@dataclass(frozen=True)
+class ProviderSucceededState:
+    value: Any
+    duration_seconds: float | None = None
+
+
+@dataclass(frozen=True)
+class ProviderFailedState:
+    reason: Exception
+
+type ProviderState = ProviderDirtyState | ProviderRunningState | ProviderSucceededState | ProviderFailedState
 
 @dataclass(frozen=True)
 class ProviderChange:
     added: tuple[OperatorHandle, ...] = ()
     removed: tuple[OperatorHandle, ...] = ()
     changed: tuple[OperatorHandle, ...] = ()
-    unknown: bool = False
+    state: ProviderState = ProviderDirtyState()
 
 from dataclasses import dataclass
 
