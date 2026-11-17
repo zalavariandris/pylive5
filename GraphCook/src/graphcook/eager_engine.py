@@ -1,6 +1,7 @@
 """Synchronous eager execution, without a Job abstraction."""
 from __future__ import annotations
-
+from typing import Iterator
+import inspect
 from collections import deque
 from collections.abc import Mapping
 from typing import Any, Callable, Iterable, Literal, cast
@@ -29,7 +30,11 @@ class EagerScriptProvider(OperatorProvider):
     def _exec(self) -> None:
         namespace = {}
         exec(self._script, namespace)
-        self._functions = {k: v for k, v in namespace.items() if callable(v)}
+        self._functions = {
+            k: v 
+            for k, v in namespace.items()
+            if callable(v)
+        }
 
     def operators(self) -> Iterable[OperatorHandle]:
         return [OperatorHandle(name) for name in self._functions]
@@ -44,14 +49,8 @@ class EagerScriptProvider(OperatorProvider):
         return OperatorHandle(name)
 
     def set_script(self, script: str) -> None:
-        namespace: dict[str, Any] = {}
-        exec(script, namespace)
-        functions = {
-            name: value for name, value in namespace.items()
-            if callable(value)
-        }
         self._script = script
-        self._functions = functions
+        self._exec()
 
     def script(self) -> str:
         return self._script
@@ -119,8 +118,7 @@ class OperatorSignature(TypedDict):
 
 class EagerNodeSignature(TypedDict):
     """Public node information, without computed results."""
-    operator: OperatorSignature
-    inputs: dict[str, Any]
+    __operator__: OperatorSignature
 
     
 from .graph_index import GraphAttributeIndex
@@ -175,7 +173,7 @@ class EagerEngine:
         dirty.update(change.attributes)
         dirty.update(link.target for link in change.links.added)
         dirty.update(link.target for link in change.links.removed)
-        self.invalidate(dirty)
+        self.invalidate(*dirty)
 
     def _resolve_graph(self, *roots: NodeId) -> Graph[NodeId]:
         nodes = topological_sort(self._graph, *roots)
@@ -200,7 +198,7 @@ class EagerEngine:
 
         return resolved_graph
 
-    def evaluate(self, *nodes: NodeId) -> None:
+    def evaluate(self, *nodes: NodeId) -> list[Any]:
         """Publish results as events and stop on the first evaluation failure."""
         if not nodes:
             raise ValueError("At least one node must be provided")
@@ -243,6 +241,7 @@ class EagerEngine:
             self._notify_state(current, RunningState())
             try:
                 result = resolved_operator(**resolved_kwargs)
+
             except Exception as exc:
                 self._notify_state(current, FailedState(reason=exc))
                 downstream = descendants(resolved_graph, current)
@@ -251,11 +250,13 @@ class EagerEngine:
                         self._notify_state(node, FailedState(reason=exc))
                 # Stop processing further nodes
                 # if an exception occurs for the current node.
-                return
+                return []
 
             memo[current] = result
             self._cache.save(current, result)
             self._notify_state(current, SucceededState(value=result))
+        
+        return [memo[node] for node in requested]
 
     # read graph
     def nodes(self) -> tuple[NodeId, ...]:
@@ -266,33 +267,30 @@ class EagerEngine:
         operator = attributes[OPERATOR_ATTRIBUTE]
         assert isinstance(operator, OperatorHandle)
         
-        
-        # inputs.update({
-        #     k: v 
-        #     for k, v in attributes.items() 
-        #     if k != OPERATOR_ATTRIBUTE
-        # })
+        inputs: dict[str, Any] = {
+            key: value
+            for key, value in attributes.items()
+            if key != OPERATOR_ATTRIBUTE
+            and not isinstance(value, NodeId)
+        }
 
-        
-        inlets:dict[str, InletSignature] = dict()
-        inputs:dict[str, Any] = dict()
-        for k, v in inputs.items():
-            inlets[k] = InletSignature(
-                type=type(v), 
-                default=inspect.Parameter.empty
+        # Declared parameters determine inlet order, independently of overrides.
+        func = self._provider.resolve(operator)
+        signature = inspect.signature(func, eval_str=True)
+        inlets: dict[str, InletSignature] = {
+            parameter.name: InletSignature(
+                type=parameter.annotation,
+                default=parameter.default,
             )
-            inputs[k] = v
+            for parameter in signature.parameters.values()
+        }
 
-        # collect inlets from the operator's signature
-        if operator is not None:
-            eager_provider = cast(EagerScriptProvider, self._provider)
-            func = eager_provider.resolve(operator)
-            import inspect
-            sig = inspect.signature(func)
-            for param in sig.parameters.values():
-                inlets[param.name] = InletSignature(
-                    type=param.annotation,
-                    default=param.default
+        # include inputs that are not already in the inlets
+        for name, value in inputs.items():
+            if name not in inlets:
+                inlets[name] = InletSignature(
+                    type=type(value),
+                    default=inspect.Parameter.empty,
                 )
 
         # include any link target inlet, in case it was not already in the inputs
@@ -305,11 +303,11 @@ class EagerEngine:
             inputs[link.inlet] = link.source
 
         return EagerNodeSignature(
-            operator=OperatorSignature(
+            __operator__=OperatorSignature(
                 name=operator.name,
                 inlets=inlets
             ),
-            inputs=inputs
+            **inputs
         )
 
     def in_links(self, node: NodeId) -> Iterable[tuple[NodeId, NodeId, str]]:
@@ -344,10 +342,10 @@ class EagerEngine:
         self._graph.remove_node(node)
 
     def set(self, node: NodeId, **attributes: object) -> None:
-        ...
+        self._graph.set(node, **attributes)
 
     def unset(self, node: NodeId, name: str) -> None:
-        ...
+        self._graph.unset(node, name)
 
     def add_link(self, src: NodeId, dst: NodeId, inlet: str) -> None:
         self._graph.add_link(src, dst, inlet)
@@ -382,19 +380,19 @@ class EagerEngine:
             graph=None, 
             script=ValueChange(old=old, new=script)
         ))
-        self.invalidate(self.nodes())
+        self.invalidate(*self.nodes())
 
     def _handle_provider_change(self, change: ProviderChange) -> None:
         if change.unknown:
-            self.invalidate(self._graph.nodes())
+            self.invalidate(*self._graph.nodes())
             return
         dirty: set[NodeId] = set()
         for handle in (*change.added, *change.removed, *change.changed):
             dirty.update(self._operator_index.nodes_with(handle))
-        self.invalidate(dirty)
+        self.invalidate(*dirty)
     
     # executor
-    def invalidate(self, nodes: Iterable[NodeId]) -> None:
+    def invalidate(self, *nodes: NodeId) -> None:
         """Invalidate specified nodes and all descendants in the live graph."""
         queue = deque(nodes)
         live_nodes = set(self._graph.nodes())

@@ -1,6 +1,7 @@
+import builtins
 import inspect
 from textwrap import dedent
-from typing import Callable, Iterable, Any, Protocol, TypedDict
+from typing import Callable, Iterable, Any, Protocol, TypedDict, cast
 
 from graphcook.observable_graph import ObservableGraph, GraphChange
 from graphcook.eager_engine import OperatorHandle, OperatorSignature
@@ -20,7 +21,7 @@ from graphcook.core.base_engine import (
     OperatorHandle
 )
 
-from qtpy.QtCore import QPointF, Qt, QAbstractListModel
+from qtpy.QtCore import QPointF, Qt, QAbstractListModel, QSignalBlocker
 from qtpy.QtWidgets import QApplication, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QVBoxLayout, QWidget
 from graphcook.eager_engine import (
     NodeId, EagerEngineChange, DirtyState, RunningState, SucceededState, FailedState,
@@ -28,16 +29,18 @@ from graphcook.eager_engine import (
 
 from myqtx.selection_dialog_view import SelectionDialog
 from myqtx.widgets.displaywidget import DisplayWidget
+from QtScriptEditorAdvanced import ScriptEditAdvanced
+from qtpy.QtCore import SignalInstance
 
 # define engine contracts for the view
 class InletSignatureProtocol(TypedDict):
     type: Any
     default: Any
 
+
 class NodeSignatureProtocol(TypedDict):
-    operator: OperatorHandle
-    inlets: dict[str, InletSignatureProtocol]
-    inputs: dict[str, Any]
+    __operator__: OperatorSignature
+
 
 class EngineGraphProtocol(Protocol):
     # read
@@ -65,10 +68,12 @@ class EngineGraphProtocol(Protocol):
     # def listen(self, callback: callable[[GraphChange], None]) -> None:
     #     ...
 
+
 class ProviderProtocol(Protocol):
     # read
     def operators(self) -> Iterable['OperatorHandle']:
         ...
+
 
 class ObservableProtocol(Protocol):
     def listen(
@@ -76,9 +81,13 @@ class ObservableProtocol(Protocol):
     ) -> Callable[[], None]:
         ...
 
+
 class EagerEngineProtocol(EngineGraphProtocol, ProviderProtocol, ObservableProtocol, Protocol):
+    def set(self, node: NodeId, **attributes: object) -> None: ...
+    def unset(self, node: NodeId, name: str) -> None: ...
     def script(self) -> str: ...
     def set_script(self, script: str) -> None: ...
+    def invalidate(self, *nodes: NodeId) -> None: ...
     def evaluate(self, *nodes: NodeId) -> None: ...
     def effect(self, node: 'NodeId') -> None: ...
     def remove_effect(self, node: 'NodeId') -> None: ...
@@ -107,7 +116,7 @@ class EagerGraphModel(AbstractDAGModel):
                 node_signature = self._engine.attributes(node_name)
                 match role:
                     case Qt.ItemDataRole.DisplayRole:
-                        op:OperatorSignature = node_signature['operator']
+                        op:OperatorSignature = node_signature['__operator__']
                         return op['name']
                     
         return None
@@ -120,14 +129,14 @@ class EagerGraphModel(AbstractDAGModel):
 
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         node_signature = self._engine.attributes(node)
-        operator_handle = node_signature['operator']
+        operator_handle = node_signature['__operator__']
 
-        for inlet in node_signature['operator']['inlets']:
+        for inlet in node_signature['__operator__']['inlets']:
             yield inlet
 
         # Yield inlets that are connected but not defined in the operator signature
         for src, dst, inlet in self._engine.in_links(node):
-            if inlet not in (inlet for inlet in node_signature['operator']['inlets']):
+            if inlet not in (inlet for inlet in node_signature['__operator__']['inlets']):
                 yield inlet
 
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
@@ -196,7 +205,7 @@ class ProviderView(QWidget):
         layout = QHBoxLayout()
         self.setLayout(layout)
 
-        self.script_view = QPlainTextEdit()
+        self.script_view = ScriptEditAdvanced()
         self.script_view.setPlainText(self._engine.script())
         self.script_view.textChanged.connect(self._handle_editor_text_changed)
 
@@ -210,6 +219,7 @@ class ProviderView(QWidget):
             QSizePolicy.Policy.Minimum, 
             QSizePolicy.Policy.Expanding
         )
+        self.list_view.setFixedWidth(120)
 
     def _handle_engine_change(self, engine_change:EagerEngineChange):
         if engine_change.script is not None:
@@ -284,135 +294,133 @@ class OutputViewer(QWidget):
                 self._display.display("Waiting for evaluation")
 
 
-from qtpy.QtCore import SignalInstance, Slot
-
 class InspectorView(QFrame):
-    def __init__(self, engine: EagerEngineProtocol, parent=None):
+    def __init__(self, engine: EagerEngineProtocol, parent: QWidget | None = None) -> None:
         super().__init__(parent=parent)
         self.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
         self._engine = engine
-        self._current_node = None
-        layout = QFormLayout()
-        self.setLayout(layout)
+        self._current_node: NodeId | None = None
+        self._editors: dict[str, QWidget] = {}
+        self._connections: list[tuple[SignalInstance, Callable[..., None]]] = []
+        self._form = QFormLayout(self)
         engine.listen(self._handle_engine_change)
 
-        self._connections:list[tuple[SignalInstance, Slot]] = []
-
-    def setCurrentNode(self, node: NodeId|None) -> None:
+    def setCurrentNode(self, node: NodeId | None) -> None:
         if node == self._current_node:
             return
 
         if self._current_node is not None:
-            # clear the form layout and disconnect
-            while self.layout().count():
-                child = self.layout().takeAt(0)
-                if child.widget():
-                    child.widget().deleteLater()
-            for signal, handler in self._connections:
-                signal.disconnect(handler)
-            self._connections.clear()
+            self._clear_form()
 
         if node is not None:
-            node_signature = self._engine.attributes(node)
-            operator_signature = node_signature['operator']
-            inlets = operator_signature['inlets']
-            for inlet, inlet_signature in inlets.items():
-                label = QLabel(inlet)
-                editor = self.createEditor(node, inlet)  # from factory
-                
-                # Get the user property from any editor widget
-                meta_obj = editor.metaObject()
-                user_prop = meta_obj.userProperty()
-                
-                if user_prop.isValid() and user_prop.hasNotifySignal():
-                    meta_signal = user_prop.notifySignal()
-                    signal_name = bytes(meta_signal.name()).decode("utf-8")
-                    signal = getattr(editor, signal_name)
+            # build form
+            linked_sources = {
+                inlet: source
+                for source, _, inlet in self._engine.in_links(node)
+            }
+            inlets = self._engine.attributes(node)['__operator__']['inlets']
+            inputs = self._engine.attributes(node)
+            for inlet_key, inlet_signature in inlets.items():
+                if inlet_key in linked_sources:
+                    source = linked_sources[inlet_key]
+                    label = QLabel(inlet_key)
+                    editor = QLabel(f"(Linked)")
+                    # editor.setReadOnly(True)
+                    self._form.addRow(label, editor)
+                else:
+                    editor = self.createEditor(node, inlet_key)
+                    user_property = editor.metaObject().userProperty()
+                    if user_property.isValid() and user_property.hasNotifySignal():
+                        signal_name = bytes(user_property.notifySignal().name()).decode('utf-8')
+                        signal = getattr(editor, signal_name)
 
-                    def handler(
-                        new_value: Any,
-                        attr_key: str = inlet,
-                        node_id: NodeId = node,
-                    ) -> None:
-                        self._handle_editor_change(node_id, attr_key, new_value)
+                        def handle_change(*args: Any, node: NodeId = node, key: str = inlet_key, widget: QWidget = editor) -> None:
+                            # note: this captures closure values for node, key, and widget
+                            self._set_engine_data(node, key, widget)
 
-                    signal.connect(handler)
-                    self._connections.append((signal, handler))
-                
-                self.layout().addRow(label, editor)
+                        signal.connect(handle_change)
+                        self._connections.append((signal, handle_change))
+
+                    if inlet_key in inputs:
+                        value = inputs[inlet_key]
+                        user_property.write(editor, value)
+
+                    elif inlet_signature['default'] is not inspect.Parameter.empty:
+                        if isinstance(editor, QLineEdit):
+                            editor.setPlaceholderText(inlet_signature['default'])
+                    else:
+                        pass
+
+                    self._editors[inlet_key] = editor
+                    self._form.addRow(QLabel(inlet_key), editor)
 
         self._current_node = node
 
-    def _handle_engine_change(self, engine_change:EagerEngineChange):
-        # Implement how the inspector should react to engine changes
-        print(f"Engine change: {engine_change}")
+    def _clear_form(self) -> None:
+        for signal, handler in self._connections:
+            signal.disconnect(handler)
+        self._connections.clear()
+        self._editors.clear()
+        while self._form.rowCount():
+            self._form.removeRow(0)
 
-    def _handle_editor_change(self, node: NodeId, key: str, value: Any) -> None:
-        print(f"Editor change - Node: {node}, Key: {key}, Value: {value}")
-        self._engine.set(node, key, value)
+    def _handle_engine_change(self, change: EagerEngineChange) -> None:
+        node = self._current_node
+        if node is None:
+            return
+
+        if change.graph:
+            if node in change.graph.attributes:
+                attributes_change = change.graph.attributes[node]
+                for key, value_change in attributes_change.changed.items():
+                    if key in self._editors:
+                        editor = self._editors[key]
+                        self._set_editor_data(node, key, editor)
+    
+    def _set_editor_data(self, node: NodeId, key: str, widget: QWidget) -> None:
+        if key not in self._engine.attributes(node):
+            return
+        current_value = self._engine.attributes(node)[key]
+        metaobject = widget.metaObject()
+        if metaobject:
+            user_property = metaobject.userProperty()
+            if user_property.isValid() and user_property.hasNotifySignal():
+                if user_property.read(widget) != current_value:
+                    user_property.write(widget, current_value)
+
+    def _set_engine_data(self, node: NodeId, key: str, widget:QWidget) -> None:
+        metaobject = widget.metaObject()
+        if metaobject is None:
+            return
+        
+        user_property = metaobject.userProperty()
+        if not user_property.isValid():
+            return
+        
+        new_value = user_property.read(widget)
+        if key not in self._engine.attributes(node):
+            # this input is currently unset. set it
+            self._engine.set(node, **{key: new_value})
+        else:
+            # this input is currently set. check ifs value actually changed
+            current_value = self._engine.attributes(node)[key]
+            if new_value != current_value:
+                self._engine.set(node, **{key: new_value})
 
     def createEditor(self, node: NodeId, inlet: str) -> QWidget:
-        node_signature = self._engine.attributes(node)
-        operator_signature = node_signature['operator']
-        inlet_signature = operator_signature['inlets'][inlet]
-
-
-        match inlet_signature['type']:
-            case str():
+        attributes = self._engine.attributes(node)
+        signature = attributes['__operator__']['inlets'][inlet]
+        editor: QWidget
+        match signature['type']:
+            case builtins.str:
                 editor = QLineEdit()
-                if inlet in node_signature['inputs']:
-                    value = node_signature['inputs'][inlet]
-                    editor.setText(str(value))
-                elif inlet_signature.get('default', inspect.Parameter.empty) != inspect.Parameter.empty:
-                    pass
-                    # editor.setText(str(inlet_signature['default']))
-                else:
-                    pass
-
-                return editor
-            
-            case int():
+            case builtins.int:
                 editor = QSpinBox()
-                if inlet in node_signature['inputs']:
-                    value = node_signature['inputs'][inlet]
-                    editor.setValue(value)
-                elif node_signature['inlets']['inlet']['default'] != inspect.Parameter.empty:
-                    pass
-                else:
-                    pass
-                    
-                return editor
-            
+                editor.setRange(-(2**31), 2**31 - 1)
             case _:
                 editor = QLabel()
-                if inlet in node_signature['inputs']:
-                    inlet_signature = node_signature['inputs'][inlet]
-                    editor.setText(f"{inlet_signature}")
-                elif node_signature['inlets']['inlet']['default'] != inspect.Parameter.empty:
-                    editor.setText(f"default: {node_signature['inlets']['inlet']['default']}")
-                else:
-                    editor.setText("- unset -")
 
-                return editor
-
-        # if inlet not in inputs:
-        #     return QLabel("- unset -")
-        # else:
-        #     value = inputs[inlet]
-        #     match value:
-        #         case str():
-        #             lineedit = QLineEdit()
-        #             lineedit.setText(value)
-        #             return lineedit
-        #         case int():
-        #             spinbox = QSpinBox()
-        #             spinbox.setValue(value)
-        #             return spinbox
-        #         case _:
-        #             editor = QLineEdit()
-        #             editor.setText(str(value))
-        #             return editor
-        
+        return editor
 
 
 class EngineWindow(QMainWindow):
@@ -469,7 +477,7 @@ class EngineWindow(QMainWindow):
         splitter.addWidget(self.editor)
         splitter.addWidget(self.inspector)
         splitter.addWidget(self.viewer)
-        splitter.setSizes([500,500,500, 500])
+        splitter.setSizes([500,500,200, 500])
         self.resize(1800, 650)
         self.setCentralWidget(splitter)
         

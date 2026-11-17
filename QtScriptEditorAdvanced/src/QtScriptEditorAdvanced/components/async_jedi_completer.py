@@ -105,23 +105,26 @@ class AsyncJediCompleter(JediCompleter):
         editor = cast(QPlainTextEdit, self.widget())
         cursor = editor.textCursor()
 
-        before = QTextCursor(cursor)
-        before.movePosition(
-            QTextCursor.MoveOperation.StartOfBlock,
-            QTextCursor.MoveMode.KeepAnchor,
-        )
-        line_prefix = before.selectedText()
+        source = editor.toPlainText()
+
+        # Qt positions are UTF-16 code units; convert to Python str indexes.
+        # Deriving line/column from the same string sent to Jedi keeps them
+        # consistent (toPlainText turns U+2028 into "\n", so block numbers drift).
+        utf16 = source.encode("utf-16-le")
+        prefix = utf16[: cursor.position() * 2].decode("utf-16-le")
+
+        line_prefix = prefix.rsplit("\n", 1)[-1]
         if not line_prefix.strip():
             return
 
-        # Qt uses UTF-16 positions; Jedi expects Python character counts.
+        line = prefix.count("\n") + 1
         column = len(line_prefix)
 
         self._submitted_generation = self._generation
         self._future = self._executor.submit(
             analyze,
-            editor.toPlainText(),
-            cursor.blockNumber() + 1,
+            source,
+            line,
             column,
             self.path,
         )
