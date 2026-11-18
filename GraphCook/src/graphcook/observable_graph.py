@@ -83,7 +83,7 @@ class ObservableGraph(Graph[NodeT]):
             attributes={
                 node: MappingChanges(
                     added=added,
-                    changed=changed,
+                    updated=changed,
                 )
             }
         ))

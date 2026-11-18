@@ -109,8 +109,8 @@ def test_observable_dictionary_api_still_emits_attribute_deltas() -> None:
 
     graph.set("node", label="New", added=2)
     change = events[-1].attributes["node"]
-    assert change.changed["label"].old == "Old"
-    assert change.changed["label"].new == "New"
+    assert change.updated["label"].old == "Old"
+    assert change.updated["label"].new == "New"
     assert change.added == {"added": 2}
 
     graph.unset("node", "removable")
@@ -122,8 +122,8 @@ def test_observable_dictionary_api_still_emits_attribute_deltas() -> None:
     change = events[-1].attributes["node"]
     assert change.removed == {"added": 2}
     assert change.added == {"fresh": 3}
-    assert change.changed["label"].old == "New"
-    assert change.changed["label"].new == "Replacement"
+    assert change.updated["label"].old == "New"
+    assert change.updated["label"].new == "Replacement"
     assert len(events) == 3
 
 
@@ -154,7 +154,7 @@ def test_typed_observable_edits_preserve_identity_and_notify_after_mutation() ->
     graph.unset("node", "optional")
     assert graph.attributes("node") is data
     assert len(events) == 3
-    change = events[0].attributes["node"].changed["label"]
+    change = events[0].attributes["node"].updated["label"]
     assert (change.old, change.new) == ("Before", "After")
     assert snapshots[0]["label"] == "After"
     assert events[1].attributes["node"].added == {"optional": None}

@@ -157,7 +157,7 @@ class EagerGraphModel(AbstractDAGModel):
     def _handle_engine_change(self, engine_change:EagerEngineChange):
         if graph_change := engine_change.graph:
             for node, attributes_change in graph_change.attributes.items():
-                if status_change := attributes_change.changed.get('state'):
+                if status_change := attributes_change.updated.get('state'):
                     print(f"node status changed: {node}, status: {status_change}")
                     node_name = self.mapFromSource(node)
                     # new_status = status_change.new
@@ -244,6 +244,29 @@ class OperatorListModel(QAbstractListModel):
             return all_operators[index.row()].name
         return None
 
+    def _handle_engine_change(self, engine_change: EagerEngineChange):
+        if provider_change:=engine_change.provider:
+            provider_change.op
+            provider_change.removed
+            provider_change.updated
+
+class AttributeListModel(QAbstractListModel):
+    def __init__(self, engine: EagerEngineProtocol, node: NodeId, parent=None):
+        super().__init__(parent=parent)
+        self._engine = engine
+        self._node = node
+
+    def rowCount(self, parent=None) -> int:
+        return len(list(self._engine.attributes(self._node).items()))
+
+    def data(self, index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        if not index.isValid():
+            return None
+        if role == Qt.ItemDataRole.DisplayRole:
+            all_attributes = list(self._engine.attributes(self._node).items())
+            key, value = all_attributes[index.row()]
+            return f"{key}: {value}"
+        return None
 
 class ProviderView(QWidget):
     def __init__(self, engine: EagerEngineProtocol, parent=None):
@@ -348,7 +371,7 @@ class OutputViewer(QWidget):
         attributes = change.graph.attributes.get(node)
         if attributes is None:
             return
-        state_change = attributes.changed.get("state")
+        state_change = attributes.updated.get("state")
         if state_change is None:
             return
 
@@ -441,7 +464,7 @@ class InspectorView(QFrame):
         if change.graph:
             if node in change.graph.attributes:
                 attributes_change = change.graph.attributes[node]
-                for key, value_change in attributes_change.changed.items():
+                for key, value_change in attributes_change.updated.items():
                     if key in self._editors:
                         editor = self._editors[key]
                         self._set_editor_data(node, key, editor)

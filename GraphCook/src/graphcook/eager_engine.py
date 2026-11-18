@@ -47,10 +47,9 @@ type ProviderState = ProviderDirtyState | ProviderRunningState | ProviderSucceed
 
 @dataclass(frozen=True)
 class ProviderChange:
-    added: tuple[OperatorHandle, ...] = ()
-    removed: tuple[OperatorHandle, ...] = ()
-    changed: tuple[OperatorHandle, ...] = ()
+    operators: SetChanges[OperatorHandle]
     state: ProviderState = ProviderDirtyState()
+
 
 class EagerScriptProvider:
     def __init__(self, script: str) -> None:
@@ -98,11 +97,15 @@ class EagerScriptProvider:
             ))
         else:
             self._notify(ProviderChange(
-                added=tuple(OperatorHandle(name) for name in self._functions if name not in old_functions),
-                removed=tuple(OperatorHandle(name) for name in old_functions if name not in self._functions),
-                changed=tuple(OperatorHandle(name) for name in self._functions if name in old_functions and self._functions[name] != old_functions[name]),
+                operators=SetChanges(
+                    added=tuple(OperatorHandle(name) for name in self._functions if name not in old_functions),
+                    removed=tuple(OperatorHandle(name) for name in old_functions if name not in self._functions),
+                    updated=tuple(OperatorHandle(name) for name in self._functions if name in old_functions and self._functions[name] != old_functions[name]),
+                ),
                 state=ProviderSucceededState(value=[OperatorHandle(name) for name in self._functions])
             ))
+
+    def _prepare_provider(self) -> EagerScriptProvider:
 
     def script(self) -> str:
         return self._script
@@ -205,7 +208,7 @@ class EagerEngine:
         self._node_status[node] = status
         self._notify(EagerEngineChange(
             graph=GraphChange(attributes={
-                node: MappingChanges(changed={
+                node: MappingChanges(updated={
                     "state": ValueChange(old=None, new=status)
                 })
             }),
@@ -445,7 +448,7 @@ class EagerEngine:
                 script=None
             ))
         dirty: set[NodeId] = set()
-        for handle in (*change.added, *change.removed, *change.changed):
+        for handle in (*change.added, *change.removed, *change.updated):
             dirty.update(self._operator_index.nodes_with(handle))
         self.invalidate(*dirty)
     

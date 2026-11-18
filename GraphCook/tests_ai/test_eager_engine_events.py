@@ -37,7 +37,7 @@ def state_events(events: list[EagerEngineChange]) -> list[tuple[NodeId, NodeStat
         if event.graph is None:
             continue
         for node, attributes in event.graph.attributes.items():
-            change = attributes.changed.get("state")
+            change = attributes.updated.get("state")
             if change is not None:
                 assert isinstance(change.new, (DirtyStatus, RunningStatus, SucceededStatus, FailedStatus))
                 states.append((node, change.new))

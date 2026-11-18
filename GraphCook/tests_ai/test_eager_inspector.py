@@ -73,7 +73,7 @@ def test_edits_update_attributes_evaluate_effect_and_preserve_editor(
         delta.new.value
         for event in events if event.graph is not None
         for attrs in event.graph.attributes.values()
-        for delta in attrs.changed.values() if isinstance(delta.new, SucceededStatus)
+        for delta in attrs.updated.values() if isinstance(delta.new, SucceededStatus)
     ]
     assert results == ['AAA', 'AAAA']
     assert inspector._editors['name'] is name
@@ -188,7 +188,7 @@ def test_evaluation_uses_defaults_while_inspector_stays_unset(
         delta.new.value
         for event in events if event.graph is not None
         for attrs in event.graph.attributes.values()
-        for delta in attrs.changed.values() if isinstance(delta.new, SucceededStatus)
+        for delta in attrs.updated.values() if isinstance(delta.new, SucceededStatus)
     ]
     assert results == [42]
     assert cast(QSpinBox, inspector._editors['value']).text() == ''

@@ -25,9 +25,9 @@ class MappingChanges(Generic[KeyT, ValueT]):
     """Key additions/removals and value replacements in a mapping."""
     added: Mapping[KeyT, ValueT] = field(default_factory=dict)
     removed: Mapping[KeyT, ValueT] = field(default_factory=dict)
-    changed: Mapping[KeyT, ValueChange[ValueT]] = field(default_factory=dict)
+    updated: Mapping[KeyT, ValueChange[ValueT]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # Make snapshots of the delta mappings, not just their dataclass fields.
-        for name in ("added", "removed", "changed"):
+        for name in ("added", "removed", "updated"):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))

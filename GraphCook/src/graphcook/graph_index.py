@@ -46,7 +46,7 @@ class GraphAttributeIndex(Generic[NodeT, ValueT]):
                 continue
             if (self.attribute in changes.added
                     or self.attribute in changes.removed
-                    or self.attribute in changes.changed):
+                    or self.attribute in changes.updated):
                 self._sync(node)
 
     def _remove(self, node: NodeT) -> None:
