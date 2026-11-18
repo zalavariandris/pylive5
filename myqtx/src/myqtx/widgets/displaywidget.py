@@ -118,10 +118,9 @@ class DisplayWidget(QWidget):
             case Exception() as the_exception, QLabel() as text_view:
                 # get the full traceback of the exceptions
                 import traceback
+                title = f"# {type(the_exception).__name__}"
                 full_traceback = "".join(traceback.format_exception(type(the_exception), the_exception, the_exception.__traceback__))
-                message = str(the_exception)
-                message += "\n\n" + full_traceback
-                text_view.setText(message)
+                text_view.setText(f"#{title}\n##{the_exception}\n\n{full_traceback}")
                 text_view.setStyleSheet("color: red;")
 
             case str(), ResponsiveLabel() as text_view:

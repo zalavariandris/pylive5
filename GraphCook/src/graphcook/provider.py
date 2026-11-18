@@ -10,7 +10,6 @@ class OperatorHandle:
 class UnresolvedOperatorError(LookupError):
     pass
 
-
 @dataclass(frozen=True)
 class ProviderChange:
     added: tuple[OperatorHandle, ...] = ()

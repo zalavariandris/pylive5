@@ -30,9 +30,6 @@ from importlib.resources import files, as_file
 from qtpy.QtGui import QFontDatabase
 
 
-
-
-
 class ScriptEditAdvanced(QPlainTextEdit):
     def __init__(self, 
         highlighter=PygmentsSyntaxHighlighter, 
@@ -319,7 +316,6 @@ def main():
 
     editor.textChanged.connect(lambda: 
         validate_script(editor.toPlainText()))
-
 
     editor.show()
     app.exec()

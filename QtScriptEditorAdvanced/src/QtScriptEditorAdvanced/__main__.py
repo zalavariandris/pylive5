@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     editor.textChanged.connect(lambda: 
         validate_script(editor.toPlainText()))
-
+    
 
     editor.show()
     app.exec()

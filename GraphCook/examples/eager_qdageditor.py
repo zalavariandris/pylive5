@@ -4,7 +4,13 @@ from textwrap import dedent
 from typing import Callable, Iterable, Any, Protocol, TypedDict, cast
 
 from graphcook.observable_graph import ObservableGraph, GraphChange
-from graphcook.eager_engine import OperatorHandle, OperatorSignature
+from graphcook.eager_engine import (
+    OperatorHandle, 
+    OperatorSignature, 
+    ProviderSucceededState,
+    ProviderFailedState, 
+    ProviderState
+)
 from graphcook.eager_engine import EagerEngine
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
@@ -22,7 +28,7 @@ from graphcook.core.base_engine import (
 )
 
 from qtpy.QtCore import QPointF, Qt, QAbstractListModel, QSignalBlocker
-from qtpy.QtWidgets import QApplication, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QApplication, QDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QStatusBar, QVBoxLayout, QWidget
 from graphcook.eager_engine import (
     NodeId, EagerEngineChange, DirtyState, RunningState, SucceededState, FailedState,
 )
@@ -98,6 +104,7 @@ class EagerGraphModel(AbstractDAGModel):
     def __init__(self, engine: EagerEngineProtocol, parent=None):
         super().__init__(parent=parent)
         self._engine = engine
+        self._unsubscribe = self._engine.listen(self._handle_engine_change)
 
     def mapFromSource(self, node: 'NodeId')->NodeName:
         return node
@@ -180,6 +187,17 @@ class EagerGraphModel(AbstractDAGModel):
             self._engine.remove_link(source_nodeid, target_nodeid, inlet_id)
         return True
 
+    def _handle_engine_change(self, engine_change:EagerEngineChange):
+        if graph_change := engine_change.graph:
+            for node, attributes_change in graph_change.attributes.items():
+                if status_change := attributes_change.changed.get('state'):
+                    print(f"node status changed: {node}, status: {status_change}")
+                    self.setNodeData()
+
+    def closeEvent(self, event):
+        if hasattr(self, '_unsubscribe'):
+            self._unsubscribe()
+        super().closeEvent(event)
 
 class OperatorListModel(QAbstractListModel):
     def __init__(self, engine: EagerEngineProtocol, parent=None):
@@ -202,17 +220,18 @@ class ProviderView(QWidget):
     def __init__(self, engine: EagerEngineProtocol, parent=None):
         super().__init__(parent=parent)
         self._engine = engine
-        layout = QHBoxLayout()
+        layout = QGridLayout()
         self.setLayout(layout)
 
         self.script_view = ScriptEditAdvanced()
         self.script_view.setPlainText(self._engine.script())
         self.script_view.textChanged.connect(self._handle_editor_text_changed)
 
-        engine.listen(self._handle_engine_change)
-        layout.addWidget(self.script_view)
+        layout.addWidget(self.script_view, 0, 0)
         self.list_view = QListView()
-        layout.addWidget(self.list_view)
+        layout.addWidget(self.list_view, 0, 1)
+        self._statusbar = QStatusBar()
+        layout.addWidget(self._statusbar, 1, 0, 1, 2)
         self.model = OperatorListModel(self._engine)
         self.list_view.setModel(self.model)
         self.list_view.setSizePolicy(
@@ -221,20 +240,40 @@ class ProviderView(QWidget):
         )
         self.list_view.setFixedWidth(120)
 
+        engine.listen(self._handle_engine_change)
+
     def _handle_engine_change(self, engine_change:EagerEngineChange):
         if engine_change.script is not None:
             if self.script_view.toPlainText() != engine_change.script.new:
                 self.script_view.setPlainText(engine_change.script.new)
+        if engine_change.provider is not None:
+            if state:=engine_change.provider.state:
+                self.show_state(state)
 
     def _handle_editor_text_changed(self) -> None:
         new_text = self.script_view.toPlainText()
         if new_text != self._engine.script():
             try:
                 self._engine.set_script(new_text)
-            except Exception as exc:
+            except BaseException as exc:
                 self.script_view.setToolTip(str(exc))
             else:
                 self.script_view.setToolTip("")
+
+    def show_state(self, state: ProviderState) -> None:
+        print("show state: ", state)
+        match state:
+            case ProviderFailedState() as failed:
+                self.script_view._linter.lintException(failed.reason, 'underline')
+                self._statusbar.setStyleSheet("color: red;")
+                self._statusbar.showMessage(f"{type(failed.reason).__name__}: {failed.reason}")
+                import traceback
+                traceback.print_exc()
+                return
+            case ProviderSucceededState():
+                self._statusbar.setStyleSheet("color: green")
+                self._statusbar.showMessage("Provider succeeded")
+                return
 
 
 class OutputViewer(QWidget):

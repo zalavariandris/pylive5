@@ -5,10 +5,10 @@ import inspect
 from collections import deque
 from collections.abc import Mapping
 from typing import Any, Callable, Iterable, Literal, cast
+from dataclasses import dataclass
 
-from myutils.source_diff import FunctionsDiff, ast_functions_diff
+from myutils.source_diff import collect_functions, FunctionsDiff, ast_functions_diff
 from .core.changes import MappingChanges, ValueChange, SetChanges
-
 from .core.base_engine import (
     BaseEngine, 
     OPERATOR_ATTRIBUTE,
@@ -21,64 +21,6 @@ from .core.graph import Graph, GraphProtocol, NodeT
 from .core.graph import descendants, topological_sort
 from .observable_graph import ObservableGraph, GraphChange
 
-from dataclasses import dataclass
-from myutils.source_diff import ast_functions_diff
-
-
-class EagerScriptProvider(OperatorProvider):
-    def __init__(self, script: str) -> None:
-        self._listeners: list[Callable[[ProviderChange], None]] = []
-        self._script = script
-        self._functions: dict[str, Callable[..., Any]] = dict()
-        self._exec()
-
-    def _exec(self) -> None:
-        namespace = {}
-        exec(self._script, namespace)
-        self._functions = {
-            k: v 
-            for k, v in namespace.items()
-            if callable(v)
-        }
-
-    def operators(self) -> Iterable[OperatorHandle]:
-        return [OperatorHandle(name) for name in self._functions]
-
-    def resolve(self, handle: OperatorHandle) -> Any:
-        try:
-            return self._functions[handle.name]
-        except KeyError:
-            raise ValueError(f"Function for handle {handle} not found.")
-
-    def get_operator_by_name(self, name: str) -> OperatorHandle:
-        return OperatorHandle(name)
-
-    def set_script(self, script: str) -> None:
-        old = self._script
-        new = script
-        diff: FunctionsDiff = ast_functions_diff(old, new)
-        if diff.added or diff.removed or diff.changed:
-            # Notify listeners about the change
-            change = ProviderChange(
-                added=tuple(OperatorHandle(name) for name in diff.added),
-                removed=tuple(OperatorHandle(name) for name in diff.removed),
-                changed=tuple(OperatorHandle(name) for name in diff.changed),
-            )
-
-        self._script = script
-        self._exec()
-        if diff.added or diff.removed or diff.changed:
-            self._notify(change)
-
-    def script(self) -> str:
-        return self._script
-
-    def _notify(self, change: ProviderChange) -> None:
-        for listener in self._listeners:
-            listener(change)
-
-    def listen(self, callback: Callable[[ProviderChange], None]) -> Callable[[], None]: 
-        return lambda: None
 
 @dataclass(frozen=True)
 class ProviderDirtyState:
@@ -109,19 +51,79 @@ class ProviderChange:
     changed: tuple[OperatorHandle, ...] = ()
     state: ProviderState = ProviderDirtyState()
 
-from dataclasses import dataclass
+class EagerScriptProvider:
+    def __init__(self, script: str) -> None:
+        self._listeners: list[Callable[[ProviderChange], None]] = []
+        self._script = script
+        self._functions: dict[str, Callable[..., Any]] = dict()
+        self._exec()
+
+    def _exec(self) -> None:
+        namespace = {}
+        exec(self._script, namespace)
+        self._functions = {
+            k: v 
+            for k, v in namespace.items()
+            if callable(v)
+        }
+
+    def operators(self) -> Iterable[OperatorHandle]:
+        return [OperatorHandle(name) for name in self._functions]
+
+    def resolve(self, handle: OperatorHandle) -> Callable|None:
+        try:
+            return self._functions[handle.name]
+        except KeyError:
+            return None
+
+    def get_operator_by_name(self, name: str) -> OperatorHandle:
+        return OperatorHandle(name)
+
+    def set_script(self, script: str) -> None:
+        old_functions = self._functions.copy()
+        self._script = script
+        try:
+            namespace = {}
+            exec(self._script, namespace)
+            self._functions = {
+                k: v 
+                for k, v in namespace.items()
+                if callable(v)
+            }
+        except BaseException as error:
+            self._functions = dict()
+            self._notify(ProviderChange(
+                state=ProviderFailedState(reason=error)
+            ))
+        else:
+            self._notify(ProviderChange(
+                added=tuple(OperatorHandle(name) for name in self._functions if name not in old_functions),
+                removed=tuple(OperatorHandle(name) for name in old_functions if name not in self._functions),
+                changed=tuple(OperatorHandle(name) for name in self._functions if name in old_functions and self._functions[name] != old_functions[name]),
+                state=ProviderSucceededState(value=[OperatorHandle(name) for name in self._functions])
+            ))
+
+    def script(self) -> str:
+        return self._script
+
+    def _notify(self, change: ProviderChange) -> None:
+        for listener in self._listeners:
+            listener(change)
+
+    def listen(self, callback: Callable[[ProviderChange], None]) -> Callable[[], None]:
+        self._listeners.append(callback)
+        return lambda: self._listeners.remove(callback)
 
 @dataclass(frozen=True)
 class NodeId:
     id: str
 
 
-from dataclasses import dataclass
-
 @dataclass(frozen=True)
 class EagerEngineChange:
-    graph: GraphChange|None
-    script: ValueChange|None
+    provider: ProviderChange|None=None
+    graph: GraphChange|None=None
+    script: ValueChange|None=None
 
 
 @dataclass(frozen=True)
@@ -190,7 +192,7 @@ class EagerEngine:
         for listener in tuple(self._listeners):
             listener(change)
 
-    def _notify_state(self, node: NodeId, state: NodeState) -> None:
+    def _notify_node_state(self, node: NodeId, state: NodeState) -> None:
         """Publish transient execution state; the previous state is unknown."""
         self._notify(EagerEngineChange(
             graph=GraphChange(attributes={
@@ -253,19 +255,14 @@ class EagerEngine:
             if node not in live_nodes:
                 raise ValueError(f"Root is not in graph: {node!r}")
 
-        try:
-            resolved_graph = self._resolve_graph(*requested)
-        except (ValueError, UnresolvedOperatorError) as exc:
-            for node in requested:
-                self._notify_state(node, FailedState(reason=exc))
-            return
 
+        resolved_graph = self._resolve_graph(*requested)
         memo: dict[NodeId, Any] = {}
         for current in topological_sort(resolved_graph, *requested):
             if current in self._cache:
                 memo[current] = self._cache[current]
                 if current in requested:
-                    self._notify_state(current, SucceededState(value=memo[current]))
+                    self._notify_node_state(current, SucceededState(value=memo[current]))
                 continue
 
             attributes = resolved_graph.attributes(current)
@@ -281,24 +278,17 @@ class EagerEngine:
                 resolved_kwargs[link.inlet] = memo[link.source]
 
             resolved_operator = attributes['operator']
-            assert callable(resolved_operator)
-            self._notify_state(current, RunningState())
+            # assert callable(resolved_operator)
+            self._notify_node_state(current, RunningState())
             try:
                 result = resolved_operator(**resolved_kwargs)
-
             except Exception as exc:
-                self._notify_state(current, FailedState(reason=exc))
-                downstream = descendants(resolved_graph, current)
-                for node in requested:
-                    if node in downstream:
-                        self._notify_state(node, FailedState(reason=exc))
-                # Stop processing further nodes
-                # if an exception occurs for the current node.
+                self._notify_node_state(current, FailedState(reason=exc))
                 return []
-
-            memo[current] = result
-            self._cache.save(current, result)
-            self._notify_state(current, SucceededState(value=result))
+            else:
+                memo[current] = result
+                self._cache.save(current, result)
+                self._notify_node_state(current, SucceededState(value=result))
         
         return [memo[node] for node in requested]
 
@@ -319,15 +309,17 @@ class EagerEngine:
         }
 
         # Declared parameters determine inlet order, independently of overrides.
-        func = self._provider.resolve(operator)
-        signature = inspect.signature(func, eval_str=True)
-        inlets: dict[str, InletSignature] = {
-            parameter.name: InletSignature(
-                type=parameter.annotation,
-                default=parameter.default,
-            )
-            for parameter in signature.parameters.values()
-        }
+        if func := self._provider.resolve(operator):
+            signature = inspect.signature(func, eval_str=True)
+            inlets: dict[str, InletSignature] = {
+                parameter.name: InletSignature(
+                    type=parameter.annotation,
+                    default=parameter.default,
+                )
+                for parameter in signature.parameters.values()
+            }
+        else:
+            inlets = {}
 
         # include inputs that are not already in the inlets
         for name, value in inputs.items():
@@ -427,9 +419,12 @@ class EagerEngine:
         self.invalidate(*self.nodes())
 
     def _handle_provider_change(self, change: ProviderChange) -> None:
-        if change.unknown:
-            self.invalidate(*self._graph.nodes())
-            return
+        if change is not None:
+            self._notify(EagerEngineChange(
+                provider=change,
+                graph=None,
+                script=None
+            ))
         dirty: set[NodeId] = set()
         for handle in (*change.added, *change.removed, *change.changed):
             dirty.update(self._operator_index.nodes_with(handle))
@@ -455,7 +450,7 @@ class EagerEngine:
         self.invalidate_hook(frozenset(affected))
         self._effects = [node for node in self._effects if node in live_nodes]
         for node in affected & live_nodes:
-            self._notify_state(node, DirtyState())
+            self._notify_node_state(node, DirtyState())
 
         effects = tuple(node for node in self._effects if node in affected)
         if effects:
