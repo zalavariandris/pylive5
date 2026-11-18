@@ -171,6 +171,7 @@ class StyledNodeDelegate(QObject):
 
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, option.widget)
         for label in labels[1:]:
+            
             label.paint(painter, option)
         painter.restore()
 

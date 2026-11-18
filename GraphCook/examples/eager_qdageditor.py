@@ -2,6 +2,7 @@ import builtins
 import inspect
 from textwrap import dedent
 from typing import Callable, Iterable, Any, Protocol, TypedDict, cast
+from unittest import case
 
 from graphcook.observable_graph import ObservableGraph, GraphChange
 from graphcook.eager_engine import (
@@ -12,6 +13,7 @@ from graphcook.eager_engine import (
     ProviderState
 )
 from graphcook.eager_engine import EagerEngine
+from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 from qdageditor5.models.abstract_dag_model import (
@@ -30,7 +32,7 @@ from graphcook.core.base_engine import (
 from qtpy.QtCore import QPointF, Qt, QAbstractListModel, QSignalBlocker
 from qtpy.QtWidgets import QApplication, QDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QStatusBar, QVBoxLayout, QWidget
 from graphcook.eager_engine import (
-    NodeId, EagerEngineChange, DirtyState, RunningState, SucceededState, FailedState,
+    NodeId, EagerEngineChange, DirtyStatus, RunningStatus, SucceededStatus, FailedStatus,
 )
 
 from myqtx.selection_dialog_view import SelectionDialog
@@ -46,6 +48,7 @@ class InletSignatureProtocol(TypedDict):
 
 class NodeSignatureProtocol(TypedDict):
     __operator__: OperatorSignature
+    __status__: object
 
 
 class EngineGraphProtocol(Protocol):
@@ -118,15 +121,47 @@ class EagerGraphModel(AbstractDAGModel):
             yield node
 
     def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        node_signature = self._engine.attributes(node_name)
         match role:
             case Qt.ItemDataRole.DisplayRole:
-                node_signature = self._engine.attributes(node_name)
-                match role:
-                    case Qt.ItemDataRole.DisplayRole:
-                        op:OperatorSignature = node_signature['__operator__']
-                        return op['name']
+                op:OperatorSignature = node_signature['__operator__']
+                return op['name']
+            case Qt.ItemDataRole.ForegroundRole:
+                match node_signature['__status__']:
+                    case FailedStatus():
+                        return Qt.GlobalColor.red
+                    case RunningStatus():
+                        return Qt.GlobalColor.yellow
+                    case SucceededStatus():
+                        return None
+                    case DirtyStatus():
+                        return None
+                    case _:
+                        return None
+                    
+            case NodeDataRole.TrailingRole:
+                match node_signature['__status__']:
+                    case FailedStatus() as failed:
+                        return f"💥{type(failed.reason).__name__}: {failed.reason}"
+                    case RunningStatus():
+                        return "🧠 running..."
+                    case SucceededStatus() as success:
+                        return f"✨" + (f" {success.duration_seconds}s" if success.duration_seconds is not None else "")
+                    case DirtyStatus():
+                        return "🕸️"
+                    case _:
+                        return None
                     
         return None
+
+    def _handle_engine_change(self, engine_change:EagerEngineChange):
+        if graph_change := engine_change.graph:
+            for node, attributes_change in graph_change.attributes.items():
+                if status_change := attributes_change.changed.get('state'):
+                    print(f"node status changed: {node}, status: {status_change}")
+                    node_name = self.mapFromSource(node)
+                    # new_status = status_change.new
+                    self.nodesDataChanged.emit(tuple([node_name]), tuple())
 
     def nodeCellCount(self, node: NodeName) -> int:
         return 0
@@ -187,17 +222,11 @@ class EagerGraphModel(AbstractDAGModel):
             self._engine.remove_link(source_nodeid, target_nodeid, inlet_id)
         return True
 
-    def _handle_engine_change(self, engine_change:EagerEngineChange):
-        if graph_change := engine_change.graph:
-            for node, attributes_change in graph_change.attributes.items():
-                if status_change := attributes_change.changed.get('state'):
-                    print(f"node status changed: {node}, status: {status_change}")
-                    self.setNodeData()
-
     def closeEvent(self, event):
         if hasattr(self, '_unsubscribe'):
             self._unsubscribe()
         super().closeEvent(event)
+
 
 class OperatorListModel(QAbstractListModel):
     def __init__(self, engine: EagerEngineProtocol, parent=None):
@@ -231,6 +260,7 @@ class ProviderView(QWidget):
         self.list_view = QListView()
         layout.addWidget(self.list_view, 0, 1)
         self._statusbar = QStatusBar()
+        self._statusbar.setSizeGripEnabled(False)
         layout.addWidget(self._statusbar, 1, 0, 1, 2)
         self.model = OperatorListModel(self._engine)
         self.list_view.setModel(self.model)
@@ -301,11 +331,11 @@ class OutputViewer(QWidget):
             self._display.display("No current node selected")
             return
 
-        try:
-            self._engine.effect(node)
-            self._engine.evaluate(node) #TODO: when adding an effect isnt it supposed to do an initial evaluation? we have to decide this.
-        except Exception as exc:
-            self._display.display(exc)
+        # try:
+        self._engine.effect(node)
+        self._engine.evaluate(node) #TODO: when adding an effect isnt it supposed to do an initial evaluation? we have to decide this.
+        # except Exception as exc:
+        #     self._display.display(exc)
 
     def _handle_engine_change(self, change: EagerEngineChange) -> None:
         node = self._current_node
@@ -323,13 +353,13 @@ class OutputViewer(QWidget):
             return
 
         match state_change.new:
-            case SucceededState(value=value):
+            case SucceededStatus(value=value):
                 self._display.display(value)
-            case FailedState(reason=reason):
+            case FailedStatus(reason=reason):
                 self._display.display(reason)
-            case RunningState():
+            case RunningStatus():
                 self._display.display("Evaluating…")
-            case DirtyState():
+            case DirtyStatus():
                 self._display.display("Waiting for evaluation")
 
 

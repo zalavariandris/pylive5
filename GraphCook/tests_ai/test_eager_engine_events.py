@@ -6,14 +6,14 @@ from textwrap import dedent
 import pytest
 
 from graphcook.eager_engine import (
-    DirtyState,
+    DirtyStatus,
     EagerEngine,
     EagerEngineChange,
-    FailedState,
+    FailedStatus,
     NodeId,
     NodeState,
-    RunningState,
-    SucceededState,
+    RunningStatus,
+    SucceededStatus,
 )
 
 
@@ -39,7 +39,7 @@ def state_events(events: list[EagerEngineChange]) -> list[tuple[NodeId, NodeStat
         for node, attributes in event.graph.attributes.items():
             change = attributes.changed.get("state")
             if change is not None:
-                assert isinstance(change.new, (DirtyState, RunningState, SucceededState, FailedState))
+                assert isinstance(change.new, (DirtyStatus, RunningStatus, SucceededStatus, FailedStatus))
                 states.append((node, change.new))
     return states
 
@@ -66,15 +66,15 @@ def test_multiple_targets_share_dependencies_and_replay_cached_results(
     engine.evaluate(left, right, left)
 
     assert state_events(events) == [
-        (source, RunningState()), (source, SucceededState(value=1)),
-        (left, RunningState()), (left, SucceededState(value=2)),
-        (right, RunningState()), (right, SucceededState(value=3)),
+        (source, RunningStatus()), (source, SucceededStatus(value=1)),
+        (left, RunningStatus()), (left, SucceededStatus(value=2)),
+        (right, RunningStatus()), (right, SucceededStatus(value=3)),
     ]
     events.clear()
     engine.evaluate(right, left, right)
     assert state_events(events) == [
-        (right, SucceededState(value=3)),
-        (left, SucceededState(value=2)),
+        (right, SucceededStatus(value=3)),
+        (left, SucceededStatus(value=2)),
     ]
     assert "state" not in engine.attributes(left)
 
@@ -104,13 +104,13 @@ def test_effects_run_after_all_dirty_notifications(
     engine.invalidate([source])
 
     states = state_events(events)
-    assert {node for node, state in states[:3] if isinstance(state, DirtyState)} == {
+    assert {node for node, state in states[:3] if isinstance(state, DirtyStatus)} == {
         source, left, right,
     }
     assert states[3:] == [
-        (source, RunningState()), (source, SucceededState(value=2)),
-        (left, RunningState()), (left, SucceededState(value=4)),
-        (right, RunningState()), (right, SucceededState(value=4)),
+        (source, RunningStatus()), (source, SucceededStatus(value=2)),
+        (left, RunningStatus()), (left, SucceededStatus(value=4)),
+        (right, RunningStatus()), (right, SucceededStatus(value=4)),
     ]
 
 
@@ -122,7 +122,7 @@ def test_no_effects_do_not_evaluate_and_empty_targets_are_rejected(
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     engine.invalidate([source])
-    assert state_events(events) == [(source, DirtyState())]
+    assert state_events(events) == [(source, DirtyStatus())]
     with pytest.raises(ValueError, match="At least one node"):
         engine.evaluate()
 
@@ -142,7 +142,7 @@ def test_success_result_is_cached_before_observers_are_notified(
 
     def request_cached_result(event: EagerEngineChange) -> None:
         for node, state in state_events([event]):
-            if isinstance(state, SucceededState):
+            if isinstance(state, SucceededStatus):
                 results.append(state.value)
                 if len(results) == 1:
                     engine.evaluate(node)
@@ -165,7 +165,7 @@ def test_removed_link_does_not_use_old_node_reference(
 
     engine.remove_link(source, target, "value")
 
-    assert state_events(events)[-1] == (target, SucceededState(value=10))
+    assert state_events(events)[-1] == (target, SucceededStatus(value=10))
 
 
 def test_deleted_effect_is_not_evaluated_or_reported_dirty(
@@ -198,8 +198,8 @@ def test_script_edits_refresh_effects_and_invalid_edits_preserve_working_script(
     assert events[0].script is not None
     assert (events[0].script.old, events[0].script.new) == (original, changed)
     assert state_events(events) == [
-        (source, DirtyState()), (source, RunningState()),
-        (source, SucceededState(value=9)),
+        (source, DirtyStatus()), (source, RunningStatus()),
+        (source, SucceededStatus(value=9)),
     ]
 
     for invalid, exception in [
@@ -212,7 +212,7 @@ def test_script_edits_refresh_effects_and_invalid_edits_preserve_working_script(
         assert engine.script() == changed
         assert events == []
         engine.invalidate([source])
-        assert state_events(events)[-1] == (source, SucceededState(value=9))
+        assert state_events(events)[-1] == (source, SucceededStatus(value=9))
 
 
 def test_none_is_a_successful_value_and_replays_from_cache(
@@ -225,9 +225,9 @@ def test_none_is_a_successful_value_and_replays_from_cache(
     engine.evaluate(source)
     engine.evaluate(source)
     assert state_events(events) == [
-        (source, RunningState()),
-        (source, SucceededState(value=None)),
-        (source, SucceededState(value=None)),
+        (source, RunningStatus()),
+        (source, SucceededStatus(value=None)),
+        (source, SucceededStatus(value=None)),
     ]
 
 
@@ -241,8 +241,8 @@ def test_operator_failure_preserves_exception_and_emits_failed_state(
     with pytest.raises(ValueError, match="Operator failed") as raised:
         engine.evaluate(source)
     assert state_events(events) == [
-        (source, RunningState()),
-        (source, FailedState(reason=raised.value)),
+        (source, RunningStatus()),
+        (source, FailedStatus(reason=raised.value)),
     ]
 
 
@@ -255,7 +255,7 @@ def test_unrelated_unresolved_operator_does_not_block_requested_node(
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     engine.evaluate(source)
-    assert state_events(events)[-1] == (source, SucceededState(value=7))
+    assert state_events(events)[-1] == (source, SucceededStatus(value=7))
 
 
 @pytest.mark.parametrize("cycle", [False, True])
@@ -270,4 +270,4 @@ def test_preparation_errors_are_reported_to_requested_nodes(
     engine.listen(events.append)
     with pytest.raises(ValueError) as raised:
         engine.evaluate(node)
-    assert state_events(events) == [(node, FailedState(reason=raised.value))]
+    assert state_events(events) == [(node, FailedStatus(reason=raised.value))]

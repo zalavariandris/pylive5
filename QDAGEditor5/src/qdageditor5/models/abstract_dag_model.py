@@ -148,6 +148,12 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         """Return the header data for the given node and role."""
         pass
+
+    def setNodeData(self, node: NodeName, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
+        """Sets the data for the given node and role. Returns True if successful, False otherwise.
+        Default implementation does nothing and returns False. Subclasses should override this method
+        to provide actual functionality."""
+        return False
     
     def nodePosition(self, node: NodeName) -> QPointF | None:
         """Return the model position, or None for view-managed positioning."""
