@@ -24,10 +24,10 @@ def test_eager_engine():
     the_name = engine.node("the_name")
     the_greeting = engine.node("the_greeting")
     hello_world = engine.node("hello_world", name=the_name, greeting=the_greeting)
-    result = next(engine.evaluate(hello_world))
+    result = next(engine.evaluate_node(hello_world))
     assert result == "Hey, Mása!"
 
-    engine.evaluate(hello_world)
+    engine.evaluate_node(hello_world)
 
 def test_eager_engine_smoketest():
     from graphcook.eager_engine import EagerEngine, EagerEngineChange

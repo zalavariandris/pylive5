@@ -63,7 +63,7 @@ def test_multiple_targets_share_dependencies_and_replay_cached_results(
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
 
-    engine.evaluate(left, right, left)
+    engine.evaluate_node(left, right, left)
 
     assert state_events(events) == [
         (source, RunningStatus()), (source, SucceededStatus(value=1)),
@@ -71,7 +71,7 @@ def test_multiple_targets_share_dependencies_and_replay_cached_results(
         (right, RunningStatus()), (right, SucceededStatus(value=3)),
     ]
     events.clear()
-    engine.evaluate(right, left, right)
+    engine.evaluate_node(right, left, right)
     assert state_events(events) == [
         (right, SucceededStatus(value=3)),
         (left, SucceededStatus(value=2)),
@@ -97,7 +97,7 @@ def test_effects_run_after_all_dirty_notifications(
     engine.node("unrelated")
     engine.effect(left)
     engine.effect(right)
-    engine.evaluate(left, right)
+    engine.evaluate_node(left, right)
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
 
@@ -124,7 +124,7 @@ def test_no_effects_do_not_evaluate_and_empty_targets_are_rejected(
     engine.invalidate([source])
     assert state_events(events) == [(source, DirtyStatus())]
     with pytest.raises(ValueError, match="At least one node"):
-        engine.evaluate()
+        engine.evaluate_node()
 
 
 def test_success_result_is_cached_before_observers_are_notified(
@@ -145,10 +145,10 @@ def test_success_result_is_cached_before_observers_are_notified(
             if isinstance(state, SucceededStatus):
                 results.append(state.value)
                 if len(results) == 1:
-                    engine.evaluate(node)
+                    engine.evaluate_node(node)
 
     engine.listen(request_cached_result)
-    engine.evaluate(source)
+    engine.evaluate_node(source)
     assert results == [1, 1]
 
 
@@ -159,7 +159,7 @@ def test_removed_link_does_not_use_old_node_reference(
     source = engine.node("source")
     target = engine.node("target", value=source)
     engine.effect(target)
-    engine.evaluate(target)
+    engine.evaluate_node(target)
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
 
@@ -222,8 +222,8 @@ def test_none_is_a_successful_value_and_replays_from_cache(
     source = engine.node("source")
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
-    engine.evaluate(source)
-    engine.evaluate(source)
+    engine.evaluate_node(source)
+    engine.evaluate_node(source)
     assert state_events(events) == [
         (source, RunningStatus()),
         (source, SucceededStatus(value=None)),
@@ -239,7 +239,7 @@ def test_operator_failure_preserves_exception_and_emits_failed_state(
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     with pytest.raises(ValueError, match="Operator failed") as raised:
-        engine.evaluate(source)
+        engine.evaluate_node(source)
     assert state_events(events) == [
         (source, RunningStatus()),
         (source, FailedStatus(reason=raised.value)),
@@ -254,7 +254,7 @@ def test_unrelated_unresolved_operator_does_not_block_requested_node(
     engine.node("missing_operator")
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
-    engine.evaluate(source)
+    engine.evaluate_node(source)
     assert state_events(events)[-1] == (source, SucceededStatus(value=7))
 
 
@@ -269,5 +269,5 @@ def test_preparation_errors_are_reported_to_requested_nodes(
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     with pytest.raises(ValueError) as raised:
-        engine.evaluate(node)
+        engine.evaluate_node(node)
     assert state_events(events) == [(node, FailedStatus(reason=raised.value))]

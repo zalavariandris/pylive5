@@ -39,7 +39,7 @@ def test_viewer_displays_events_and_cached_selection_without_reading_attributes(
     engine = make_engine("def source(): return 7\ndef other(): return 20")
     source = engine.node("source")
     other = engine.node("other")
-    engine.evaluate(source)
+    engine.evaluate_node(source)
 
     def reject_metadata_read(*args: object) -> None:
         raise AssertionError("Output viewer must consume events directly")

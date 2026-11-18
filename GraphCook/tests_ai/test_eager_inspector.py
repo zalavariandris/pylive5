@@ -183,7 +183,7 @@ def test_evaluation_uses_defaults_while_inspector_stays_unset(
     inspector.setCurrentNode(node)
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
-    engine.evaluate(node)
+    engine.evaluate_node(node)
     results = [
         delta.new.value
         for event in events if event.graph is not None

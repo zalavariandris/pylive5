@@ -1,5 +1,7 @@
 """Synchronous eager execution, without a Job abstraction."""
 from __future__ import annotations
+import queue
+import threading
 import time
 from typing import Iterator
 import inspect
@@ -105,8 +107,6 @@ class EagerScriptProvider:
                 state=ProviderSucceededState(value=[OperatorHandle(name) for name in self._functions])
             ))
 
-    def _prepare_provider(self) -> EagerScriptProvider:
-
     def script(self) -> str:
         return self._script
 
@@ -175,10 +175,14 @@ class EagerNodeSignature(TypedDict):
 from .graph_index import GraphAttributeIndex
 
 
+import threading
+import queue
+from concurrent.futures import Future
+from typing import Any, Callable
+
 
 class EagerEngine:
     def __init__(self, script: str) -> None:
-
         # config
         self._provider = EagerScriptProvider(script)
         self._config_graph = ObservableGraph[NodeId]()
@@ -186,6 +190,7 @@ class EagerEngine:
 
         # state
         self._cache = MemoryCache[NodeId, Any]()
+        self._functions: dict[NodeId, Callable[..., Any]] = {}
         self._node_status: dict[NodeId, NodeStatus] = {}
 
         # private members
@@ -240,10 +245,10 @@ class EagerEngine:
         for node in nodes:
             operator_handle = self._config_graph.attributes(node)[OPERATOR_ATTRIBUTE]
             assert isinstance(operator_handle, OperatorHandle)
-            resolved_operator = self._provider.resolve(operator_handle)
+            
             prepared_graph.add_node(
                 node,
-                operator = resolved_operator,
+                operator = operator_handle,
                 kwargs = {
                     k: v 
                     for k, v in self._config_graph.attributes(node).items()
@@ -262,12 +267,27 @@ class EagerEngine:
         print("Execute node: resolved graph", len([node for node in resolved_graph.nodes()]))
         memo: dict[NodeId, Any] = {}
         for current in topological_sort(resolved_graph):
+            self.__set_node_status(current, RunningStatus())
+            
+            # check cache before executing operator
             if current in self._cache:
                 memo[current] = self._cache[current]
                 self.__set_node_status(current, SucceededStatus(value=memo[current]))
                 continue
 
+            # get node attributes
             attributes = resolved_graph.attributes(current)
+
+            # resolve operator handle
+            operator_handle = attributes['operator']
+            try:
+                resolved_operator = self._provider.resolve(operator_handle)
+            except Exception as exc:
+                self.__set_node_status(current, FailedStatus(reason=exc))
+                return []
+
+            # resolve inputs
+            
             kwargs = attributes['kwargs']
             assert isinstance(kwargs, dict)
             # Links are authoritative for connected inputs, including after
@@ -279,9 +299,7 @@ class EagerEngine:
             for link in resolved_graph.in_links(current):
                 resolved_kwargs[link.inlet] = memo[link.source]
 
-            resolved_operator = attributes['operator']
-            # assert callable(resolved_operator)
-            self.__set_node_status(current, RunningStatus())
+            # execute node
             try:
                 start_time = time.process_time()
                 result = resolved_operator(**resolved_kwargs)
@@ -296,7 +314,7 @@ class EagerEngine:
         
         return {node: memo[node] for node in memo}
 
-    def evaluate(self, *nodes: NodeId) -> dict[NodeId, Any]:
+    def evaluate_node(self, *nodes: NodeId) -> dict[NodeId, Any]:
         """Publish results as events and stop on the first evaluation failure."""
         if not nodes:
             raise ValueError("At least one node must be provided")
@@ -476,7 +494,7 @@ class EagerEngine:
 
         effects = tuple(node for node in self._effects if node in affected)
         if effects:
-            self.evaluate(*effects)
+            self.evaluate_node(*effects)
 
     def invalidate_hook(self, nodes: frozenset[NodeId]) -> None:
         for node in nodes:
