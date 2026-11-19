@@ -80,7 +80,7 @@ class BaseEngine(Generic[NodeT]):
             self._notify(EngineChange("invalidated", node))
 
     def invalidate_hook(self, nodes: frozenset[NodeT]) -> None:
-        """Optional hook for engine-specific state (such as a cache)."""
+        """Optional hook for engine-specific stat (such as a cache)."""
         pass
 
     def _graph_change_hook(self, change: GraphChange[NodeT]) -> None:

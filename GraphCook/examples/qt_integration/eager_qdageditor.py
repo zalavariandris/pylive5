@@ -2,15 +2,17 @@ import builtins
 import inspect
 from textwrap import dedent
 from typing import Callable, Iterable, Any, Protocol, TypedDict, cast
+from graphcook.eager_engine import EagerEngineConfig
 from unittest import case
 
 from graphcook.observable_graph import ObservableGraph, GraphChange
 from graphcook.eager_engine import (
+    NodeStatus,
     OperatorHandle, 
     OperatorSignature, 
-    ProviderSucceededState,
-    ProviderFailedState, 
-    ProviderState
+    ProviderSucceededStatus,
+    ProviderFailedStatus, 
+    ProviderStatus
 )
 from graphcook.eager_engine import EagerEngine
 from qdageditor5.core.item_data_roles import NodeDataRole
@@ -48,7 +50,9 @@ class InletSignatureProtocol(TypedDict):
 
 class NodeSignatureProtocol(TypedDict):
     __operator__: OperatorSignature
-    __status__: object
+
+class NodeStatusProtocol(TypedDict):
+    status: NodeStatus
 
 
 class EngineGraphProtocol(Protocol):
@@ -57,6 +61,9 @@ class EngineGraphProtocol(Protocol):
         ...
 
     def attributes(self, node: 'NodeId') -> NodeSignatureProtocol:
+        ...
+
+    def node_status(self, node: 'NodeId') -> NodeStatusProtocol:
         ...
 
     def in_links(self, node: 'NodeId') -> Iterable[tuple['NodeId', 'NodeId', str]]:
@@ -121,13 +128,15 @@ class EagerGraphModel(AbstractDAGModel):
             yield node
 
     def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        node_signature = self._engine.attributes(node_name)
+        node_data = self._engine._config.graph.attributes(node_name)
+        node_status = self._engine.node_status(node_name)
         match role:
             case Qt.ItemDataRole.DisplayRole:
-                op:OperatorSignature = node_signature['__operator__']
-                return op['name']
+                op:OperatorSignature = node_data['__operator__']
+                return op.name
+            
             case Qt.ItemDataRole.ForegroundRole:
-                match node_signature['__status__']:
+                match node_status:
                     case FailedStatus():
                         return Qt.GlobalColor.red
                     case RunningStatus():
@@ -140,7 +149,7 @@ class EagerGraphModel(AbstractDAGModel):
                         return None
                     
             case NodeDataRole.TrailingRole:
-                match node_signature['__status__']:
+                match node_status:
                     case FailedStatus() as failed:
                         return f"💥{type(failed.reason).__name__}: {failed.reason}"
                     case RunningStatus():
@@ -154,14 +163,22 @@ class EagerGraphModel(AbstractDAGModel):
                     
         return None
 
-    def _handle_engine_change(self, engine_change:EagerEngineChange):
-        if graph_change := engine_change.graph:
-            for node, attributes_change in graph_change.attributes.items():
-                if status_change := attributes_change.updated.get('state'):
-                    print(f"node status changed: {node}, status: {status_change}")
-                    node_name = self.mapFromSource(node)
-                    # new_status = status_change.new
-                    self.nodesDataChanged.emit(tuple([node_name]), tuple())
+    def _handle_engine_change(self, engine_change: EagerEngineChange):
+        if status_change := engine_change.graph_status:
+            for node, new_value in status_change.added.items():
+                print(f"node status added for {node}({new_value})")
+                node_name = self.mapFromSource(node)
+                self.nodesDataChanged.emit(tuple([node_name]), tuple())
+
+            for node, value_change in status_change.updated.items():
+                print(f"node status updated for {node}({value_change.old}->{value_change.new})")
+                node_name = self.mapFromSource(node)
+                self.nodesDataChanged.emit(tuple([node_name]), tuple())
+
+            for node, old_value in status_change.removed.items():
+                print(f"node status removed for {node}({old_value})")
+                node_name = self.mapFromSource(node)
+                self.nodesDataChanged.emit(tuple([node_name]), tuple())
 
     def nodeCellCount(self, node: NodeName) -> int:
         return 0
@@ -170,15 +187,15 @@ class EagerGraphModel(AbstractDAGModel):
         return None
 
     def inlets(self, node: NodeName) -> Iterable[InletName]:
-        node_signature = self._engine.attributes(node)
-        operator_handle = node_signature['__operator__']
-
-        for inlet in node_signature['__operator__']['inlets']:
+        node_data = self._engine.attributes(node)
+        operator_handle: OperatorSignature = node_data['__operator__']
+        
+        for inlet in operator_handle.inlets:
             yield inlet
 
         # Yield inlets that are connected but not defined in the operator signature
         for src, dst, inlet in self._engine.in_links(node):
-            if inlet not in (inlet for inlet in node_signature['__operator__']['inlets']):
+            if inlet not in operator_handle.inlets.keys():
                 yield inlet
 
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
@@ -250,23 +267,23 @@ class OperatorListModel(QAbstractListModel):
             provider_change.removed
             provider_change.updated
 
-class AttributeListModel(QAbstractListModel):
-    def __init__(self, engine: EagerEngineProtocol, node: NodeId, parent=None):
-        super().__init__(parent=parent)
-        self._engine = engine
-        self._node = node
+# class AttributeListModel(QAbstractListModel):
+#     def __init__(self, engine: EagerEngineProtocol, node: NodeId, parent=None):
+#         super().__init__(parent=parent)
+#         self._engine = engine
+#         self._node = node
 
-    def rowCount(self, parent=None) -> int:
-        return len(list(self._engine.attributes(self._node).items()))
+#     def rowCount(self, parent=None) -> int:
+#         return len(list(self._engine.attributes(self._node).items()))
 
-    def data(self, index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        if not index.isValid():
-            return None
-        if role == Qt.ItemDataRole.DisplayRole:
-            all_attributes = list(self._engine.attributes(self._node).items())
-            key, value = all_attributes[index.row()]
-            return f"{key}: {value}"
-        return None
+#     def data(self, index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+#         if not index.isValid():
+#             return None
+#         if role == Qt.ItemDataRole.DisplayRole:
+#             all_attributes = list(self._engine.attributes(self._node).items())
+#             key, value = all_attributes[index.row()]
+#             return f"{key}: {value}"
+#         return None
 
 class ProviderView(QWidget):
     def __init__(self, engine: EagerEngineProtocol, parent=None):
@@ -296,12 +313,13 @@ class ProviderView(QWidget):
         engine.listen(self._handle_engine_change)
 
     def _handle_engine_change(self, engine_change:EagerEngineChange):
-        if engine_change.script is not None:
-            if self.script_view.toPlainText() != engine_change.script.new:
-                self.script_view.setPlainText(engine_change.script.new)
+        if engine_change.config and engine_change.config.script is not None:
+            if self.script_view.toPlainText() != engine_change.config.script.new:
+                self.script_view.setPlainText(engine_change.config.script.new)
+
         if engine_change.provider is not None:
-            if state:=engine_change.provider.state:
-                self.show_state(state)
+            if status:=engine_change.provider.status:
+                self.show_status(status)
 
     def _handle_editor_text_changed(self) -> None:
         new_text = self.script_view.toPlainText()
@@ -313,17 +331,17 @@ class ProviderView(QWidget):
             else:
                 self.script_view.setToolTip("")
 
-    def show_state(self, state: ProviderState) -> None:
-        print("show state: ", state)
-        match state:
-            case ProviderFailedState() as failed:
+    def show_status(self, status: ProviderStatus) -> None:
+        print("show status: ", status)
+        match status:
+            case ProviderFailedStatus() as failed:
                 self.script_view._linter.lintException(failed.reason, 'underline')
                 self._statusbar.setStyleSheet("color: red;")
                 self._statusbar.showMessage(f"{type(failed.reason).__name__}: {failed.reason}")
                 import traceback
                 traceback.print_exc()
                 return
-            case ProviderSucceededState():
+            case ProviderSucceededStatus():
                 self._statusbar.setStyleSheet("color: green")
                 self._statusbar.showMessage("Provider succeeded")
                 return
@@ -362,20 +380,19 @@ class OutputViewer(QWidget):
 
     def _handle_engine_change(self, change: EagerEngineChange) -> None:
         node = self._current_node
-        if node is None or change.graph is None:
-            return
-        if node in change.graph.nodes.removed:
-            self.setCurrentNode(None)
-            return
-
-        attributes = change.graph.attributes.get(node)
-        if attributes is None:
-            return
-        state_change = attributes.updated.get("state")
-        if state_change is None:
+        if change.config and change.config.graph and change.config.graph.nodes:
+            if node in change.config.graph.nodes.removed:
+                self.setCurrentNode(None)
+                return
+        
+        if node is None or change.graph_status is None:
             return
 
-        match state_change.new:
+        status_change = change.graph_status.updated.get(node)
+        if status_change is None:
+            return
+
+        match status_change.new:
             case SucceededStatus(value=value):
                 self._display.display(value)
             case FailedStatus(reason=reason):
@@ -410,9 +427,9 @@ class InspectorView(QFrame):
                 inlet: source
                 for source, _, inlet in self._engine.in_links(node)
             }
-            inlets = self._engine.attributes(node)['__operator__']['inlets']
-            inputs = self._engine.attributes(node)
-            for inlet_key, inlet_signature in inlets.items():
+            operator_handle = self._engine.attributes(node)['__operator__']
+            inputs = {key: value for key, value in self._engine.attributes(node).items() if key != '__operator__'}
+            for inlet_key, inlet_signature in operator_handle.inlets.items():
                 if inlet_key in linked_sources:
                     source = linked_sources[inlet_key]
                     label = QLabel(inlet_key)
@@ -437,9 +454,9 @@ class InspectorView(QFrame):
                         value = inputs[inlet_key]
                         user_property.write(editor, value)
 
-                    elif inlet_signature['default'] is not inspect.Parameter.empty:
+                    elif inlet_signature.default is not inspect.Parameter.empty:
                         if isinstance(editor, QLineEdit):
-                            editor.setPlaceholderText(inlet_signature['default'])
+                            editor.setPlaceholderText(inlet_signature.default)
                     else:
                         pass
 
@@ -461,9 +478,9 @@ class InspectorView(QFrame):
         if node is None:
             return
 
-        if change.graph:
-            if node in change.graph.attributes:
-                attributes_change = change.graph.attributes[node]
+        if change.config and change.config.graph:
+            if node in change.config.graph.attributes:
+                attributes_change = change.config.graph.attributes[node]
                 for key, value_change in attributes_change.updated.items():
                     if key in self._editors:
                         editor = self._editors[key]
@@ -500,10 +517,10 @@ class InspectorView(QFrame):
                 self._engine.set(node, **{key: new_value})
 
     def createEditor(self, node: NodeId, inlet: str) -> QWidget:
-        attributes = self._engine.attributes(node)
-        signature = attributes['__operator__']['inlets'][inlet]
+        operator_handle = self._engine.attributes(node)['__operator__']
+        inlet_signature = operator_handle.inlets[inlet]
         editor: QWidget
-        match signature['type']:
+        match inlet_signature.type:
             case builtins.str:
                 editor = QLineEdit()
             case builtins.int:
@@ -520,101 +537,97 @@ from typing import Callable, TypeVar, Protocol
 import queue
 R = TypeVar("R")
 
-class _EngineWorker(threading.Thread):
-    def __init__(
-        self,
-        script: str,
-        on_change: Callable[[EagerEngineChange], None],
-    ):
-        super().__init__(daemon=False)
-        self._script = script
-        self._on_change = on_change
-        self._tasks = queue.Queue()
+# class _EngineWorker(threading.Thread):
+#     def __init__(
+#         self,
+#         script: str,
+#         on_change: Callable[[EagerEngineChange], None],
+#     ):
+#         super().__init__(daemon=False)
+#         self._script = script
+#         self._on_change = on_change
+#         self._tasks = queue.Queue()
 
-    def run(self):
-        # init
-        engine = EagerEngine(self._script)
-        engine.listen(self._on_change)
+#     def run(self):
+#         # init
+#         engine = EagerEngine(self._script)
+#         engine.listen(self._on_change)
 
-        # process tasks
-        try:
-            while True:
-                # wait for the next task
-                task = self._tasks.get()
+#         # process tasks
+#         try:
+#             while True:
+#                 # wait for the next task
+#                 task = self._tasks.get()
 
-                if task is None:
-                    break
+#                 if task is None:
+#                     break
 
-                operation, future = task
+#                 operation, future = task
 
-                if not future.set_running_or_notify_cancel():
-                    continue
+#                 if not future.set_running_or_notify_cancel():
+#                     continue
 
-                try:
-                    future.set_result(operation(engine))
-                except BaseException as exc:
-                    future.set_exception(exc)
-        finally:
-            engine.close()
+#                 try:
+#                     future.set_result(operation(engine))
+#                 except BaseException as exc:
+#                     future.set_exception(exc)
+#         finally:
+#             engine.close()
 
-    def submit(
-        self, operation: Callable[[EagerEngine], R]
-    ) -> Future[R]:
-        future = Future()
-        self._tasks.put((operation, future))
-        return future
+#     def submit(
+#         self, operation: Callable[[EagerEngine], R]
+#     ) -> Future[R]:
+#         future = Future()
+#         self._tasks.put((operation, future))
+#         return future
 
-    def stop(self):
-        self._tasks.put(None)
+#     def stop(self):
+#         self._tasks.put(None)
 
 from qtpy.QtCore import QObject, Signal, Slot, Qt
 
 
+# class EngineBridge(QObject):
+#     changed = Signal(object)
+#     _engine_changed = Signal(object)
 
-class EngineBridge(QObject):
-    changed = Signal(object)
-    _engine_changed = Signal(object)
+#     def __init__(self, script: str, parent=None):
+#         super().__init__(parent)
 
-    def __init__(self, script: str, parent=None):
-        super().__init__(parent)
+#         self._graph: ObservableGraph[NodeId] = ObservableGraph()
 
-        self._graph: ObservableGraph[NodeId] = ObservableGraph()
+#         self._engine_changed.connect(
+#             self._apply_change,
+#             Qt.ConnectionType.QueuedConnection,
+#         )
 
-        self._engine_changed.connect(
-            self._apply_change,
-            Qt.ConnectionType.QueuedConnection,
-        )
+#         self._worker = _EngineWorker(
+#             script=script,
+#             on_change=self._engine_changed.emit,
+#         )
+#         self._worker.start()
 
-        self._worker = _EngineWorker(
-            script=script,
-            on_change=self._engine_changed.emit,
-        )
-        self._worker.start()
+#     def submit(
+#         self, operation: Callable[[EagerEngine], R]
+#     ) -> Future[R]:
+#         return self._worker.submit(operation)
 
-    def submit(
-        self, operation: Callable[[EagerEngine], R]
-    ) -> Future[R]:
-        return self._worker.submit(operation)
+#     @Slot(object)
+#     def _apply_change(self, change: EagerEngineChange):
+#         ...
 
-    @Slot(object)
-    def _apply_change(self, change: EagerEngineChange):
-        ...
+#         self.changed.emit(change)
 
-        self.changed.emit(change)
+#     # Read interface
+#     def nodes(self):
+#         return self._graph.nodes()
 
-    # Read interface
-    def nodes(self):
-        return self._graph.nodes()
+#     def links(self):
+#         return self._graph.links()
 
-    def attributes(self, node: NodeId):
-        return self._graph.attributes(node)
-
-    def links(self):
-        return self._graph.links()
-
-    # Lifecycle
-    def close(self) -> None:
-        self._worker.stop()
+#     # Lifecycle
+#     def close(self) -> None:
+#         self._worker.stop()
     
 # init default engine
 def create_hello_world_engine():
