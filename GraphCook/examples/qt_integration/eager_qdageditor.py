@@ -514,14 +514,134 @@ class InspectorView(QFrame):
 
         return editor
 
+import threading
+from concurrent.futures import ThreadPoolExecutor, Future
+from typing import Callable, TypeVar, Protocol
+import queue
+R = TypeVar("R")
+
+class _EngineWorker(threading.Thread):
+    def __init__(
+        self,
+        script: str,
+        on_change: Callable[[EagerEngineChange], None],
+    ):
+        super().__init__(daemon=False)
+        self._script = script
+        self._on_change = on_change
+        self._tasks = queue.Queue()
+
+    def run(self):
+        # init
+        engine = EagerEngine(self._script)
+        engine.listen(self._on_change)
+
+        # process tasks
+        try:
+            while True:
+                # wait for the next task
+                task = self._tasks.get()
+
+                if task is None:
+                    break
+
+                operation, future = task
+
+                if not future.set_running_or_notify_cancel():
+                    continue
+
+                try:
+                    future.set_result(operation(engine))
+                except BaseException as exc:
+                    future.set_exception(exc)
+        finally:
+            engine.close()
+
+    def submit(
+        self, operation: Callable[[EagerEngine], R]
+    ) -> Future[R]:
+        future = Future()
+        self._tasks.put((operation, future))
+        return future
+
+    def stop(self):
+        self._tasks.put(None)
+
+from qtpy.QtCore import QObject, Signal, Slot, Qt
+
+
+
+class EngineBridge(QObject):
+    changed = Signal(object)
+    _engine_changed = Signal(object)
+
+    def __init__(self, script: str, parent=None):
+        super().__init__(parent)
+
+        self._graph: ObservableGraph[NodeId] = ObservableGraph()
+
+        self._engine_changed.connect(
+            self._apply_change,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+        self._worker = _EngineWorker(
+            script=script,
+            on_change=self._engine_changed.emit,
+        )
+        self._worker.start()
+
+    def submit(
+        self, operation: Callable[[EagerEngine], R]
+    ) -> Future[R]:
+        return self._worker.submit(operation)
+
+    @Slot(object)
+    def _apply_change(self, change: EagerEngineChange):
+        ...
+
+        self.changed.emit(change)
+
+    # Read interface
+    def nodes(self):
+        return self._graph.nodes()
+
+    def attributes(self, node: NodeId):
+        return self._graph.attributes(node)
+
+    def links(self):
+        return self._graph.links()
+
+    # Lifecycle
+    def close(self) -> None:
+        self._worker.stop()
+    
+# init default engine
+def create_hello_world_engine():
+    engine = EagerEngine(dedent("""\
+        def the_name():
+            return 'Mása'
+
+        def the_greeting():
+            return 'Hey'
+
+        def hello_world(name:str, greeting:str="Hello"):
+            return f"{greeting}, {name}!"
+    """))
+    the_name = engine.node("the_name")
+    the_greeting = engine.node("the_greeting")
+    hello_world = engine.node("hello_world")
+    engine.add_link(the_name, hello_world, 'name')
+    engine.effect(hello_world)
+    return engine
 
 class EngineWindow(QMainWindow):
-    def __init__(self, engine: EagerEngineProtocol):
+    def __init__(self):
         super().__init__()
         self.setWindowTitle("Eager QDAG Editor")
         self._statusbar = self.statusBar() # ensure statusbar
-        self.engine = engine
 
+        self.engine = create_hello_world_engine()
         self.engine.listen(self._handle_engine_change)
 
         # layout widgets
@@ -610,21 +730,7 @@ class EngineWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication([])
-    engine = EagerEngine(dedent("""\
-        def the_name():
-            return 'Mása'
 
-        def the_greeting():
-            return 'Hey'
-
-        def hello_world(name:str, greeting:str="Hello"):
-            return f"{greeting}, {name}!"
-    """))
-    the_name = engine.node("the_name")
-    the_greeting = engine.node("the_greeting")
-    hello_world = engine.node("hello_world")
-    engine.add_link(the_name, hello_world, 'name')
-    engine.effect(hello_world)
-    window = EngineWindow(engine)
+    window = EngineWindow()
     window.show()
     app.exec()
