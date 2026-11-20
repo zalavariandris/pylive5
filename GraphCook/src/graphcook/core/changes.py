@@ -31,3 +31,27 @@ class MappingChanges(Generic[KeyT, ValueT]):
         # Make snapshots of the delta mappings, not just their dataclass fields.
         for name in ("added", "removed", "updated"):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
+
+
+# Observable data structures
+class ObservableValue(Generic[ValueT]):
+    def __init__(self, value: ValueT) -> None:
+        self._value = value
+        self._listeners: list[Callable[[ValueChange[ValueT]], None]] = []
+
+    def get(self) -> ValueT:
+        return self._value
+
+    def set(self, value: ValueT) -> None:
+        old_value = self._value
+        self._value = value
+        for listener in tuple(self._listeners):
+            listener(ValueChange(old_value, value))
+
+    def listen(self, callback: Callable[[ValueChange[ValueT]], None]) -> Callable[[], None]:
+        self._listeners.append(callback)
+
+        def unsubscribe() -> None:
+            self._listeners.remove(callback)
+
+        return unsubscribe

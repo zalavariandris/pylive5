@@ -114,20 +114,19 @@ class Graph(Generic[NodeT]):
     def nodes(self) -> tuple[NodeT, ...]:
         return tuple(self._nodes)
 
-    def out_links(self, src: NodeT) -> Iterable[Link[NodeT]]:
-        for dst, inlets in self._outputs[src].items():
+    def out_links(self, node: NodeT) -> Iterable[Link[NodeT]]:
+        for dst, inlets in self._outputs[node].items():
             for inlet in inlets:
-                yield Link(src, dst, inlet)
+                yield Link(node, dst, inlet)
 
-    def in_links(self, dst: NodeT) -> Iterable[Link[NodeT]]:
-        for inlet, src in self._inputs[dst].items():
-            yield Link(src, dst, inlet)
+    def in_links(self, node: NodeT) -> Iterable[Link[NodeT]]:
+        for inlet, src in self._inputs[node].items():
+            yield Link(src, node, inlet)
 
     def links(self) -> Iterable[Link[NodeT]]:
         for dst, inlets in self._inputs.items():
             for inlet, src in inlets.items():
                 yield Link(src, dst, inlet)
-
 
     def add_node(self, node: NodeT, **attributes: object) -> None:
         """Add a node with one positional dictionary or keyword attributes.

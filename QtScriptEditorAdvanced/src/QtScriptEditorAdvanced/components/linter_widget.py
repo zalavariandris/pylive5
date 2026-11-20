@@ -143,7 +143,7 @@ class TextEditLinterWidget(QObject):
 
     def lintException(
         self,
-        e: Exception,
+        e: BaseException,
         mode: LinterMode,
         *,
         filename: str = "<unknown>",

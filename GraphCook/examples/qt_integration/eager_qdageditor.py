@@ -128,8 +128,8 @@ class EagerGraphModel(AbstractDAGModel):
             yield node
 
     def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        node_data = self._engine._config.graph.attributes(node_name)
-        node_status = self._engine.node_status(node_name)
+        node_data = self._engine.attributes(self.mapToSource(node_name))
+        node_status = self._engine.node_status(self.mapToSource(node_name))
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 op:OperatorSignature = node_data['__operator__']
@@ -187,14 +187,14 @@ class EagerGraphModel(AbstractDAGModel):
         return None
 
     def inlets(self, node: NodeName) -> Iterable[InletName]:
-        node_data = self._engine.attributes(node)
+        node_data = self._engine.attributes(self.mapToSource(node))
         operator_handle: OperatorSignature = node_data['__operator__']
         
         for inlet in operator_handle.inlets:
             yield inlet
 
         # Yield inlets that are connected but not defined in the operator signature
-        for src, dst, inlet in self._engine.in_links(node):
+        for src, dst, inlet in self._engine.in_links(self.mapToSource(node)):
             if inlet not in operator_handle.inlets.keys():
                 yield inlet
 
@@ -208,12 +208,12 @@ class EagerGraphModel(AbstractDAGModel):
         return None
 
     def inLinks(self, target_node: NodeName, inlet: InletName) -> Iterable[DirectionalLinkId]:
-        for src, dst, linked_inlet in self._engine.in_links(target_node):
+        for src, dst, linked_inlet in self._engine.in_links(self.mapToSource(target_node)):
             if linked_inlet == inlet:
                 yield (src, 'out', dst, linked_inlet)
 
     def outLinks(self, source_node: NodeName, outlet: OutletName) -> Iterable[DirectionalLinkId]:
-        for src, dst, inlet in self._engine.out_links(source_node):
+        for src, dst, inlet in self._engine.out_links(self.mapToSource(source_node)):
             if outlet == 'out':
                 yield (src, 'out', dst, inlet)
 
@@ -262,10 +262,10 @@ class OperatorListModel(QAbstractListModel):
         return None
 
     def _handle_engine_change(self, engine_change: EagerEngineChange):
-        if provider_change:=engine_change.provider:
-            provider_change.op
-            provider_change.removed
-            provider_change.updated
+        if operators_change:=engine_change.operators:
+            operators_change.added
+            operators_change.removed
+            operators_change.updated
 
 # class AttributeListModel(QAbstractListModel):
 #     def __init__(self, engine: EagerEngineProtocol, node: NodeId, parent=None):
@@ -313,23 +313,18 @@ class ProviderView(QWidget):
         engine.listen(self._handle_engine_change)
 
     def _handle_engine_change(self, engine_change:EagerEngineChange):
-        if engine_change.config and engine_change.config.script is not None:
-            if self.script_view.toPlainText() != engine_change.config.script.new:
-                self.script_view.setPlainText(engine_change.config.script.new)
+        if engine_change.script is not None:
+            if self.script_view.toPlainText() != engine_change.script.new:
+                self.script_view.setPlainText(engine_change.script.new)
 
-        if engine_change.provider is not None:
-            if status:=engine_change.provider.status:
-                self.show_status(status)
+        if status_change:=engine_change.provider_status:
+            self.show_status(status_change.new)
 
     def _handle_editor_text_changed(self) -> None:
         new_text = self.script_view.toPlainText()
         if new_text != self._engine.script():
-            try:
-                self._engine.set_script(new_text)
-            except BaseException as exc:
-                self.script_view.setToolTip(str(exc))
-            else:
-                self.script_view.setToolTip("")
+            self._engine.set_script(new_text)
+
 
     def show_status(self, status: ProviderStatus) -> None:
         print("show status: ", status)
@@ -380,8 +375,8 @@ class OutputViewer(QWidget):
 
     def _handle_engine_change(self, change: EagerEngineChange) -> None:
         node = self._current_node
-        if change.config and change.config.graph and change.config.graph.nodes:
-            if node in change.config.graph.nodes.removed:
+        if change.graph and change.graph.nodes:
+            if node in change.graph.nodes.removed:
                 self.setCurrentNode(None)
                 return
         
@@ -478,9 +473,9 @@ class InspectorView(QFrame):
         if node is None:
             return
 
-        if change.config and change.config.graph:
-            if node in change.config.graph.attributes:
-                attributes_change = change.config.graph.attributes[node]
+        if change.graph:
+            if node in change.graph.attributes:
+                attributes_change = change.graph.attributes[node]
                 for key, value_change in attributes_change.updated.items():
                     if key in self._editors:
                         editor = self._editors[key]
