@@ -39,7 +39,9 @@ from myqtx.widgets.displaywidget import DisplayWidget
 from QtScriptEditorAdvanced import ScriptEditAdvanced
 from qtpy.QtCore import SignalInstance
 
-# define engine contracts for the view
+############
+# CONTRACT #
+############
 class InletSignatureProtocol(TypedDict):
     type: Any
     default: Any
@@ -47,6 +49,7 @@ class InletSignatureProtocol(TypedDict):
 
 class NodeSignatureProtocol(TypedDict):
     __operator__: OperatorSignature
+
 
 class NodeStatusProtocol(TypedDict):
     status: NodeStatus
@@ -106,7 +109,9 @@ class EagerEngineProtocol(EngineGraphProtocol, ProviderProtocol, ObservableProto
     def remove_effect(self, node: 'NodeId') -> None: ...
 
 
-# implement models
+##########
+# MODELS #
+##########
 class EagerGraphModel(AbstractDAGModel):
     def __init__(self, engine: EagerEngineProtocol, parent=None):
         super().__init__(parent=parent)
@@ -281,6 +286,9 @@ class OperatorListModel(QAbstractListModel):
 #             key, value = all_attributes[index.row()]
 #             return f"{key}: {value}"
 #         return None
+#########
+# VIEWS #
+#########
 
 class ProviderView(QWidget):
     def __init__(self, engine: EagerEngineProtocol, parent=None):
@@ -527,6 +535,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Callable, TypeVar, Protocol
 import queue
+from qtpy.QtCore import QObject, Signal, Slot, Qt
+
+
 R = TypeVar("R")
 
 # class _EngineWorker(threading.Thread):
@@ -576,8 +587,6 @@ R = TypeVar("R")
 #     def stop(self):
 #         self._tasks.put(None)
 
-from qtpy.QtCore import QObject, Signal, Slot, Qt
-
 
 # class EngineBridge(QObject):
 #     changed = Signal(object)
@@ -622,7 +631,7 @@ from qtpy.QtCore import QObject, Signal, Slot, Qt
 #         self._worker.stop()
     
 # init default engine
-def create_hello_world_engine():
+def _create_hello_world_engine():
     engine = EagerEngine(dedent("""\
         def the_name():
             return 'Mása'
@@ -646,7 +655,7 @@ class EngineWindow(QMainWindow):
         self.setWindowTitle("Eager QDAG Editor")
         self._statusbar = self.statusBar() # ensure statusbar
 
-        self.engine = create_hello_world_engine()
+        self.engine = _create_hello_world_engine()
         self.engine.listen(self._handle_engine_change)
 
         # layout widgets
@@ -660,13 +669,6 @@ class EngineWindow(QMainWindow):
         self.editor.requestLink.connect(lambda source, outlet, target, inlet:
             self._handle_link_request(source, outlet, target, inlet)
         )
-        # self.editor2 = DirectionalGraphView5()
-        # self.editor2.requestNode.connect(lambda scene_pos, source:
-        #         self._handle_node_request(scene_pos=scene_pos, source=source)
-        #     )
-        # self.editor2.requestLink.connect(lambda source, outlet, target, inlet:
-        #     self._handle_link_request(source, outlet, target, inlet)
-        # )
 
         self.viewer = OutputViewer(self.engine)
 

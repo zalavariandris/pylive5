@@ -215,9 +215,9 @@ class EagerEngineChange:
     provider_status: ValueChange[ProviderStatus]|None=None
 
 
-###################
-# STATFULL ENGINE #
-###################
+####################
+# STATEFULL ENGINE #
+####################
 
 
 class EagerEngine:
@@ -315,14 +315,16 @@ class EagerEngine:
     def node_status(self, node: NodeId) -> NodeStatus:
         return self._node_status.get(node, DirtyStatus())
 
-    def __set_node_status(self, node: NodeId, status: NodeStatus) -> None:
+    def __set_nodes_status(self, nodes: Iterable[NodeId], status: NodeStatus) -> None:
         """Publish transient execution status; the previous status is unknown."""
-        old_status = self._node_status.get(node)
-        self._node_status[node] = status
+        updated: dict[NodeId, ValueChange] = {}
+        for node in nodes:
+            old_status = self._node_status.get(node)
+            self._node_status[node] = status
+            updated[node] = ValueChange(old=old_status, new=status)
+
         self._notify(EagerEngineChange(
-            graph_status=MappingChanges(updated={
-                node: ValueChange(old=old_status, new=status)
-            })
+            graph_status=MappingChanges(updated=updated)
         ))
 
     def in_links(self, node: NodeId) -> Iterable[tuple[NodeId, NodeId, str]]:
@@ -466,32 +468,35 @@ class EagerEngine:
     def invalidate(self, *nodes: NodeId) -> None:
         """Invalidate specified nodes and all descendants in the live graph."""
         queue = deque(nodes)
-        live_nodes = set(self._graph_config.nodes())
+        existing_nodes = set(self._graph_config.nodes())
         affected: set[NodeId] = set()
         while queue:
             node = queue.popleft()
             if node in affected:
                 continue
             affected.add(node)
-            if node in live_nodes:
+            if node in existing_nodes:
                 queue.extend(link.target for link in self._graph_config.out_links(node))
+
         if not affected:
             return
 
-        # Subclasses discard any state they need to before observers hear about it.
+        self.__set_nodes_status(affected & existing_nodes, DirtyStatus())
         self.invalidate_hook(frozenset(affected))
-        self._effects = [node for node in self._effects if node in live_nodes]
-        for node in affected & live_nodes:
-            self.__set_node_status(node, DirtyStatus())
-
-        effects = tuple(node for node in self._effects if node in affected)
-        if effects:
-            self.evaluate_node(*effects)
 
     def invalidate_hook(self, nodes: frozenset[NodeId]) -> None:
         for node in nodes:
             self._cache.remove(node)
             self._node_status[node] = DirtyStatus()
+
+        # update live nodes
+        live_nodes = []
+        for n in nodes:
+            if n in self._effects:
+                live_nodes.append(n)
+
+        if live_nodes:
+            self.evaluate_node(*live_nodes)
 
     def evaluate_node(self, *nodes: NodeId) -> ExecutionResult:
         """Publish results as events and stop on the first evaluation failure."""
@@ -509,7 +514,7 @@ class EagerEngine:
             resolved_graph, 
             self._resolved_operators, 
             cache=self._cache, 
-            callback=self.__set_node_status
+            callback=lambda n, s: self.__set_nodes_status([n], s)
         )
         return executed_results
 
