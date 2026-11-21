@@ -21,9 +21,9 @@ def test_eager_engine():
             return f"{greeting}, {name}!"
     """))
     
-    the_name = engine.node("the_name")
-    the_greeting = engine.node("the_greeting")
-    hello_world = engine.node("hello_world", name=the_name, greeting=the_greeting)
+    the_name = engine.create_node("the_name")
+    the_greeting = engine.create_node("the_greeting")
+    hello_world = engine.create_node("hello_world", name=the_name, greeting=the_greeting)
     result = next(engine.evaluate_node(hello_world))
     assert result == "Hey, Mása!"
 
@@ -36,8 +36,8 @@ def test_eager_engine_smoketest():
         "def source(): return 1\n"
         "def target(value): return value\n"
     )
-    source = engine.node("source")
-    target = engine.node("target")
+    source = engine.create_node("source")
+    target = engine.create_node("target")
 
     events: list[EagerEngineChange] = []
     unsubscribe = engine.listen(events.append)

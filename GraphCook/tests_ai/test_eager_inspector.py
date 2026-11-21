@@ -29,7 +29,7 @@ def test_defaults_are_not_assigned_to_editor_properties(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine('def greet(name: str = "Hello", count: int = -200): return name * count')
-    node = engine.node('greet')
+    node = engine.create_node('greet')
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     inspector = InspectorView(engine)
@@ -52,7 +52,7 @@ def test_edits_update_attributes_evaluate_effect_and_preserve_editor(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine('def greet(name: str = "Hello", count: int = 2): return name * count')
-    node = engine.node('greet', name='Custom', count=3)
+    node = engine.create_node('greet', name='Custom', count=3)
     inspector = InspectorView(engine)
     viewer = OutputViewer(engine)
     qtbot.addWidget(inspector)
@@ -84,7 +84,7 @@ def test_external_set_and_unset_refresh_without_feedback(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine('def source(value: int = 1000): return value')
-    node = engine.node('source')
+    node = engine.create_node('source')
     inspector = InspectorView(engine)
     qtbot.addWidget(inspector)
     inspector.setCurrentNode(node)
@@ -106,7 +106,7 @@ def test_false_empty_none_and_missing_remain_distinct(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine('def source(required: int, text: str = "Default", flag=False, value=None): pass')
-    node = engine.node('source', text='', flag=False, value=None)
+    node = engine.create_node('source', text='', flag=False, value=None)
     inspector = InspectorView(engine)
     qtbot.addWidget(inspector)
     inspector.setCurrentNode(node)
@@ -121,8 +121,8 @@ def test_links_disable_literal_editor_and_disconnect_leaves_input_unset(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine('def source(): return 7\ndef target(value: int = 5): return value')
-    source = engine.node('source')
-    target = engine.node('target', value=source)
+    source = engine.create_node('source')
+    target = engine.create_node('target', value=source)
     inspector = InspectorView(engine)
     qtbot.addWidget(inspector)
     inspector.setCurrentNode(target)
@@ -139,8 +139,8 @@ def test_script_defaults_refresh_and_selection_connections_are_replaced(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine('def source(value: int = 2): return value')
-    first = engine.node('source')
-    second = engine.node('source')
+    first = engine.create_node('source')
+    second = engine.create_node('source')
     inspector = InspectorView(engine)
     qtbot.addWidget(inspector)
     inspector.setCurrentNode(first)
@@ -160,7 +160,7 @@ def test_editing_unset_input_preserves_parameter_order_and_widgets(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine('def greet(name: str = "World", greeting: str = "Hello"): return greeting + name')
-    node = engine.node('greet')
+    node = engine.create_node('greet')
     inspector = InspectorView(engine)
     qtbot.addWidget(inspector)
     inspector.setCurrentNode(node)
@@ -177,7 +177,7 @@ def test_evaluation_uses_defaults_while_inspector_stays_unset(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine('def source(value: int = 42): return value')
-    node = engine.node('source')
+    node = engine.create_node('source')
     inspector = InspectorView(engine)
     qtbot.addWidget(inspector)
     inspector.setCurrentNode(node)

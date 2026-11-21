@@ -37,8 +37,8 @@ def test_viewer_displays_events_and_cached_selection_without_reading_attributes(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine = make_engine("def source(): return 7\ndef other(): return 20")
-    source = engine.node("source")
-    other = engine.node("other")
+    source = engine.create_node("source")
+    other = engine.create_node("other")
     engine.evaluate_node(source)
 
     def reject_metadata_read(*args: object) -> None:
@@ -64,7 +64,7 @@ def test_viewer_displays_operator_failure_and_recovers_on_script_edit(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine("def source(): raise ValueError('Broken operator')")
-    source = engine.node("source")
+    source = engine.create_node("source")
     viewer = OutputViewer(engine)
     qtbot.addWidget(viewer)
     viewer.setCurrentNode(source)
@@ -78,7 +78,7 @@ def test_script_editor_keeps_last_working_program_during_invalid_edit(
 ) -> None:
     script = "def source(): return 7"
     engine = make_engine(script)
-    source = engine.node("source")
+    source = engine.create_node("source")
     viewer = OutputViewer(engine)
     editor = ProviderView(engine)
     qtbot.addWidget(viewer)
@@ -97,8 +97,8 @@ def test_viewer_receives_failure_of_selected_nodes_dependency(
     qtbot: QtBot, make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine("def source(): return 7\ndef target(value): return value * 2")
-    source = engine.node("source")
-    target = engine.node("target", value=source)
+    source = engine.create_node("source")
+    target = engine.create_node("target", value=source)
     viewer = OutputViewer(engine)
     qtbot.addWidget(viewer)
     viewer.setCurrentNode(target)

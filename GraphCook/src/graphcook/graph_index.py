@@ -1,10 +1,10 @@
 """Derived, explicitly updated index of a node attribute's hashable values."""
 from __future__ import annotations
 
-from typing import Generic, Hashable, Mapping, TypeVar
+from typing import Generic, Hashable, TypeVar
 
 from .core.graph import GraphProtocol, NodeT
-from .observable_graph import ObservableGraph, GraphChange
+from .observable_graph import GraphChange
 from myutils.relations import ManyToOneRelation
 
 ValueT = TypeVar("ValueT", bound=Hashable)
@@ -36,17 +36,26 @@ class GraphAttributeIndex(Generic[NodeT, ValueT]):
         return self._relation.children_of(value)
 
     def update(self, change: GraphChange[NodeT]) -> None:
-        # The graph has already applied the mutation by the time it emits.
-        for node in change.nodes.removed:
+        # The graph already contains the resulting state.
+        node_changes = change.get("nodes", {})
+        removed_nodes = node_changes.get("removed", {})
+        added_nodes = node_changes.get("added", {})
+
+        for node in removed_nodes:
             self._remove(node)
-        for node in change.nodes.added:
+
+        for node in added_nodes:
             self._sync(node)
-        for node, changes in change.attributes.items():
-            if node in change.nodes.removed:
+
+        for node, changes in node_changes.get("updated", {}).items():
+            if node in removed_nodes or node in added_nodes:
                 continue
-            if (self.attribute in changes.added
-                    or self.attribute in changes.removed
-                    or self.attribute in changes.updated):
+
+            if (
+                self.attribute in changes.get("added", {})
+                or self.attribute in changes.get("removed", {})
+                or self.attribute in changes.get("updated", {})
+            ):
                 self._sync(node)
 
     def _remove(self, node: NodeT) -> None:

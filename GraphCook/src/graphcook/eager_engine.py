@@ -2,31 +2,25 @@
 from __future__ import annotations
 
 import time
-from typing import TypeVar, Any, Callable, Iterable, Literal, TypedDict, cast
+from typing import Any, Callable, Hashable, Iterable, Mapping, TypedDict
 
 import inspect
 from collections import deque
 from dataclasses import dataclass
 
-from myutils.source_diff import collect_functions, FunctionsDiff, ast_functions_diff
 
 
-from .core.changes import MappingChanges, ValueChange
+from .core.changes import MappingChanges, ValueChange, SetChanges
 from .core.changes import ObservableValue
 
-from .core.base_engine import (
-    BaseEngine, 
-    OPERATOR_ATTRIBUTE,
-    OperatorHandle, 
-    OperatorProvider
-)
-from .provider import UnresolvedOperatorError
-from .core.cache import CacheProtocol, MemoryCache
-from .core.graph import Graph, GraphProtocol, NodeT
 
-from .core.graph import descendants, topological_sort
-from .observable_graph import ObservableGraph, GraphChange
+from .core.cache import MemoryCache
+from .core.graph import Graph, Link
+
+from .core.graph import topological_sort
+from .observable_graph import ObservableGraph, GraphChange, AttributeChanges
 from .graph_index import GraphAttributeIndex
+
 
 ###################
 # ExecutionStatus #
@@ -43,6 +37,12 @@ from .core.execution_status import (
 ########
 # DATA #
 ########
+OPERATOR_ATTRIBUTE = "__operator__"
+
+@dataclass(frozen=True)
+class OperatorHandle:
+    name: str
+
 type ProviderStatus = ExecutionStatus[list[OperatorHandle]]
 type NodeStatus = ExecutionStatus[Any]
 
@@ -54,7 +54,7 @@ class NodeId:
 class InletSignature:
     """Public inlet information."""
     type: Any
-    default: Any
+    default: Any = inspect.Parameter.empty
 
 @dataclass(frozen=True)
 class OperatorSignature:
@@ -76,10 +76,9 @@ class OperatorSignature:
         return OperatorSignature(name=func.__name__, inlets=inlets)
 
 
-class EagerNodeData(TypedDict):
+class EagerNodeData(TypedDict, total=False):
     """Public node information, without computed results."""
     __operator__: OperatorSignature
-    __status__: object
     
 
 class NodeData(TypedDict):
@@ -95,7 +94,7 @@ ExecutionResult = dict[NodeId, Any]
 ###########
 
 
-def _execute_provider(script: str) -> dict[OperatorHandle, Callable]:
+def _execute_provider(script: str) -> dict[OperatorHandle, Callable[..., Any]]:
     namespace:dict[str, Any] = {}
     exec(script, namespace)
     new_functions = {
@@ -133,7 +132,7 @@ def _execute_graph(
     resolved_graph: Graph[NodeId], 
     resolved_operators: dict[OperatorHandle, Callable[..., Any]],
     *,
-    cache: MemoryCache,
+    cache: MemoryCache[NodeId, Any],
     callback: Callable[[NodeId, NodeStatus], None]
 ) -> ExecutionResult:
     """execute the plan.
@@ -203,24 +202,253 @@ def _execute_graph(
 ###########
 # CHANGES #
 ###########
-@dataclass(frozen=True)
-class EagerEngineChange:
+class ExecutorChange(TypedDict, total=False):
+    operators: MappingChanges[OperatorHandle, Callable[..., Any], ValueChange[Callable[..., Any]]]
+    nodes_status: MappingChanges[NodeId, NodeStatus, ValueChange[NodeStatus]]
+    provider_status: ValueChange[ProviderStatus]
+
+
+class EagerEngineChange(ExecutorChange, total=False):
     # config
-    graph: GraphChange|None=None
-    script: ValueChange|None=None
-
-    # computed
-    operators: MappingChanges[OperatorHandle, Callable]|None=None
-    graph_status: MappingChanges[NodeId, NodeStatus]|None=None
-    provider_status: ValueChange[ProviderStatus]|None=None
-
+    script: ValueChange[str]
+    # graph: GraphChange[NodeId]
+    nodes: MappingChanges[NodeId, Mapping[Hashable, object], AttributeChanges]
+    links: SetChanges[Link[NodeId]]
+    
+    # executor
+    operators: MappingChanges[OperatorHandle, Callable[..., Any], ValueChange[Callable[..., Any]]]
+    nodes_status: MappingChanges[NodeId, NodeStatus, ValueChange[NodeStatus]]
+    provider_status: ValueChange[ProviderStatus]
+    
 
 ####################
 # STATEFULL ENGINE #
 ####################
 
+class _EngineExecutor:
+    """Own computed state and react to changes in the engine configuration."""
+
+    def __init__(self,
+        script: ObservableValue[str],
+        graph: ObservableGraph[NodeId]
+    ) -> None:
+        self._script = script
+        self._graph = graph
+        self._closed = False
+        self._started = False
+        self._listeners: list[Callable[[ExecutorChange], None]] = []
+        self._resolved_operators: dict[OperatorHandle, Callable[..., Any]] = {}
+        self._operator_signatures: dict[OperatorHandle, OperatorSignature] = {}
+        self._provider_status: ProviderStatus = DirtyStatus()
+        self._nodes_status: dict[NodeId, NodeStatus] = {}
+        self._effects: list[NodeId] = []
+        self._cache = MemoryCache[NodeId, Any]()
+        self._operator_index = GraphAttributeIndex(
+            graph, OPERATOR_ATTRIBUTE, OperatorHandle,
+        )
+        self._unsubscribe_graph = graph.listen(self._on_graph_change)
+        self._unsubscribe_script = script.listen(self._on_script_change)
+
+        # initial script
+        self._execute_provider()
+
+    def _on_script_change(self, change: ValueChange[str]) -> None:
+        self._execute_provider()
+
+    def _execute_provider(self) -> None:
+        old_operators = self._resolved_operators
+        old_provider_status = self._provider_status
+        try:
+            new_operators = _execute_provider(self._script.get())
+        except BaseException as exc:
+            new_operators = {}
+            new_provider_state = FailedStatus(reason=exc)
+        else:
+            new_provider_state = SucceededStatus(value=list(new_operators))
+
+        self._provider_status = new_provider_state
+        self._resolved_operators = new_operators
+        self._operator_signatures = {handle: OperatorSignature.from_func(func) for handle, func in new_operators.items()}
+        operators_change = MappingChanges(
+            kind="map",
+            added={
+                handle: new_operators[handle]
+                for handle in new_operators
+                if handle not in old_operators
+            },
+            removed={
+                handle: old_operators[handle]
+                for handle in old_operators
+                if handle not in new_operators
+            },
+            updated={
+                handle: ValueChange(kind="value", old=old_operators[handle], new=new_operators[handle])
+                for handle in new_operators
+                if handle in old_operators and new_operators[handle] != old_operators[handle]
+            }
+        )
+
+        self._on_operator_change(operators_change)
+        self._notify(ExecutorChange(
+            operators=operators_change,
+            provider_status=ValueChange(kind="value", old=old_provider_status, new=new_provider_state)
+        ))
+
+    def operators(self) -> Iterable[OperatorHandle]:
+        return self._resolved_operators.keys()
+
+    def operator_signature(self, handle: OperatorHandle) -> OperatorSignature | None:
+        return self._operator_signatures.get(handle)
+
+    def _on_operator_change(self, change: MappingChanges[OperatorHandle, Callable[..., Any], ValueChange[Callable[..., Any]]]) -> None:
+        handles = (
+            set(change.get("added", {}))
+            | set(change.get("removed", {}))
+            | set(change.get("updated", {}))
+        )
+        dirty_nodes: set[NodeId] = set()
+        for handle in handles:
+            dirty_nodes.update(self._operator_index.nodes_with(handle))
+        self.invalidate(*dirty_nodes)
+
+    # process
+    def effect(self, source: NodeId) -> None:
+        if source not in self._graph.nodes():
+            raise ValueError("Effect node is not in graph")
+        if source not in self._effects:
+            self._effects.append(source)
+
+    def remove_effect(self, source: NodeId) -> None:
+        if source in self._effects:
+            self._effects.remove(source)
+
+    def _on_graph_change(self, change: GraphChange[NodeId]) -> None:
+        self._operator_index.update(change)
+        nodes = change.get("nodes", {})
+        removed_nodes = nodes.get("removed", {})
+        removed_statuses: dict[NodeId, NodeStatus] = {}
+        for node in removed_nodes:
+            self._cache.remove(node)
+            if node in self._nodes_status:
+                removed_statuses[node] = self._nodes_status.pop(node)
+        self._effects = [node for node in self._effects if node not in removed_nodes]
+
+        if removed_statuses:
+            self._notify(ExecutorChange(
+                nodes_status=MappingChanges(kind="map", removed=removed_statuses),
+            ))
+
+        dirty_nodes = set(nodes.get("added", {})) | set(nodes.get("updated", {}))
+        links = change.get("links", {})
+        dirty_nodes.update(link.target for link in links.get("added", set()))
+        dirty_nodes.update(link.target for link in links.get("removed", set()))
+        self.invalidate(*dirty_nodes)
+
+    def invalidate(self, *nodes: NodeId) -> None:
+        """Invalidate specified nodes and all descendants in the live graph."""
+        queue = deque(nodes)
+        existing_nodes = set(self._graph.nodes())
+        affected: set[NodeId] = set()
+        while queue:
+            node = queue.popleft()
+            if node in affected:
+                continue
+            affected.add(node)
+            if node in existing_nodes:
+                queue.extend(link.target for link in self._graph.out_links(node))
+
+        if not affected:
+            return
+
+        # Observers must see an invalid cache when dirty statuses are published.
+        for node in affected:
+            self._cache.remove(node)
+        live_nodes = affected & existing_nodes
+        self.__set_nodes_status(live_nodes, DirtyStatus())
+        effects = [node for node in self._effects if node in live_nodes]
+        if effects:
+            self.evaluate_node(*effects)
+    
+    def evaluate_node(self, *nodes: NodeId) -> ExecutionResult:
+        """Publish results as events and stop on the first evaluation failure."""
+        if not nodes:
+            raise ValueError("At least one node must be provided")
+
+        requested = tuple(dict.fromkeys(nodes))
+        live_nodes = set(self._graph.nodes())
+        for node in requested:
+            if node not in live_nodes:
+                raise ValueError(f"Root is not in graph: {node!r}")
+
+        resolved_graph = _prepare_graph(self._graph, *requested)
+        executed_results: ExecutionResult = _execute_graph(
+            resolved_graph,
+            self._resolved_operators,
+            cache=self._cache,
+            callback=lambda n, s: self.__set_nodes_status([n], s)
+        )
+        return executed_results
+
+    def __set_nodes_status(
+        self,
+        nodes: Iterable[NodeId],
+        status: NodeStatus,
+    ) -> None:
+        """Publish additions and updates to stored node statuses."""
+        added: dict[NodeId, NodeStatus] = {}
+        updated: dict[NodeId, ValueChange[NodeStatus]] = {}
+
+        for node in dict.fromkeys(nodes):
+            if node in self._nodes_status:
+                updated[node] = ValueChange(
+                    kind="value",
+                    old=self._nodes_status[node],
+                    new=status,
+                )
+            else:
+                added[node] = status
+
+            self._nodes_status[node] = status
+
+        if not added and not updated:
+            return
+
+        self._notify(ExecutorChange(
+            nodes_status=MappingChanges(
+                kind="map",
+                added=added,
+                updated=updated,
+            )
+        ))
+
+    def nodes_status(self, node: NodeId) -> NodeStatus:
+        return self._nodes_status.get(node, DirtyStatus())
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._unsubscribe_graph()
+        self._unsubscribe_script()
+
+    def listen(self, callback: Callable[[ExecutorChange], None]) -> Callable[[], None]:
+        self._listeners.append(callback)
+
+        def unsubscribe() -> None:
+            self._listeners.remove(callback)
+
+        return unsubscribe
+
+    def _notify(self, change: ExecutorChange) -> None:
+        for listener in tuple(self._listeners):
+            listener(change)
+
 
 class EagerEngine:
+    """ Eager Engine
+    ...
+    """
+
     def __init__(self, script: str) -> None:
         # private members
         self._listeners: list[Callable[[EagerEngineChange], None]] = []
@@ -229,31 +457,24 @@ class EagerEngine:
         # config
         self._script_config = ObservableValue[str](script)
         self._graph_config = ObservableGraph[NodeId]()
-        
-        # computed
-        self._resolved_operators: dict[OperatorHandle, Callable[..., Any]] = {}
-        self._operator_signatures: dict[OperatorHandle, OperatorSignature] = {}
-        self._provider_status: ProviderStatus = DirtyStatus()
-        self._node_status: dict[NodeId, NodeStatus] = {}
-        
-        # subscibe to config
+        # executor
+        self._executor = _EngineExecutor(self._script_config, self._graph_config)
+
+        # Subscribe before starting execution so initial events can be forwarded.
         self._unsubscribe_graph = self._graph_config.listen(self._forward_graph_change)
         self._unsubscribe_script = self._script_config.listen(self._forward_script_change)
+        self._unsubscribe_executor = self._executor.listen(self._forward_executor_change)
 
-        # auto evaluate effects
-        self._effects:list[NodeId] = []
-
-        # state
-        self._cache = MemoryCache[NodeId, Any]()
-        self._operator_index = GraphAttributeIndex[NodeId, OperatorHandle](
-            self._graph_config, OPERATOR_ATTRIBUTE, OperatorHandle
-        )
-
-        # initial execution
-        self._execute_provider()
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._unsubscribe_graph()
+        self._unsubscribe_script()
+        self._unsubscribe_executor()
+        self._executor.close()
 
     def _notify(self, change: EagerEngineChange) -> None:
-        self._engine_change_hook(change)
         for listener in tuple(self._listeners):
             listener(change)
         
@@ -270,62 +491,7 @@ class EagerEngine:
         return self._graph_config.nodes()
 
     def attributes(self, node: NodeId) -> EagerNodeData:
-        attributes = self._graph_config.attributes(node)
-        operator_handle = attributes[OPERATOR_ATTRIBUTE]
-        assert isinstance(operator_handle, OperatorHandle)
-
-        inputs: dict[str, Any] = {
-            key: value
-            for key, value in attributes.items()
-            if key != OPERATOR_ATTRIBUTE
-            and not isinstance(value, NodeId)
-        }
-
-        # Declared parameters determine inlet order, independently of overrides.
-        inlets = dict()
-        if op_signature:=self._operator_signatures.get(operator_handle):
-            inlets.update(op_signature.inlets)
-
-        # update _inlets_ with node _inputs_
-        for name, value in inputs.items():
-            if name not in inlets:
-                inlets[name] = InletSignature(
-                    type=type(value),
-                    default=inspect.Parameter.empty
-                )
-
-        # include any link target inlet, in case it was not already in the inputs
-        for link in self._graph_config.in_links(node):
-            if link.inlet not in inlets:
-                inlets[link.inlet] = InletSignature(
-                    type=Any,
-                    default=inspect.Parameter.empty
-                )
-            inputs[link.inlet] = link.source
-
-
-        return EagerNodeData(
-            __operator__ = OperatorSignature(
-                name=operator_handle.name,
-                inlets=inlets
-            ),
-            **inputs
-        )
-
-    def node_status(self, node: NodeId) -> NodeStatus:
-        return self._node_status.get(node, DirtyStatus())
-
-    def __set_nodes_status(self, nodes: Iterable[NodeId], status: NodeStatus) -> None:
-        """Publish transient execution status; the previous status is unknown."""
-        updated: dict[NodeId, ValueChange] = {}
-        for node in nodes:
-            old_status = self._node_status.get(node)
-            self._node_status[node] = status
-            updated[node] = ValueChange(old=old_status, new=status)
-
-        self._notify(EagerEngineChange(
-            graph_status=MappingChanges(updated=updated)
-        ))
+        return self._graph_config.attributes(node)
 
     def in_links(self, node: NodeId) -> Iterable[tuple[NodeId, NodeId, str]]:
         for link in self._graph_config.in_links(node):
@@ -340,7 +506,7 @@ class EagerEngine:
             yield (link.source, link.target, link.inlet)
 
     # mutate graph
-    def node(self, funcname, **kwargs)->NodeId:
+    def create_node(self, funcname: str, **kwargs: object) -> NodeId:
         # generate random_id for node
         import uuid
         node_id = NodeId(str(uuid.uuid4()))
@@ -349,7 +515,6 @@ class EagerEngine:
             **{OPERATOR_ATTRIBUTE: OperatorHandle(funcname)},
             **kwargs
         )
-        self._node_status[node_id] = DirtyStatus()
         for inlet, src in kwargs.items():
             if isinstance(src, NodeId):
                 self._graph_config.add_link(src, node_id, inlet)
@@ -358,7 +523,6 @@ class EagerEngine:
 
     def delete(self, node: NodeId) -> None:
         self._graph_config.remove_node(node)
-        self._node_status.pop(node, None)
 
     def set(self, node: NodeId, **attributes: object) -> None:
         self._graph_config.set(node, **attributes)
@@ -372,17 +536,7 @@ class EagerEngine:
     def remove_link(self, source: 'NodeId', target: 'NodeId', inlet: str) -> None:
         self._graph_config.remove_link(source, target, inlet)
 
-    def _forward_graph_change(self, change: GraphChange) -> None:
-        # forward graph changes
-        self._notify(EagerEngineChange(
-            graph=change
-        ))
-
-    # read provider
-    def operators(self) -> Iterable[OperatorHandle]:
-        return self._resolved_operators.keys()
-
-    # mutate provider
+    # provider
     def script(self) -> str:
         return self._script_config.get()
 
@@ -392,148 +546,36 @@ class EagerEngine:
             return
         self._script_config.set(script)
 
-    def _execute_provider(self):
-        old_operators: dict[OperatorHandle, Callable] = self._resolved_operators
-        old_provider_status = self._provider_status
-        try:
-           new_operators: dict[OperatorHandle, Callable] = _execute_provider(self._script_config.get())
-        except BaseException as exc:
-            new_operators = {}
-            new_provider_state = FailedStatus(reason=exc)
-        else:
-            new_provider_state = SucceededStatus(value=list(new_operators))
+    # Computed state and execution are owned by the executor.
+    def operators(self) -> Iterable[OperatorHandle]:
+        return self._executor.operators()
 
-        self._provider_status = new_provider_state
-        self._resolved_operators = new_operators
-        self._operator_signatures = {handle: OperatorSignature.from_func(func) for handle, func in new_operators.items()}
-        operators_change = MappingChanges(
-            added={
-                handle: new_operators[handle] 
-                for handle in new_operators 
-                if handle not in old_operators
-            },
-            removed={
-                handle: old_operators[handle] 
-                for handle in old_operators
-                if handle not in new_operators
-            },
-            updated={
-                handle: ValueChange(old=old_operators[handle], new=new_operators[handle]) 
-                for handle in new_operators 
-                if handle in old_operators and new_operators[handle] != old_operators[handle]
-            }
-        )
+    def operator_signature(self, operator: OperatorHandle) -> OperatorSignature|None:
+        return self._executor.operator_signature(operator)
 
-        self._notify(EagerEngineChange(
-            operators=operators_change,
-            provider_status=ValueChange(old=old_provider_status, new=new_provider_state)
-        ))
+    def nodes_status(self, node: NodeId) -> NodeStatus:
+        return self._executor.nodes_status(node)
 
-    def _forward_script_change(self, change: ValueChange) -> None:
+    def invalidate(self, *nodes: NodeId) -> None:
+        self._executor.invalidate(*nodes)
+
+    def evaluate_node(self, *nodes: NodeId) -> ExecutionResult:
+        return self._executor.evaluate_node(*nodes)
+
+    def effect(self, source: NodeId) -> None:
+        self._executor.effect(source)
+
+    def remove_effect(self, source: NodeId) -> None:
+        self._executor.remove_effect(source)
+
+    # forward changes from underlying components to the engine level
+    def _forward_graph_change(self, change: GraphChange[NodeId]) -> None:
+        self._notify(EagerEngineChange(**change))
+
+    def _forward_script_change(self, change: ValueChange[str]) -> None:
         self._notify(EagerEngineChange(
             script=change
         ))
-        
-    def _engine_change_hook(self, change: EagerEngineChange) -> None:
-        print("Engine change hook", change)
-        if change.script is not None:
-            self._execute_provider()
 
-        if change.operators or change.graph:
-            dirty_nodes = set()
-            if change.graph is not None:
-                self._operator_index.update(change.graph)
-                dirty_nodes = set(change.graph.nodes.added) | set(change.graph.nodes.removed)
-                dirty_nodes.update(change.graph.attributes)
-                dirty_nodes.update(link.target for link in change.graph.links.added)
-                dirty_nodes.update(link.target for link in change.graph.links.removed)
-
-            if change.operators:
-                for handle, _ in change.operators.added.items():
-                    self._operator_index.nodes_with(handle)
-                    dirty_nodes.update(self._operator_index.nodes_with(handle))
-
-                for handle, _ in change.operators.removed.items():
-
-                    self._operator_index.nodes_with(handle)
-                    dirty_nodes.update(self._operator_index.nodes_with(handle))
-
-                for handle, _ in change.operators.updated.items():
-                    self._operator_index.nodes_with(handle)
-                    dirty_nodes.update(self._operator_index.nodes_with(handle))
-
-            self.invalidate(*dirty_nodes)
-    
-    # executor
-    def invalidate(self, *nodes: NodeId) -> None:
-        """Invalidate specified nodes and all descendants in the live graph."""
-        queue = deque(nodes)
-        existing_nodes = set(self._graph_config.nodes())
-        affected: set[NodeId] = set()
-        while queue:
-            node = queue.popleft()
-            if node in affected:
-                continue
-            affected.add(node)
-            if node in existing_nodes:
-                queue.extend(link.target for link in self._graph_config.out_links(node))
-
-        if not affected:
-            return
-
-        self.__set_nodes_status(affected & existing_nodes, DirtyStatus())
-        self.invalidate_hook(frozenset(affected))
-
-    def invalidate_hook(self, nodes: frozenset[NodeId]) -> None:
-        for node in nodes:
-            self._cache.remove(node)
-            self._node_status[node] = DirtyStatus()
-
-        # update live nodes
-        live_nodes = []
-        for n in nodes:
-            if n in self._effects:
-                live_nodes.append(n)
-
-        if live_nodes:
-            self.evaluate_node(*live_nodes)
-
-    def evaluate_node(self, *nodes: NodeId) -> ExecutionResult:
-        """Publish results as events and stop on the first evaluation failure."""
-        if not nodes:
-            raise ValueError("At least one node must be provided")
-
-        requested = tuple(dict.fromkeys(nodes))
-        live_nodes = set(self._graph_config.nodes())
-        for node in requested:
-            if node not in live_nodes:
-                raise ValueError(f"Root is not in graph: {node!r}")
-
-        resolved_graph = _prepare_graph(self._graph_config, *requested)
-        executed_results: ExecutionResult = _execute_graph(
-            resolved_graph, 
-            self._resolved_operators, 
-            cache=self._cache, 
-            callback=lambda n, s: self.__set_nodes_status([n], s)
-        )
-        return executed_results
-
-    # auto evaluate
-    def effect(self, source: NodeId) -> None:
-        if source not in self._graph_config.nodes():
-            raise ValueError("Effect node is not in graph")
-        self._effects.append(source)
-
-    def remove_effect(self, source: NodeId) -> None:
-        if source in self._effects:
-            self._effects.remove(source)
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._unsubscribe_graph()
-        self._unsubscribe_script()
-
-    def __del__(self) -> None:
-        self.close()
+    def _forward_executor_change(self, change: ExecutorChange) -> None:
+        self._notify(EagerEngineChange(**change))

@@ -5,10 +5,12 @@ from typing import Callable, Iterable, Any, Protocol, TypedDict, cast
 
 
 from graphcook.eager_engine import (
+    InletSignature,
     OperatorHandle, 
     OperatorSignature, 
     NodeStatus,
-    ProviderStatus
+    ProviderStatus,
+    GraphChange
 )
 
 from graphcook.eager_engine import EagerEngine
@@ -24,10 +26,6 @@ from qdageditor5.models.abstract_dag_model import (
     OutletName
 )
 
-from graphcook.core.base_engine import (
-    OperatorHandle
-)
-
 from qtpy.QtCore import QPointF, Qt, QAbstractListModel, QSignalBlocker
 from qtpy.QtWidgets import QApplication, QDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QStatusBar, QVBoxLayout, QWidget
 from graphcook.eager_engine import (
@@ -39,12 +37,10 @@ from myqtx.widgets.displaywidget import DisplayWidget
 from QtScriptEditorAdvanced import ScriptEditAdvanced
 from qtpy.QtCore import SignalInstance
 
+
 ############
 # CONTRACT #
 ############
-class InletSignatureProtocol(TypedDict):
-    type: Any
-    default: Any
 
 
 class NodeSignatureProtocol(TypedDict):
@@ -63,7 +59,7 @@ class EngineGraphProtocol(Protocol):
     def attributes(self, node: 'NodeId') -> NodeSignatureProtocol:
         ...
 
-    def node_status(self, node: 'NodeId') -> NodeStatusProtocol:
+    def nodes_status(self, node: 'NodeId') -> NodeStatus:
         ...
 
     def in_links(self, node: 'NodeId') -> Iterable[tuple['NodeId', 'NodeId', str]]:
@@ -80,9 +76,10 @@ class EngineGraphProtocol(Protocol):
         ...
 
     def remove_link(self, source: 'NodeId', target: 'NodeId', inlet: str) -> None: ...
-    # # observe
-    # def listen(self, callback: callable[[GraphChange], None]) -> None:
-    #     ...
+
+    # observe
+    def listen(self, callback: Callable[[GraphChange], None]) -> None:
+        ...
 
 
 class ProviderProtocol(Protocol):
@@ -98,7 +95,12 @@ class ObservableProtocol(Protocol):
         ...
 
 
-class EagerEngineProtocol(EngineGraphProtocol, ProviderProtocol, ObservableProtocol, Protocol):
+class EagerEngineProtocol(
+    EngineGraphProtocol, 
+    ProviderProtocol, 
+    ObservableProtocol, 
+    Protocol
+):
     def set(self, node: NodeId, **attributes: object) -> None: ...
     def unset(self, node: NodeId, name: str) -> None: ...
     def script(self) -> str: ...
@@ -118,11 +120,31 @@ class EagerGraphModel(AbstractDAGModel):
         self._engine = engine
         self._unsubscribe = self._engine.listen(self._handle_engine_change)
 
+    # Adapter
     def mapFromSource(self, node: 'NodeId')->NodeName:
         return node
 
     def mapToSource(self, node: NodeName) -> 'NodeId':
         return node
+
+    def _handle_engine_change(self, engine_change: EagerEngineChange):
+        if status_change := engine_change.get('nodes_status'):
+            for node, new_value in status_change.get('added', {}).items():
+                print(f"node status added for {node}({new_value})")
+                node_name = self.mapFromSource(node)
+                self.nodesDataChanged.emit(tuple([node_name]), tuple())
+
+            for node, value_change in status_change.get('updated', {}).items():
+                print(f"node status updated for {node}({value_change.get('old')}->{value_change.get('new')})")
+                node_name = self.mapFromSource(node)
+                self.nodesDataChanged.emit(tuple([node_name]), tuple())
+
+            for node, old_value in status_change.get('removed', {}).items():
+                if node not in self._engine.nodes():
+                    continue
+                print(f"node status removed for {node}({old_value})")
+                node_name = self.mapFromSource(node)
+                self.nodesDataChanged.emit(tuple([node_name]), tuple())
 
     # READ
     def nodes(self) -> Iterable[NodeName]:
@@ -131,7 +153,7 @@ class EagerGraphModel(AbstractDAGModel):
 
     def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         node_data = self._engine.attributes(self.mapToSource(node_name))
-        node_status = self._engine.node_status(self.mapToSource(node_name))
+        node_status = self._engine.nodes_status(self.mapToSource(node_name))
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 op:OperatorSignature = node_data['__operator__']
@@ -165,23 +187,6 @@ class EagerGraphModel(AbstractDAGModel):
                     
         return None
 
-    def _handle_engine_change(self, engine_change: EagerEngineChange):
-        if status_change := engine_change.graph_status:
-            for node, new_value in status_change.added.items():
-                print(f"node status added for {node}({new_value})")
-                node_name = self.mapFromSource(node)
-                self.nodesDataChanged.emit(tuple([node_name]), tuple())
-
-            for node, value_change in status_change.updated.items():
-                print(f"node status updated for {node}({value_change.old}->{value_change.new})")
-                node_name = self.mapFromSource(node)
-                self.nodesDataChanged.emit(tuple([node_name]), tuple())
-
-            for node, old_value in status_change.removed.items():
-                print(f"node status removed for {node}({old_value})")
-                node_name = self.mapFromSource(node)
-                self.nodesDataChanged.emit(tuple([node_name]), tuple())
-
     def nodeCellCount(self, node: NodeName) -> int:
         return 0
 
@@ -190,14 +195,15 @@ class EagerGraphModel(AbstractDAGModel):
 
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         node_data = self._engine.attributes(self.mapToSource(node))
-        operator_handle: OperatorSignature = node_data['__operator__']
+        operator_handle: OperatorHandle = node_data['__operator__']
+        operator_signature: OperatorSignature = self._engine.operator_signature(operator_handle)
         
-        for inlet in operator_handle.inlets:
+        for inlet in operator_signature.inlets:
             yield inlet
 
         # Yield inlets that are connected but not defined in the operator signature
         for src, dst, inlet in self._engine.in_links(self.mapToSource(node)):
-            if inlet not in operator_handle.inlets.keys():
+            if inlet not in operator_signature.inlets.keys():
                 yield inlet
 
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
@@ -232,6 +238,18 @@ class EagerGraphModel(AbstractDAGModel):
         return (dst, inlet)
 
     # update
+    def addLinks(self, links:Iterable[DirectionalLinkId]) -> bool:
+        for link in links:
+            src, outlet, dst, inlet = link
+            source = self.mapToSource(src)
+            target = self.mapToSource(dst)
+            try:
+                self._engine.add_link(source, target, str(inlet))
+            except ValueError as error:
+                return False
+
+        return True
+
     def removeLinks(self, links) -> bool:
         for link in links:
             src, outlet, dst, inlet = link
@@ -242,8 +260,7 @@ class EagerGraphModel(AbstractDAGModel):
         return True
 
     def closeEvent(self, event):
-        if hasattr(self, '_unsubscribe'):
-            self._unsubscribe()
+        self._unsubscribe()
         super().closeEvent(event)
 
 
@@ -264,10 +281,10 @@ class OperatorListModel(QAbstractListModel):
         return None
 
     def _handle_engine_change(self, engine_change: EagerEngineChange):
-        if operators_change:=engine_change.operators:
-            operators_change.added
-            operators_change.removed
-            operators_change.updated
+        if operators_change:=engine_change.get('operators'):
+            operators_change.get('added', {})
+            operators_change.get('removed', {})
+            operators_change.get('updated', {})
 
 # class AttributeListModel(QAbstractListModel):
 #     def __init__(self, engine: EagerEngineProtocol, node: NodeId, parent=None):
@@ -286,6 +303,7 @@ class OperatorListModel(QAbstractListModel):
 #             key, value = all_attributes[index.row()]
 #             return f"{key}: {value}"
 #         return None
+
 #########
 # VIEWS #
 #########
@@ -317,19 +335,10 @@ class ProviderView(QWidget):
 
         engine.listen(self._handle_engine_change)
 
-    def _handle_engine_change(self, engine_change:EagerEngineChange):
-        if engine_change.script is not None:
-            if self.script_view.toPlainText() != engine_change.script.new:
-                self.script_view.setPlainText(engine_change.script.new)
-
-        if status_change:=engine_change.provider_status:
-            self.show_status(status_change.new)
-
     def _handle_editor_text_changed(self) -> None:
         new_text = self.script_view.toPlainText()
         if new_text != self._engine.script():
             self._engine.set_script(new_text)
-
 
     def show_status(self, status: ProviderStatus) -> None:
         print("show status: ", status)
@@ -346,6 +355,14 @@ class ProviderView(QWidget):
                 self._statusbar.showMessage("Provider succeeded")
                 return
 
+    def _handle_engine_change(self, engine_change:EagerEngineChange):
+        if engine_change.get('script'):
+            if self.script_view.toPlainText() != engine_change['script'].get('new'):
+                self.script_view.setPlainText(engine_change['script'].get('new'))
+
+        if status_change:=engine_change.get('provider_status'):
+            self.show_status(status_change.get('new'))
+
 
 class OutputViewer(QWidget):
     def __init__(self, engine: EagerEngineProtocol, parent: QWidget | None = None) -> None:
@@ -356,8 +373,8 @@ class OutputViewer(QWidget):
         self._display = DisplayWidget()
         layout.addWidget(self._display)
         self._current_node: NodeId|None = None
-        engine.listen(self._handle_engine_change)
         self._display.display("No current node selected")
+        engine.listen(self._handle_engine_change)
 
     def setCurrentNode(self, node: NodeId|None) -> None:
         if node == self._current_node:
@@ -380,19 +397,30 @@ class OutputViewer(QWidget):
 
     def _handle_engine_change(self, change: EagerEngineChange) -> None:
         node = self._current_node
-        if change.graph and change.graph.nodes:
-            if node in change.graph.nodes.removed:
+        if nodes_change:=change.get('nodes'):
+            if node in nodes_change.get('removed', []):
                 self.setCurrentNode(None)
                 return
         
-        if node is None or change.graph_status is None:
+        if node is None:
             return
 
-        status_change = change.graph_status.updated.get(node)
-        if status_change is None:
+        statuses = change.get("nodes_status")
+        if statuses is None:
             return
 
-        match status_change.new:
+        added = statuses.get("added", {})
+        status: NodeStatus
+
+        if node in added:
+            status = added[node]
+        else:
+            update = statuses.get("updated", {}).get(node)
+            if update is None:
+                return
+            status = update["new"]
+
+        match status:
             case SucceededStatus(value=value):
                 self._display.display(value)
             case FailedStatus(reason=reason):
@@ -418,52 +446,69 @@ class InspectorView(QFrame):
         if node == self._current_node:
             return
 
-        if self._current_node is not None:
-            self._clear_form()
-
-        if node is not None:
-            # build form
-            linked_sources = {
-                inlet: source
-                for source, _, inlet in self._engine.in_links(node)
-            }
-            operator_handle = self._engine.attributes(node)['__operator__']
-            inputs = {key: value for key, value in self._engine.attributes(node).items() if key != '__operator__'}
-            for inlet_key, inlet_signature in operator_handle.inlets.items():
-                if inlet_key in linked_sources:
-                    source = linked_sources[inlet_key]
-                    label = QLabel(inlet_key)
-                    editor = QLabel(f"(Linked)")
-                    # editor.setReadOnly(True)
-                    self._form.addRow(label, editor)
-                else:
-                    editor = self.createEditor(node, inlet_key)
-                    user_property = editor.metaObject().userProperty()
-                    if user_property.isValid() and user_property.hasNotifySignal():
-                        signal_name = bytes(user_property.notifySignal().name()).decode('utf-8')
-                        signal = getattr(editor, signal_name)
-
-                        def handle_change(*args: Any, node: NodeId = node, key: str = inlet_key, widget: QWidget = editor) -> None:
-                            # note: this captures closure values for node, key, and widget
-                            self._set_engine_data(node, key, widget)
-
-                        signal.connect(handle_change)
-                        self._connections.append((signal, handle_change))
-
-                    if inlet_key in inputs:
-                        value = inputs[inlet_key]
-                        user_property.write(editor, value)
-
-                    elif inlet_signature.default is not inspect.Parameter.empty:
-                        if isinstance(editor, QLineEdit):
-                            editor.setPlaceholderText(inlet_signature.default)
-                    else:
-                        pass
-
-                    self._editors[inlet_key] = editor
-                    self._form.addRow(QLabel(inlet_key), editor)
-
+        self._clear_form()
         self._current_node = node
+
+        if node is None:
+            return
+
+        attributes = self._engine.attributes(node)
+        signature = self._engine.operator_signature(attributes["__operator__"])
+        parameters = signature.inlets if signature is not None else {}
+
+        inputs = {
+            name: value
+            for name, value in attributes.items()
+            if name != "__operator__"
+        }
+        linked_sources = {
+            inlet: source
+            for source, _, inlet in self._engine.in_links(node)
+        }
+        inlet_names = dict.fromkeys((*parameters, *inputs, *linked_sources))
+
+        for name in inlet_names:
+            if name in linked_sources:
+                self._form.addRow(QLabel(name), QLabel("(Linked)"))
+                continue
+
+            editor = self.createEditor(node, name)
+            user_property = editor.metaObject().userProperty()
+
+            # Initialize before connecting signals.
+            if name in inputs:
+                if isinstance(editor, QLabel):
+                    editor.setText(str(inputs[name]))
+                elif user_property.isValid():
+                    user_property.write(editor, inputs[name])
+            else:
+                parameter = parameters.get(name)
+                if (
+                    isinstance(editor, QLineEdit)
+                    and parameter is not None
+                    and parameter.default is not inspect.Parameter.empty
+                ):
+                    editor.setPlaceholderText(str(parameter.default))
+
+            self._editors[name] = editor
+            self._form.addRow(QLabel(name), editor)
+
+            if not user_property.isValid() or not user_property.hasNotifySignal():
+                continue
+
+            signal_name = bytes(user_property.notifySignal().name()).decode()
+            signal = getattr(editor, signal_name)
+
+            def handle_change(
+                *args: Any,
+                node: NodeId = node,
+                key: str = name,
+                widget: QWidget = editor,
+            ) -> None:
+                self.setEngineData(node, key, widget)
+
+            signal.connect(handle_change)
+            self._connections.append((signal, handle_change))
 
     def _clear_form(self) -> None:
         for signal, handler in self._connections:
@@ -472,32 +517,44 @@ class InspectorView(QFrame):
         self._editors.clear()
         while self._form.rowCount():
             self._form.removeRow(0)
-
+    
     def _handle_engine_change(self, change: EagerEngineChange) -> None:
         node = self._current_node
         if node is None:
             return
 
-        if change.graph:
-            if node in change.graph.attributes:
-                attributes_change = change.graph.attributes[node]
-                for key, value_change in attributes_change.updated.items():
-                    if key in self._editors:
-                        editor = self._editors[key]
-                        self._set_editor_data(node, key, editor)
-    
-    def _set_editor_data(self, node: NodeId, key: str, widget: QWidget) -> None:
-        if key not in self._engine.attributes(node):
+        nodes_change = change.get("nodes", {})
+        if node in nodes_change.get("removed", {}):
+            self.setCurrentNode(None)
             return
-        current_value = self._engine.attributes(node)[key]
-        metaobject = widget.metaObject()
-        if metaobject:
-            user_property = metaobject.userProperty()
+
+        attributes_change = nodes_change.get("updated", {}).get(node)
+        if attributes_change is None:
+            return
+
+        changed_keys = (
+            set(attributes_change.get("added", {}))
+            | set(attributes_change.get("removed", {}))
+            | set(attributes_change.get("updated", {}))
+        )
+        for key in changed_keys:
+            if key in self._editors:
+                self.setEditorData(node, key, self._editors[key])
+
+    def setEditorData(self, node: NodeId, key: str, widget: QWidget) -> None:
+        attributes = self._engine.attributes(node)
+        with QSignalBlocker(widget):
+            if key not in attributes:
+                if isinstance(widget, (QLineEdit, QSpinBox, QLabel)):
+                    widget.clear()
+                return
+            current_value = attributes[key]
+            user_property = widget.metaObject().userProperty()
             if user_property.isValid() and user_property.hasNotifySignal():
                 if user_property.read(widget) != current_value:
                     user_property.write(widget, current_value)
 
-    def _set_engine_data(self, node: NodeId, key: str, widget:QWidget) -> None:
+    def setEngineData(self, node: NodeId, key: str, widget:QWidget) -> None:
         metaobject = widget.metaObject()
         if metaobject is None:
             return
@@ -517,19 +574,32 @@ class InspectorView(QFrame):
                 self._engine.set(node, **{key: new_value})
 
     def createEditor(self, node: NodeId, inlet: str) -> QWidget:
-        operator_handle = self._engine.attributes(node)['__operator__']
-        inlet_signature = operator_handle.inlets[inlet]
-        editor: QWidget
-        match inlet_signature.type:
-            case builtins.str:
-                editor = QLineEdit()
-            case builtins.int:
-                editor = QSpinBox()
-                editor.setRange(-(2**31), 2**31 - 1)
-            case _:
-                editor = QLabel()
+        attributes = self._engine.attributes(node)
+        signature = self._engine.operator_signature(attributes["__operator__"])
+        parameter = signature.inlets.get(inlet) if signature is not None else None
 
-        return editor
+        inlet_type = (
+            parameter.type
+            if parameter is not None
+            else inspect.Parameter.empty
+        )
+
+        # Infer a type only when the operator does not specify one.
+        if inlet_type is inspect.Parameter.empty or inlet_type is Any:
+            if inlet in attributes:
+                inlet_type = type(attributes[inlet])
+
+        if inlet_type is str:
+            return QLineEdit()
+
+        if inlet_type is int:
+            editor = QSpinBox()
+            editor.setRange(-(2**31), 2**31 - 1)
+            editor.clear()
+            return editor
+
+        return QLabel()
+
 
 import threading
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -592,7 +662,7 @@ R = TypeVar("R")
 #     changed = Signal(object)
 #     _engine_changed = Signal(object)
 
-#     def __init__(self, script: str, parent=None):
+#     def __init__(self, parent=None):
 #         super().__init__(parent)
 
 #         self._graph: ObservableGraph[NodeId] = ObservableGraph()
@@ -642,9 +712,9 @@ def _create_hello_world_engine():
         def hello_world(name:str, greeting:str="Hello"):
             return f"{greeting}, {name}!"
     """))
-    the_name = engine.node("the_name")
-    the_greeting = engine.node("the_greeting")
-    hello_world = engine.node("hello_world")
+    the_name = engine.create_node("the_name")
+    the_greeting = engine.create_node("the_greeting")
+    hello_world = engine.create_node("hello_world")
     engine.add_link(the_name, hello_world, 'name')
     engine.effect(hello_world)
     return engine
@@ -656,7 +726,6 @@ class EngineWindow(QMainWindow):
         self._statusbar = self.statusBar() # ensure statusbar
 
         self.engine = _create_hello_world_engine()
-        self.engine.listen(self._handle_engine_change)
 
         # layout widgets
         self.provider_pane = ProviderView(self.engine)
@@ -685,8 +754,8 @@ class EngineWindow(QMainWindow):
             nodeid = self.model.mapToSource(current)
             print("Current node changed:", current, nodeid)
             self.inspector.setCurrentNode(nodeid)
+
         self.graphselection.currentNodeChanged.connect(refresh_inspector)
-        
         self.graphselection.currentNodeChanged.connect(refresh_viewer)
 
         self.editor.setModel(self.model)
@@ -705,9 +774,6 @@ class EngineWindow(QMainWindow):
         self.operator_list_model = OperatorListModel(self.engine)
         self.operator_list.setModel(self.operator_list_model)
 
-    def _handle_engine_change(self, change: EagerEngineChange):
-        self._statusbar.showMessage("Engine changed", 2000)
-
     def _handle_node_request(self, *, scene_pos:QPointF|None=None, source:NodeName|None=None) -> None:
         if scene_pos is None:
             viewport_center = QPointF(self.editor.contentsRect().center())
@@ -718,7 +784,7 @@ class EngineWindow(QMainWindow):
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
                 operator_name = selected_index.data(Qt.ItemDataRole.DisplayRole)
-                new_node = self.engine.node(operator_name)
+                new_node = self.engine.create_node(operator_name)
                 self.editor.setNodePosition(new_node, scene_pos)
 
         finally:
@@ -727,12 +793,12 @@ class EngineWindow(QMainWindow):
     def _handle_link_request(
         self, source: NodeName, outlet: OutletName, target: NodeName, inlet: InletName,
     ) -> None:
-        try:
-            self.engine.add_link(source, target, inlet)
-        except ValueError as error:
-            self.statusBar().showMessage(f"Cannot connect: {error}", 5000)
+        success = self.model.addLinks([(source, outlet, target, inlet)])
+        if not success:
+            self.statusBar().showMessage("Cannot connect link", 5000)
         else:
             self.statusBar().clearMessage()
+
 
 
 if __name__ == "__main__":

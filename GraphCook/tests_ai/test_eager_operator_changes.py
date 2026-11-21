@@ -39,8 +39,8 @@ def test_script_edit_evaluates_effect_and_dependencies_once() -> None:
         "def source(): return 1\ndef target(value): return value * 2"
     )
     try:
-        source = engine.node("source")
-        target = engine.node("target", value=source)
+        source = engine.create_node("source")
+        target = engine.create_node("target", value=source)
         engine.effect(target)
         engine.evaluate_node(target)
         events: list[EagerEngineChange] = []
@@ -70,7 +70,7 @@ def test_script_edit_evaluates_effect_and_dependencies_once() -> None:
 def test_removed_operator_invalidates_cached_effect_and_recovers(script: str) -> None:
     engine = EagerEngine("def source(): return 1")
     try:
-        source = engine.node("source")
+        source = engine.create_node("source")
         engine.effect(source)
         engine.evaluate_node(source)
         events: list[EagerEngineChange] = []

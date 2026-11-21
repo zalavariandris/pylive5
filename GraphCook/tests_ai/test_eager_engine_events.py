@@ -56,9 +56,9 @@ def test_multiple_targets_share_dependencies_and_replay_cached_results(
         def double(value): return value * 2
         def triple(value): return value * 3
     """)
-    source = engine.node("source")
-    left = engine.node("double", value=source)
-    right = engine.node("triple")
+    source = engine.create_node("source")
+    left = engine.create_node("double", value=source)
+    right = engine.create_node("triple")
     engine.add_link(source, right, "value")
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
@@ -91,10 +91,10 @@ def test_effects_run_after_all_dirty_notifications(
         def target(value): return value * 2
         def unrelated(): raise AssertionError('Unrequested node ran')
     """)
-    source = engine.node("source")
-    left = engine.node("target", value=source)
-    right = engine.node("target", value=source)
-    engine.node("unrelated")
+    source = engine.create_node("source")
+    left = engine.create_node("target", value=source)
+    right = engine.create_node("target", value=source)
+    engine.create_node("unrelated")
     engine.effect(left)
     engine.effect(right)
     engine.evaluate_node(left, right)
@@ -118,7 +118,7 @@ def test_no_effects_do_not_evaluate_and_empty_targets_are_rejected(
     make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine("def source(): raise AssertionError('Should not run')")
-    source = engine.node("source")
+    source = engine.create_node("source")
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     engine.invalidate([source])
@@ -137,7 +137,7 @@ def test_success_result_is_cached_before_observers_are_notified(
             count += 1
             return count
     """)
-    source = engine.node("source")
+    source = engine.create_node("source")
     results: list[object] = []
 
     def request_cached_result(event: EagerEngineChange) -> None:
@@ -156,8 +156,8 @@ def test_removed_link_does_not_use_old_node_reference(
     make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine("def source(): return 7\ndef target(value=5): return value * 2")
-    source = engine.node("source")
-    target = engine.node("target", value=source)
+    source = engine.create_node("source")
+    target = engine.create_node("target", value=source)
     engine.effect(target)
     engine.evaluate_node(target)
     events: list[EagerEngineChange] = []
@@ -172,7 +172,7 @@ def test_deleted_effect_is_not_evaluated_or_reported_dirty(
     make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine("def source(): return 7")
-    source = engine.node("source")
+    source = engine.create_node("source")
     engine.effect(source)
     engine.effect(source)
     events: list[EagerEngineChange] = []
@@ -188,7 +188,7 @@ def test_script_edits_refresh_effects_and_invalid_edits_preserve_working_script(
 ) -> None:
     original = "def source(): return 7"
     engine = make_engine(original)
-    source = engine.node("source")
+    source = engine.create_node("source")
     engine.effect(source)
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
@@ -219,7 +219,7 @@ def test_none_is_a_successful_value_and_replays_from_cache(
     make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine("def source(): return None")
-    source = engine.node("source")
+    source = engine.create_node("source")
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     engine.evaluate_node(source)
@@ -235,7 +235,7 @@ def test_operator_failure_preserves_exception_and_emits_failed_status(
     make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine("def source(): raise ValueError('Operator failed')")
-    source = engine.node("source")
+    source = engine.create_node("source")
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     with pytest.raises(ValueError, match="Operator failed") as raised:
@@ -250,8 +250,8 @@ def test_unrelated_unresolved_operator_does_not_block_requested_node(
     make_engine: Callable[[str], EagerEngine],
 ) -> None:
     engine = make_engine("def source(): return 7")
-    source = engine.node("source")
-    engine.node("missing_operator")
+    source = engine.create_node("source")
+    engine.create_node("missing_operator")
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
     engine.evaluate_node(source)
@@ -263,7 +263,7 @@ def test_preparation_errors_are_reported_to_requested_nodes(
     make_engine: Callable[[str], EagerEngine], cycle: bool,
 ) -> None:
     engine = make_engine("def target(value): return value")
-    node = engine.node("target" if cycle else "missing_operator")
+    node = engine.create_node("target" if cycle else "missing_operator")
     if cycle:
         engine.add_link(node, node, "value")
     events: list[EagerEngineChange] = []
