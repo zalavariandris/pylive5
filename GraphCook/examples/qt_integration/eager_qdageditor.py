@@ -2,18 +2,15 @@ import builtins
 import inspect
 from textwrap import dedent
 from typing import Callable, Iterable, Any, Protocol, TypedDict, cast
-from graphcook.eager_engine import EagerEngineConfig
-from unittest import case
 
-from graphcook.observable_graph import ObservableGraph, GraphChange
+
 from graphcook.eager_engine import (
-    NodeStatus,
     OperatorHandle, 
     OperatorSignature, 
-    ProviderSucceededStatus,
-    ProviderFailedStatus, 
+    NodeStatus,
     ProviderStatus
 )
+
 from graphcook.eager_engine import EagerEngine
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
@@ -329,14 +326,14 @@ class ProviderView(QWidget):
     def show_status(self, status: ProviderStatus) -> None:
         print("show status: ", status)
         match status:
-            case ProviderFailedStatus() as failed:
+            case FailedStatus() as failed:
                 self.script_view._linter.lintException(failed.reason, 'underline')
                 self._statusbar.setStyleSheet("color: red;")
                 self._statusbar.showMessage(f"{type(failed.reason).__name__}: {failed.reason}")
                 import traceback
                 traceback.print_exc()
                 return
-            case ProviderSucceededStatus():
+            case SucceededStatus():
                 self._statusbar.setStyleSheet("color: green")
                 self._statusbar.showMessage("Provider succeeded")
                 return

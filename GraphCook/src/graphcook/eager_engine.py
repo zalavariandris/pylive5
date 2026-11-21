@@ -1,13 +1,11 @@
 """Synchronous eager execution, without a Job abstraction."""
 from __future__ import annotations
-import queue
-import threading
+
 import time
-from typing import Annotated, Generic, Hashable, Iterator, TypeVar
+from typing import TypeVar, Any, Callable, Iterable, Literal, TypedDict, cast
+
 import inspect
 from collections import deque
-from collections.abc import Mapping
-from typing import Any, Callable, Iterable, Literal, cast
 from dataclasses import dataclass
 
 from myutils.source_diff import collect_functions, FunctionsDiff, ast_functions_diff
@@ -28,96 +26,29 @@ from .core.graph import Graph, GraphProtocol, NodeT
 
 from .core.graph import descendants, topological_sort
 from .observable_graph import ObservableGraph, GraphChange
+from .graph_index import GraphAttributeIndex
+
+###################
+# ExecutionStatus #
+###################
+from .core.execution_status import (
+    ExecutionStatus, 
+    DirtyStatus, 
+    RunningStatus, 
+    SucceededStatus, 
+    FailedStatus
+)
 
 
-@dataclass(frozen=True)
-class ProviderDirtyStatus:
-    pass
-
-
-@dataclass(frozen=True)
-class ProviderRunningStatus:
-    progress: float | None = None  # 0–1; None means unknown
-
-
-@dataclass(frozen=True)
-class ProviderSucceededStatus:
-    operators: list[OperatorHandle]
-    duration_seconds: float | None = None
-
-
-@dataclass(frozen=True)
-class ProviderFailedStatus:
-    reason: BaseException
-
-type ProviderStatus = ProviderDirtyStatus | ProviderRunningStatus | ProviderSucceededStatus | ProviderFailedStatus
-
-@dataclass(frozen=True)
-class OperatorChanges:
-    """Operator membership changes and replacement of existing implementations."""
-    added: frozenset[OperatorHandle] = frozenset()
-    removed: frozenset[OperatorHandle] = frozenset()
-    updated: frozenset[OperatorHandle] = frozenset()
-
-
-@dataclass(frozen=True)
-class EagerProviderChange:
-    status: ProviderStatus = ProviderDirtyStatus()
-    operators: OperatorChanges = OperatorChanges()
-
-def _execute_provider(script: str) -> dict[OperatorHandle, Callable]:
-    namespace:dict[str, Any] = {}
-    exec(script, namespace)
-    new_functions = {
-        k: v 
-        for k, v in namespace.items()
-        if callable(v)
-    }
-    return {OperatorHandle(name): func for name, func in new_functions.items()}
-
-
+########
+# DATA #
+########
+type ProviderStatus = ExecutionStatus[list[OperatorHandle]]
+type NodeStatus = ExecutionStatus[Any]
 
 @dataclass(frozen=True)
 class NodeId:
     id: str
-
-
-@dataclass(frozen=True)
-class EagerEngineChange:
-    # config
-    graph: GraphChange|None=None
-    script: ValueChange|None=None
-    # computed
-    operators: MappingChanges[OperatorHandle, Callable]|None=None
-    graph_status: MappingChanges[NodeId, NodeStatus]|None=None
-    provider_status: ValueChange[ProviderStatus]|None=None
-
-
-@dataclass(frozen=True)
-class DirtyStatus:
-    pass
-
-
-@dataclass(frozen=True)
-class RunningStatus:
-    progress: float | None = None  # 0–1; None means unknown
-
-
-@dataclass(frozen=True)
-class SucceededStatus:
-    value: Any
-    duration_seconds: float | None = None
-
-
-@dataclass(frozen=True)
-class FailedStatus:
-    reason: Exception
-
-
-type NodeStatus = DirtyStatus | RunningStatus | SucceededStatus | FailedStatus
-
-
-from typing import TypedDict
 
 @dataclass(frozen=True)
 class InletSignature:
@@ -134,7 +65,7 @@ class OperatorSignature:
     @staticmethod
     def from_func(func: Callable[..., Any]) -> "OperatorSignature":
         from inspect import signature
-        sig = signature(func)
+        sig = signature(func, eval_str=True)
         inlets = {
             name: InletSignature(
                 type=param.annotation, 
@@ -144,32 +75,35 @@ class OperatorSignature:
         }
         return OperatorSignature(name=func.__name__, inlets=inlets)
 
+
 class EagerNodeData(TypedDict):
     """Public node information, without computed results."""
     __operator__: OperatorSignature
     __status__: object
-
     
-from .graph_index import GraphAttributeIndex
-
-
-import threading
-import queue
-from concurrent.futures import Future
-from typing import Any, Callable
 
 class NodeData(TypedDict):
     __operator__: OperatorHandle
     kwargs: dict[str, Any]
 
 
-@dataclass
-class EagerEngineConfig:
-    graph: ObservableGraph[NodeId]
-    script: ObservableValue[str]
-
-
 ExecutionResult = dict[NodeId, Any]
+
+
+###########
+# COMPUTE #
+###########
+
+
+def _execute_provider(script: str) -> dict[OperatorHandle, Callable]:
+    namespace:dict[str, Any] = {}
+    exec(script, namespace)
+    new_functions = {
+        k: v 
+        for k, v in namespace.items()
+        if callable(v)
+    }
+    return {OperatorHandle(name): func for name, func in new_functions.items()}
 
 def _prepare_graph(config_graph: Graph[NodeId], *roots: NodeId) -> Graph[NodeId]:
     """Prepare a resolved static subgraph for execution based on the given root nodes."""
@@ -266,10 +200,25 @@ def _execute_graph(
     return {node: memo[node] for node in memo}
 
 
-@dataclass
-class EngineConfigChange:
-    graph: GraphChange|None = None
-    script: ValueChange[str]|None = None
+###########
+# CHANGES #
+###########
+@dataclass(frozen=True)
+class EagerEngineChange:
+    # config
+    graph: GraphChange|None=None
+    script: ValueChange|None=None
+
+    # computed
+    operators: MappingChanges[OperatorHandle, Callable]|None=None
+    graph_status: MappingChanges[NodeId, NodeStatus]|None=None
+    provider_status: ValueChange[ProviderStatus]|None=None
+
+
+###################
+# STATFULL ENGINE #
+###################
+
 
 class EagerEngine:
     def __init__(self, script: str) -> None:
@@ -278,13 +227,13 @@ class EagerEngine:
         self._closed = False
 
         # config
-        self._graph_config = ObservableGraph[NodeId]()
         self._script_config = ObservableValue[str](script)
-
+        self._graph_config = ObservableGraph[NodeId]()
+        
         # computed
         self._resolved_operators: dict[OperatorHandle, Callable[..., Any]] = {}
         self._operator_signatures: dict[OperatorHandle, OperatorSignature] = {}
-        self._provider_status: ProviderStatus = ProviderDirtyStatus()
+        self._provider_status: ProviderStatus = DirtyStatus()
         self._node_status: dict[NodeId, NodeStatus] = {}
         
         # subscibe to config
@@ -448,9 +397,9 @@ class EagerEngine:
            new_operators: dict[OperatorHandle, Callable] = _execute_provider(self._script_config.get())
         except BaseException as exc:
             new_operators = {}
-            new_provider_state = ProviderFailedStatus(reason=exc)
+            new_provider_state = FailedStatus(reason=exc)
         else:
-            new_provider_state = ProviderSucceededStatus(operators=list(new_operators))
+            new_provider_state = SucceededStatus(value=list(new_operators))
 
         self._provider_status = new_provider_state
         self._resolved_operators = new_operators
