@@ -1,5 +1,5 @@
 from collections.abc import Callable, Hashable, Mapping
-from typing import Any, Generic, Literal, Required, TypeVar, TypedDict
+from typing import Any, Generic, Literal, Protocol, Required, TypeVar, TypedDict
 
 ValueT = TypeVar("ValueT")
 
@@ -30,6 +30,18 @@ class MappingChanges[K: Hashable, V, U](TypedDict, total=False):
 
 
 type Change = ValueChange[Any] | SetChanges[Any] | MappingChanges[Any, Any, Change]
+
+
+class ObservableProtocol(Protocol):
+    def listen(
+        self, callback: Callable[[Change], None]
+    ) -> Callable[[], None]:
+        ...
+
+    def notify(self, change: Change) -> None:
+        ...
+
+
 
 
 def apply_change(target: object, change: Change) -> object:

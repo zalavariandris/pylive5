@@ -43,79 +43,73 @@ from qtpy.QtCore import SignalInstance
 ############
 
 
-class NodeSignatureProtocol(TypedDict):
-    __operator__: OperatorSignature
+# class NodeSignatureProtocol(TypedDict):
+#     __operator__: OperatorSignature
 
 
-class NodeStatusProtocol(TypedDict):
-    status: NodeStatus
+# class NodeStatusProtocol(TypedDict):
+#     status: NodeStatus
 
 
-class EngineGraphProtocol(Protocol):
-    # read
-    def nodes(self) -> Iterable['NodeId']:
-        ...
+# class EngineGraphProtocol(Protocol):
+#     # read
+#     def nodes(self) -> Iterable['NodeId']:
+#         ...
 
-    def attributes(self, node: 'NodeId') -> NodeSignatureProtocol:
-        ...
+#     def attributes(self, node: 'NodeId') -> NodeSignatureProtocol:
+#         ...
 
-    def nodes_status(self, node: 'NodeId') -> NodeStatus:
-        ...
+#     def nodes_status(self, node: 'NodeId') -> NodeStatus:
+#         ...
 
-    def in_links(self, node: 'NodeId') -> Iterable[tuple['NodeId', 'NodeId', str]]:
-        ...
+#     def in_links(self, node: 'NodeId') -> Iterable[tuple['NodeId', 'NodeId', str]]:
+#         ...
 
-    def out_links(self, node: 'NodeId') -> Iterable[tuple['NodeId', 'NodeId', str]]:
-        ...
+#     def out_links(self, node: 'NodeId') -> Iterable[tuple['NodeId', 'NodeId', str]]:
+#         ...
 
-    def links(self) -> Iterable[tuple['NodeId', 'NodeId', str]]:
-        ...
+#     def links(self) -> Iterable[tuple['NodeId', 'NodeId', str]]:
+#         ...
 
-    # update
-    def add_link(self, src: 'NodeId', dst: 'NodeId', inlet: str) -> None:
-        ...
+#     # update
+#     def add_link(self, src: 'NodeId', dst: 'NodeId', inlet: str) -> None:
+#         ...
 
-    def remove_link(self, source: 'NodeId', target: 'NodeId', inlet: str) -> None: ...
+#     def remove_link(self, source: 'NodeId', target: 'NodeId', inlet: str) -> None: ...
 
-    # observe
-    def listen(self, callback: Callable[[GraphChange], None]) -> None:
-        ...
-
-
-class ProviderProtocol(Protocol):
-    # read
-    def operators(self) -> Iterable['OperatorHandle']:
-        ...
+#     # observe
+#     def listen(self, callback: Callable[[GraphChange], None]) -> None:
+#         ...
 
 
-class ObservableProtocol(Protocol):
-    def listen(
-        self, callback: Callable[[EagerEngineChange], None]
-    ) -> Callable[[], None]:
-        ...
+# class ProviderProtocol(Protocol):
+#     # read
+#     def operators(self) -> Iterable['OperatorHandle']:
+#         ...
 
 
-class EagerEngineProtocol(
-    EngineGraphProtocol, 
-    ProviderProtocol, 
-    ObservableProtocol, 
-    Protocol
-):
-    def set(self, node: NodeId, **attributes: object) -> None: ...
-    def unset(self, node: NodeId, name: str) -> None: ...
-    def script(self) -> str: ...
-    def set_script(self, script: str) -> None: ...
-    def invalidate(self, *nodes: NodeId) -> None: ...
-    def evaluate_node(self, *nodes: NodeId) -> None: ...
-    def effect(self, node: 'NodeId') -> None: ...
-    def remove_effect(self, node: 'NodeId') -> None: ...
+
+# class EagerEngineProtocol(
+#     EngineGraphProtocol, 
+#     ProviderProtocol, 
+#     ObservableProtocol, 
+#     Protocol
+# ):
+#     def set(self, node: NodeId, **attributes: object) -> None: ...
+#     def unset(self, node: NodeId, name: str) -> None: ...
+#     def script(self) -> str: ...
+#     def set_script(self, script: str) -> None: ...
+#     def invalidate(self, *nodes: NodeId) -> None: ...
+#     def evaluate_node(self, *nodes: NodeId) -> None: ...
+#     def effect(self, node: 'NodeId') -> None: ...
+#     def remove_effect(self, node: 'NodeId') -> None: ...
 
 
 ##########
 # MODELS #
 ##########
 class EagerGraphModel(AbstractDAGModel):
-    def __init__(self, engine: EagerEngineProtocol, parent=None):
+    def __init__(self, engine: EagerEngine, parent=None):
         super().__init__(parent=parent)
         self._engine = engine
         self._unsubscribe = self._engine.listen(self._handle_engine_change)
@@ -265,7 +259,7 @@ class EagerGraphModel(AbstractDAGModel):
 
 
 class OperatorListModel(QAbstractListModel):
-    def __init__(self, engine: EagerEngineProtocol, parent=None):
+    def __init__(self, engine: EagerEngine, parent=None):
         super().__init__(parent=parent)
         self._engine = engine
 
@@ -287,7 +281,7 @@ class OperatorListModel(QAbstractListModel):
             operators_change.get('updated', {})
 
 # class AttributeListModel(QAbstractListModel):
-#     def __init__(self, engine: EagerEngineProtocol, node: NodeId, parent=None):
+#     def __init__(self, engine: EagerEngine, node: NodeId, parent=None):
 #         super().__init__(parent=parent)
 #         self._engine = engine
 #         self._node = node
@@ -309,7 +303,7 @@ class OperatorListModel(QAbstractListModel):
 #########
 
 class ProviderView(QWidget):
-    def __init__(self, engine: EagerEngineProtocol, parent=None):
+    def __init__(self, engine: EagerEngine, parent=None):
         super().__init__(parent=parent)
         self._engine = engine
         layout = QGridLayout()
@@ -365,7 +359,7 @@ class ProviderView(QWidget):
 
 
 class OutputViewer(QWidget):
-    def __init__(self, engine: EagerEngineProtocol, parent: QWidget | None = None) -> None:
+    def __init__(self, engine: EagerEngine, parent: QWidget | None = None) -> None:
         super().__init__(parent=parent)
         self._engine = engine
         layout = QVBoxLayout()
@@ -432,9 +426,9 @@ class OutputViewer(QWidget):
 
 
 class InspectorView(QFrame):
-    def __init__(self, engine: EagerEngineProtocol, parent: QWidget | None = None) -> None:
+    def __init__(self, engine: EagerEngine, parent: QWidget | None = None) -> None:
         super().__init__(parent=parent)
-        self.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
+        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self._engine = engine
         self._current_node: NodeId | None = None
         self._editors: dict[str, QWidget] = {}
@@ -549,10 +543,12 @@ class InspectorView(QFrame):
                     widget.clear()
                 return
             current_value = attributes[key]
-            user_property = widget.metaObject().userProperty()
-            if user_property.isValid() and user_property.hasNotifySignal():
-                if user_property.read(widget) != current_value:
-                    user_property.write(widget, current_value)
+            meta_object = widget.metaObject()
+            if meta_object is None:
+                user_property = meta_object.userProperty()
+                if user_property.isValid() and user_property.hasNotifySignal():
+                    if user_property.read(widget) != current_value:
+                        user_property.write(widget, current_value)
 
     def setEngineData(self, node: NodeId, key: str, widget:QWidget) -> None:
         metaobject = widget.metaObject()
