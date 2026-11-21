@@ -573,6 +573,7 @@ class InspectorView(QFrame):
         attributes = self._engine.attributes(node)
         signature = self._engine.operator_signature(attributes["__operator__"])
         parameter = signature.inlets.get(inlet) if signature is not None else None
+        
 
         inlet_type = (
             parameter.type
