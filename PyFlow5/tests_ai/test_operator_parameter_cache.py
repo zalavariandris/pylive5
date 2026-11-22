@@ -39,13 +39,13 @@ def test_repeated_queries_and_value_edits_share_parameters(
     with patch.object(rt.ScriptOperatorRef, "get_parameters", autospec=True) as get_parameters:
         for name in ("first", "second"):
             assert list(model.inlets(name)) == ["value"]
-            assert model.inletData(name, "value") == "value: int"
-            assert model.inletData(name, "value", InputDataRole.AnnotationRole) is int
-            assert model.inletData(name, "value", InputDataRole.DefaultValueRole) == 1
-            assert "value" in model.inletData(name, "value", Qt.ItemDataRole.ToolTipRole)
+            assert model.inletHeaderData(name, "value") == "value: int"
+            assert model.inletHeaderData(name, "value", InputDataRole.AnnotationRole) is int
+            assert model.inletHeaderData(name, "value", InputDataRole.DefaultValueRole) == 1
+            assert "value" in model.inletHeaderData(name, "value", Qt.ItemDataRole.ToolTipRole)
 
-        assert model.setInletData("first", "value", 7, InputDataRole.InputValueRole)
-        assert model.inletData("first", "value", InputDataRole.InputValueRole) == 7
+        assert model.setInletHeaderData("first", "value", 7, InputDataRole.InputValueRole)
+        assert model.inletHeaderData("first", "value", InputDataRole.InputValueRole) == 7
         assert list(model.inlets("first")) == ["value"]
         # Initial graph snapshots already populated the shared parameter cache.
         get_parameters.assert_not_called()
@@ -60,9 +60,9 @@ def test_script_changes_refresh_parameters_before_notifying_observers(
 
     def read_parameters(node_name: str) -> None:
         assert list(model.inlets(node_name)) == ["amount"]
-        assert model.inletData(node_name, "amount", InputDataRole.AnnotationRole) is float
+        assert model.inletHeaderData(node_name, "amount", InputDataRole.AnnotationRole) is float
         observed_defaults.append(
-            model.inletData(node_name, "amount", InputDataRole.DefaultValueRole)
+            model.inletHeaderData(node_name, "amount", InputDataRole.DefaultValueRole)
         )
 
     model.inletsReset.connect(read_parameters)
@@ -86,14 +86,14 @@ def test_removed_operator_and_empty_parameters_refresh_when_restored(
     module.set_script("def operation(label: str = 'ready'):\n    return label\n")
     module.evaluate()
     assert list(model.inlets("first")) == ["label"]
-    assert model.inletData("first", "label", InputDataRole.DefaultValueRole) == "ready"
+    assert model.inletHeaderData("first", "label", InputDataRole.DefaultValueRole) == "ready"
 
 
 def test_recovery_reset_refreshes_metadata(
     model_and_module: tuple[PyGraphRTGraphModel, rt.Engine],
 ) -> None:
     model, module = model_and_module
-    assert model.inletData("first", "value", InputDataRole.DefaultValueRole) == 1
+    assert model.inletHeaderData("first", "value", InputDataRole.DefaultValueRole) == 1
     operator = module.get_operator_by_name("operation")
     assert operator is not None
     # Simulate a change that did not deliver its normal registry notification.
@@ -101,4 +101,4 @@ def test_recovery_reset_refreshes_metadata(
 
     model.reset_graph_from_scratch()
 
-    assert model.inletData("first", "value", InputDataRole.DefaultValueRole) == 9
+    assert model.inletHeaderData("first", "value", InputDataRole.DefaultValueRole) == 9

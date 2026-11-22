@@ -66,7 +66,7 @@ def events(model: PyGraphRTGraphModel) -> list[tuple[object, ...]]:
 def test_value_edit_notifies_only_its_inlet_and_repeated_value_is_silent(
     model: PyGraphRTGraphModel, target: rt.NodeRef, events: list[tuple[object, ...]],
 ) -> None:
-    assert model.setInletData("target", "first", 5, InputDataRole.InputValueRole)
+    assert model.setInletHeaderData("target", "first", 5, InputDataRole.InputValueRole)
     assert events == [("inlets", "target", ("first",), [])]
     events.clear()
     set_inputs(target, first=5, second=4)
@@ -94,8 +94,8 @@ def test_missing_input_and_none_are_distinct(
     events.clear()
     set_inputs(target, first=None, second=4)
     assert events == [("inlets", "target", ("first",), [])]
-    assert model.inletData("target", "first", InputDataRole.InputIsSetRole)
-    assert model.inletData("target", "first", InputDataRole.InputValueRole) is None
+    assert model.inletHeaderData("target", "first", InputDataRole.InputIsSetRole)
+    assert model.inletHeaderData("target", "first", InputDataRole.InputValueRole) is None
 
 
 @pytest.mark.parametrize("value", [True, 1.0])
@@ -113,7 +113,7 @@ def test_binding_location_changes_without_resetting_inlets(
 ) -> None:
     set_inputs(target, 3, second=4)
     assert events == [("inlets", "target", ("first",), [])]
-    assert model.inletData("target", "first", InputDataRole.InputLocationRole) == 0
+    assert model.inletHeaderData("target", "first", InputDataRole.InputLocationRole) == 0
 
 
 @pytest.mark.parametrize("parameters", [

@@ -124,7 +124,7 @@ class StyledNodeDelegate(QObject):
 
         title_rect = title_label.boundingRect(option)
         leading_label = _Label(
-            text=model.nodeData(node, NodeDataRole.LeadingRole),
+            text=model.nodeHeaderData(node, Qt.ItemDataRole.DisplayRole),
             pos=title_rect.topLeft(),
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
             pen=QPen(palette.placeholderText().color(), 0)

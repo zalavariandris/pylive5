@@ -87,15 +87,18 @@ def test_graph_model_does_not_refresh_data_for_a_deleted_node() -> None:
     exec(compile(ast.Module(body=[handler], type_ignores=[]), str(path), "exec"), namespace)
     engine = EagerEngine('def source(): return 1')
     refreshed: list[object] = []
+    removed: list[object] = []
     probe = SimpleNamespace(
         _engine=engine,
         mapFromSource=lambda node: node,
         nodesDataChanged=SimpleNamespace(emit=lambda nodes, roles: refreshed.extend(nodes)),
+        nodesRemoved=SimpleNamespace(emit=lambda nodes: removed.extend(nodes)),
     )
     try:
         node = engine.create_node("source")
         engine.listen(lambda change: namespace["_handle_engine_change"](probe, change))
         engine.delete(node)
         assert refreshed == []
+        assert removed == [node]
     finally:
         engine.close()

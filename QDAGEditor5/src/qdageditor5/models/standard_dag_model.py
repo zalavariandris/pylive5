@@ -124,7 +124,7 @@ class StandardDAGModel(AbstractDAGModel):
         self._endRemoveNodes()
         return True
 
-    def nodeData(self, node: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def nodeHeaderData(self, node: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             return str(node)
 
@@ -198,7 +198,7 @@ class StandardDAGModel(AbstractDAGModel):
             return tuple(node_data.inlets.keys())
         return tuple()
 
-    def inletData(self, node: NodeName, inlet: InletName, role:int) -> Any:
+    def inletHeaderData(self, node: NodeName, inlet: InletName, role:int) -> Any:
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             return str(inlet)
         if role == Qt.ItemDataRole.ForegroundRole:

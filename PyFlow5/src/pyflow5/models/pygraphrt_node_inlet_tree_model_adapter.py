@@ -52,26 +52,26 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                 if index.column() == 0:
                     if role == Qt.ItemDataRole.DisplayRole:
                         return str(inlet_name)
-                    return graph.inletData(node_name, inlet_name, role)
+                    return graph.inletHeaderData(node_name, inlet_name, role)
 
                 if index.column() == 1:
                     if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-                        connection = graph.inletData(
+                        connection = graph.inletHeaderData(
                             node_name, inlet_name, InputDataRole.ConnectionRole
                         )
                         if connection is not None:
                             return f"-> {connection}" if role == Qt.ItemDataRole.DisplayRole else None
-                        value = graph.inletData(
+                        value = graph.inletHeaderData(
                             node_name, inlet_name, InputDataRole.InputValueRole
                         )
                         if value is graph.EmptyInputValue:
-                            value = graph.inletData(
+                            value = graph.inletHeaderData(
                                 node_name, inlet_name, InputDataRole.DefaultValueRole
                             )
                         if value is graph.EmptyInputValue:
                             return None
                         return str(value) if role == Qt.ItemDataRole.DisplayRole else value
-                    return graph.inletData(node_name, inlet_name, role)
+                    return graph.inletHeaderData(node_name, inlet_name, role)
 
         return None
 
@@ -106,7 +106,7 @@ class PyGraphRTNodeInletTreeModelAdapter(NodeInletTreeModelAdapter):
                     return False
 
                 node_name, inlet_name = self.mapToSource(index)
-                return source_graph.setInletData(
+                return source_graph.setInletHeaderData(
                     node_name,
                     inlet_name,
                     value,

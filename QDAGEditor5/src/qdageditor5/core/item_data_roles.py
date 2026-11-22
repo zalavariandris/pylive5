@@ -3,7 +3,6 @@ from qtpy.QtCore import Qt
 
 
 class NodeDataRole(IntEnum):
-    LeadingRole = Qt.ItemDataRole.UserRole+33
     TrailingRole = Qt.ItemDataRole.UserRole+44
 
 class SocketDataRole(IntEnum):

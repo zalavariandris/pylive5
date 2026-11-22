@@ -271,7 +271,7 @@ def test_paint_reads_current_labels_without_rebuilding_the_cache(
     role: int,
 ) -> None:
     view, model = graph_view
-    original_node_data = model.nodeData
+    original_node_data = model.nodeHeaderData
     label = "123"
 
     def node_data(node: NodeName, requested_role: int = Qt.ItemDataRole.DisplayRole) -> object:
@@ -400,7 +400,7 @@ def test_inlet_value_can_resize_node_and_move_its_outlet_and_link(
         ) -> QPainterPath:
             if node != "second":
                 return super()._nodeLocalShape(option, model, node)
-            width = model.inletData(node, "value", InputDataRole.InputValueRole)
+            width = model.inletHeaderData(node, "value", InputDataRole.InputValueRole)
             shape = QPainterPath()
             shape.addRect(QRectF(0, 0, width, 20))
             return shape

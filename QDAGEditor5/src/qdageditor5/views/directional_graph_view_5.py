@@ -291,8 +291,16 @@ class DirectionalGraphView5(QFrame):
 
     def _on_nodes_removed(self, nodes: Iterable[NodeName]) -> None:
         nodes = tuple(nodes)
+
+        # Deleted nodes may still be referenced by hover or drag state.
+        self._hovered_item = None
+        self._tool = None
+        self._press_pos = None
+        self._pressed = False
+
         for node in nodes:
             self._node_positions.pop(node, None)
+
         self._on_node_presentation_changed(nodes)
 
     def _on_links_changed(self, links: Sequence[DirectionalLinkId]) -> None:
@@ -492,7 +500,7 @@ class DirectionalGraphView5(QFrame):
         menu = QMenu(self)
         choices: dict[QAction, DirectionalLinkId] = {}
         for inlet in inlets:
-            label = model.inletData(target, inlet, Qt.ItemDataRole.DisplayRole)
+            label = model.inletHeaderData(target, inlet, Qt.ItemDataRole.DisplayRole)
             text = str(inlet) if label is None else str(label)
             link = (source, outlet, target, inlet)
             action = menu.addAction(text.replace("&", "&&"))
@@ -532,7 +540,7 @@ class DirectionalGraphView5(QFrame):
         if cache.hidden is None:
             # A hovered inlet may have been removed since the last mouse event.
             cache.hidden = inlet not in self._model.inlets(node) or (
-                self._model.inletData(node, inlet, SocketDataRole.HiddenRole) is True
+                self._model.inletHeaderData(node, inlet, SocketDataRole.HiddenRole) is True
                 and not any(self._model.inLinks(node, inlet))
             )
         return cache.hidden
@@ -585,7 +593,7 @@ class DirectionalGraphView5(QFrame):
                 cache.bounding_rect = QRectF()
             else:
                 body_rect = self._inletLocalShape(node, inlet).boundingRect()
-                text = str(self._model.inletData(node, inlet, Qt.ItemDataRole.DisplayRole))
+                text = str(self._model.inletHeaderData(node, inlet, Qt.ItemDataRole.DisplayRole))
                 text_rect = QRectF(metrics.boundingRect(text))
                 text_rect.moveBottomLeft(body_rect.topRight())
                 cache.bounding_rect = body_rect.united(text_rect)
@@ -628,7 +636,7 @@ class DirectionalGraphView5(QFrame):
         painter.drawRoundedRect(scene_rect, 5, 5)
         if option.state & QStyle.StateFlag.State_MouseOver:
             painter.setPen(QPen(palette.highlight().color()))
-            painter.drawText(scene_rect.topRight(), f"{self._model.inletData(node, inlet, Qt.ItemDataRole.DisplayRole)}")
+            painter.drawText(scene_rect.topRight(), f"{self._model.inletHeaderData(node, inlet, Qt.ItemDataRole.DisplayRole)}")
 
     # outlets delegate
     def _outletItemCache(self, node: NodeName, outlet: OutletName) -> _OutletItemCache:

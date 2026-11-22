@@ -442,7 +442,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         ]
 
     @override
-    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any: # type: ignore
+    def nodeHeaderData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any: # type: ignore
         node_ref = self.mapToSource(node_name)
         if node_ref is None:
             return None
@@ -530,7 +530,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         return ['out']
     
     @override
-    def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any: #type: ignore
+    def inletHeaderData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any: #type: ignore
         def get_parameter(node: NodeName, inlet: InletName) -> rt2.ParameterData | None:
             node_rt = self.mapToSource(node)
             if node_rt is None:
@@ -583,9 +583,9 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 if annotation is not rt2.ParameterData.EMPTY:
                     return annotation
 
-                value = self.inletData(node, inlet, InputDataRole.InputValueRole)
+                value = self.inletHeaderData(node, inlet, InputDataRole.InputValueRole)
                 if value is self.EmptyInputValue:
-                    value = self.inletData(node, inlet, InputDataRole.DefaultValueRole)
+                    value = self.inletHeaderData(node, inlet, InputDataRole.DefaultValueRole)
                 if value is self.EmptyInputValue:
                     return None
                 return Path if isinstance(value, Path) else type(value)
@@ -620,8 +620,8 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
             case InputDataRole.IsUsingDefaultRole:
                 return (
-                    not self.inletData(node, inlet, InputDataRole.InputIsSetRole)
-                    and self.inletData(node, inlet, InputDataRole.DefaultValueRole)
+                    not self.inletHeaderData(node, inlet, InputDataRole.InputIsSetRole)
+                    and self.inletHeaderData(node, inlet, InputDataRole.DefaultValueRole)
                     is not self.EmptyInputValue
                 )
 
@@ -642,11 +642,11 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                 if IsConnected:
                     return True
                 
-                HasDefaultValue = self.inletData(node, inlet, InputDataRole.DefaultValueRole) is not self.EmptyInputValue
+                HasDefaultValue = self.inletHeaderData(node, inlet, InputDataRole.DefaultValueRole) is not self.EmptyInputValue
                 if HasDefaultValue:
                     return True
 
-                HasLiteralInput = self.inletData(node, inlet, InputDataRole.InputIsSetRole)
+                HasLiteralInput = self.inletHeaderData(node, inlet, InputDataRole.InputIsSetRole)
                 if HasLiteralInput:
                     return True
                 
@@ -727,13 +727,13 @@ class PyGraphRTGraphModel(AbstractDAGModel):
 
     # - WRITES
     @override
-    def setInletData( self, node: NodeName, inlet: InletName, value: object, role: int) -> bool: # type: ignore
+    def setInletHeaderData( self, node: NodeName, inlet: InletName, value: object, role: int) -> bool: # type: ignore
         if role != InputDataRole.InputValueRole:
             return False
         node_rt = self.mapToSource(node)
         if node_rt is None:
             return False
-        location = self.inletData(node, inlet, InputDataRole.InputLocationRole)
+        location = self.inletHeaderData(node, inlet, InputDataRole.InputLocationRole)
         if not isinstance(location, (int, str)):
             return False
 
@@ -748,12 +748,12 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             else:
                 return False
         else:
-            if self.inletData(node, inlet, InputDataRole.ConnectionRole) is not None:
+            if self.inletHeaderData(node, inlet, InputDataRole.ConnectionRole) is not None:
                 return False
             if isinstance(value, rt2.NodeRef):
                 return False  # Connections are edited through the graph's link API.
 
-            annotation = self.inletData(node, inlet, InputDataRole.AnnotationRole)
+            annotation = self.inletHeaderData(node, inlet, InputDataRole.AnnotationRole)
             if get_origin(annotation) is Annotated:
                 annotation = get_args(annotation)[0]
             value_type = tuple if get_origin(annotation) is tuple else annotation
@@ -811,7 +811,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         # Resolve all locations before deleting any positional input.
         locations: dict[NodeName, set[int | str]] = defaultdict(set)
         for _, _, target, inlet in requested:
-            locations[target].add(self.inletData(target, inlet, InputDataRole.InputLocationRole))
+            locations[target].add(self.inletHeaderData(target, inlet, InputDataRole.InputLocationRole))
         updates = []
         for target, removed in locations.items():
             node = self.mapToSource(target)
@@ -868,7 +868,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
             raise ValueError("A link cannot create a cycle")
         
         state = target_ref.resolve()
-        location = self.inletData(target, inlet, InputDataRole.InputLocationRole)
+        location = self.inletHeaderData(target, inlet, InputDataRole.InputLocationRole)
         args, kwargs = list(state.args), dict(state.kwargs)
         if isinstance(location, int):
             args[location] = source_ref

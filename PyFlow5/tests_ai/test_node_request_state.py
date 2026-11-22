@@ -56,8 +56,8 @@ def test_frame_changes_highlight_request_ancestors_and_cache_hits_stay_idle(
     def record(*_: object) -> None:
         threads.append(get_ident())
         states.append((
-            model.nodeData("source", model.StateRole),
-            model.nodeData("blur", model.StateRole),
+            model.nodeHeaderData("source", model.StateRole),
+            model.nodeHeaderData("blur", model.StateRole),
         ))
 
     model.nodesDataChanged.connect(record)
@@ -66,14 +66,14 @@ def test_frame_changes_highlight_request_ancestors_and_cache_hits_stay_idle(
     try:
         with qtbot.waitSignal(engine.nodes_executed):
             engine.execute_nodes(target)
-        source_output = model.nodeData("source", model.OutputRole)
+        source_output = model.nodeHeaderData("source", model.OutputRole)
         assert callable(source_output)
 
         engine._graph._update_node(target, render, args=(blur_node, 2))
         engine.execute_nodes(target)
         qtbot.waitUntil(lambda: source_entered.is_set() and states[-1] == (executing, executing))
-        assert model.nodeData("source", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
-        assert model.nodeData("blur", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
+        assert model.nodeHeaderData("source", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
+        assert model.nodeHeaderData("blur", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
 
         source_release.set()
         qtbot.waitUntil(lambda: blur_entered.is_set() and states[-1] == (idle, executing))
@@ -82,7 +82,7 @@ def test_frame_changes_highlight_request_ancestors_and_cache_hits_stay_idle(
         assert completed.args[0][target] == 21
         assert states[-1] == (idle, idle)
         assert all(thread == get_ident() for thread in threads)
-        assert model.nodeData("source", model.OutputRole) is source_output
+        assert model.nodeHeaderData("source", model.OutputRole) is source_output
 
         states.clear()
         engine._graph._update_node(target, render, args=(blur_node, 1))
@@ -94,8 +94,8 @@ def test_frame_changes_highlight_request_ancestors_and_cache_hits_stay_idle(
         engine._graph._update_node(target, render, args=(blur_node, 3))
         with qtbot.waitSignal(engine.execution_failed):
             engine.execute_nodes(target)
-        assert model.nodeData("source", model.StateRole) is NodeExecutionState.ERROR
-        assert model.nodeData("blur", model.StateRole) is idle
+        assert model.nodeHeaderData("source", model.StateRole) is NodeExecutionState.ERROR
+        assert model.nodeHeaderData("blur", model.StateRole) is idle
         assert not engine.pending_nodes()
     finally:
         source_release.set()

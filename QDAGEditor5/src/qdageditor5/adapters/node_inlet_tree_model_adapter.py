@@ -196,12 +196,12 @@ class NodeInletTreeModelAdapter(QAbstractItemModel):
             case self.ItemType.Node:
                 shadow = self._shadow(index)
                 assert isinstance(shadow, _NodeShadow)
-                return graph.nodeData(shadow.node_name, role)
+                return graph.nodeHeaderData(shadow.node_name, role)
             
             case self.ItemType.Inlet:
                 shadow = self._shadow(index)
                 assert isinstance(shadow, _InletShadow)
-                return graph.inletData(
+                return graph.inletHeaderData(
                     shadow.parent_node.node_name,
                     shadow.inlet_name,
                     role

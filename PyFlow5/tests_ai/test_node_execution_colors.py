@@ -59,29 +59,29 @@ def test_opening_graph_is_yellow_then_normal_and_execution_repaints(
     changed_roles: list[tuple[int, ...]] = []
     model.nodesDataChanged.connect(lambda nodes, roles: changed_roles.append(tuple(roles)))
 
-    assert model.nodeData("answer", model.StateRole) is NodeExecutionState.EXECUTING
-    assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
+    assert model.nodeHeaderData("answer", model.StateRole) is NodeExecutionState.EXECUTING
+    assert model.nodeHeaderData("answer", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
     option = view._nodeStyleOption("answer")
     assert option.backgroundBrush.color() == QColor("yellow")
     assert option.palette.color(QPalette.ColorRole.Text) == QColor("black")
-    assert model.nodeData("answer", NodeDataRole.TrailingRole) is None
+    assert model.nodeHeaderData("answer", NodeDataRole.TrailingRole) is None
 
     backend.evaluations[-1].set_result(evaluate(SOURCE))
     QCoreApplication.processEvents()
-    assert model.nodeData("answer", model.StateRole) is NodeExecutionState.IDLE
-    assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) is None
+    assert model.nodeHeaderData("answer", model.StateRole) is NodeExecutionState.IDLE
+    assert model.nodeHeaderData("answer", Qt.ItemDataRole.BackgroundRole) is None
     assert not document.isModified()
 
     changed_roles.clear()
     document.subscribeNode("answer", lambda _: None)
-    assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
+    assert model.nodeHeaderData("answer", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
     assert any(Qt.ItemDataRole.BackgroundRole in roles for roles in changed_roles)
     QCoreApplication.processEvents()
     backend.executions[-1].set_result(ExecutionResult({"answer": 42}))
     QCoreApplication.processEvents()
-    assert model.nodeData("answer", model.StateRole) is NodeExecutionState.IDLE
-    assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) is None
-    assert model.nodeData("answer", model.OutputRole) == 42
+    assert model.nodeHeaderData("answer", model.StateRole) is NodeExecutionState.IDLE
+    assert model.nodeHeaderData("answer", Qt.ItemDataRole.BackgroundRole) is None
+    assert model.nodeHeaderData("answer", model.OutputRole) == 42
     assert not document.isModified()
 
 
@@ -104,20 +104,20 @@ def test_real_errors_turn_red_and_recovery_removes_error_text(
         backend.executions[-1].set_exception(NodeExecutionError("answer", ValueError("bad input")))
         QCoreApplication.processEvents()
 
-    assert model.nodeData("answer", model.StateRole) is NodeExecutionState.ERROR
-    assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) == QColor(200, 20, 20)
-    assert model.nodeData("answer", NodeDataRole.TrailingRole)
+    assert model.nodeHeaderData("answer", model.StateRole) is NodeExecutionState.ERROR
+    assert model.nodeHeaderData("answer", Qt.ItemDataRole.BackgroundRole) == QColor(200, 20, 20)
+    assert model.nodeHeaderData("answer", NodeDataRole.TrailingRole)
     document.script_document.setPlainText(SOURCE + "\n")
-    assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
-    assert model.nodeData("answer", NodeDataRole.TrailingRole) is None
+    assert model.nodeHeaderData("answer", Qt.ItemDataRole.BackgroundRole) == QColor("yellow")
+    assert model.nodeHeaderData("answer", NodeDataRole.TrailingRole) is None
     backend.evaluations[-1].set_result(evaluate(SOURCE))
     QCoreApplication.processEvents()
     if failure == "execution":
         backend.executions[-1].set_result(ExecutionResult({"answer": 42}))
         QCoreApplication.processEvents()
-    assert model.nodeData("answer", model.StateRole) is NodeExecutionState.IDLE
-    assert model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) is None
-    assert model.nodeData("answer", NodeDataRole.TrailingRole) is None
+    assert model.nodeHeaderData("answer", model.StateRole) is NodeExecutionState.IDLE
+    assert model.nodeHeaderData("answer", Qt.ItemDataRole.BackgroundRole) is None
+    assert model.nodeHeaderData("answer", NodeDataRole.TrailingRole) is None
 
 
 def test_real_document_load_evaluates_and_executes_once(qtbot: QtBot) -> None:
@@ -128,11 +128,11 @@ def test_real_document_load_evaluates_and_executes_once(qtbot: QtBot) -> None:
     }))
     try:
         document.subscribeNode("answer", lambda _: None)
-        qtbot.waitUntil(lambda: document.graph_model.nodeData("answer", document.graph_model.OutputRole) == 42)
+        qtbot.waitUntil(lambda: document.graph_model.nodeHeaderData("answer", document.graph_model.OutputRole) == 42)
         node = document.graph_model.mapToSource("answer")
         assert node is not None
-        assert document.graph_model.nodeData(node.name(), document.graph_model.StateRole) is NodeExecutionState.IDLE
-        assert document.graph_model.nodeData("answer", Qt.ItemDataRole.BackgroundRole) is None
+        assert document.graph_model.nodeHeaderData(node.name(), document.graph_model.StateRole) is NodeExecutionState.IDLE
+        assert document.graph_model.nodeHeaderData("answer", Qt.ItemDataRole.BackgroundRole) is None
     finally:
         document.close()
 

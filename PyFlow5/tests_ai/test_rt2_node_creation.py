@@ -52,7 +52,7 @@ def test_double_click_and_operator_selection_create_visible_nodes(
         assert len(added) == 1
         node = added.pop()
         assert model.nodePosition(node) == position
-        assert model.nodeData(node) == "example"
+        assert model.nodeHeaderData(node) == "example"
         assert list(model.inlets(node)) == ["value"]
         bounds = view._nodeSceneRect(view._nodeStyleOption(node), node)
         assert not bounds.isEmpty()
@@ -76,9 +76,9 @@ def test_created_node_survives_document_reload(editor: PyFlow5DocumentWindow) ->
     restored = PyFlowDocument.deserialize(document.serialize())
     try:
         assert list(restored.graph_model.nodes()) == ["example"]
-        assert restored.graph_model.nodeData("example") == "example"
+        assert restored.graph_model.nodeHeaderData("example") == "example"
         assert restored.graph_model.nodePosition("example") == QPointF(123, 234)
-        assert restored.graph_model.nodeData(
+        assert restored.graph_model.nodeHeaderData(
             "example", restored.graph_model.OutputRole,
         ) == 9
         assert restored.script_document.toPlainText() == document.script_document.toPlainText()

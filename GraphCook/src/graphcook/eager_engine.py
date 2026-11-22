@@ -508,8 +508,11 @@ class EagerEngine:
     # mutate graph
     def create_node(self, funcname: str, **kwargs: object) -> NodeId:
         # generate random_id for node
-        import uuid
-        node_id = NodeId(str(uuid.uuid4()))
+        
+        # import uuid
+        # node_id = NodeId(str(uuid.uuid4()))
+        from unique_names_generator import get_random_name
+        node_id = get_random_name()
         self._graph_config.add_node(
             node_id, 
             **{OPERATOR_ATTRIBUTE: OperatorHandle(funcname)},
@@ -531,6 +534,21 @@ class EagerEngine:
         self._graph_config.unset(node, name)
 
     def add_link(self, src: NodeId, dst: NodeId, inlet: str) -> None:
+        """Add a link from src to dst at the specified inlet.
+
+        Raises:
+            ValueError: If either endpoint does not exist or if the link would create a cycle.
+        """
+
+
+        # reject cycles
+        from .core.graph import descendants
+        if src not in self._graph_config.nodes() or dst not in self._graph_config.nodes():
+            raise ValueError("Both link endpoints must exist")
+
+        if src == dst or src in descendants(self._graph_config, dst):
+            raise ValueError("Connection would create a cycle")
+
         self._graph_config.add_link(src, dst, inlet)
 
     def remove_link(self, source: 'NodeId', target: 'NodeId', inlet: str) -> None:

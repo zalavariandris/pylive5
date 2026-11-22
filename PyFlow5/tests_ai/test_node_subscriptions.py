@@ -39,7 +39,7 @@ def test_document_delivers_output_after_model_outputs_are_updated(
     received: list[tuple[object, object]] = []
     subscription = document.subscribeNode(
         "first",
-        lambda result: received.append((result, document.graph_model.nodeData("first", document.graph_model.OutputRole))),
+        lambda result: received.append((result, document.graph_model.nodeHeaderData("first", document.graph_model.OutputRole))),
     )
     assert received == []
     QCoreApplication.processEvents()

@@ -59,8 +59,8 @@ def test_engine_attributes_supply_node_signature_to_adapter(
 ) -> None:
     _, model = graph_view
     source, target = model.nodes()
-    assert model.nodeData(source) == "source"
-    assert model.nodeData(target) == "target"
+    assert model.nodeHeaderData(source) == "source"
+    assert model.nodeHeaderData(target) == "target"
     assert list(model.inlets(target)) == ["value", "other"]
 
 

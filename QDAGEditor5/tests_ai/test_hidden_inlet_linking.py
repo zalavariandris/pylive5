@@ -29,7 +29,7 @@ class HiddenInletsModel(AbstractDAGModel):
     def nodes(self) -> Iterable[NodeName]:
         return tuple(self.ports)
 
-    def nodeData(self, node: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> object:
+    def nodeHeaderData(self, node: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> object:
         return str(node) if role == Qt.ItemDataRole.DisplayRole else None
 
     def nodePosition(self, node: NodeName) -> QPointF:
@@ -44,7 +44,7 @@ class HiddenInletsModel(AbstractDAGModel):
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         return tuple(self.ports[node])
 
-    def inletData(self, node: NodeName, inlet: InletName, role: int) -> object:
+    def inletHeaderData(self, node: NodeName, inlet: InletName, role: int) -> object:
         if role == SocketDataRole.HiddenRole:
             return inlet in self.hidden
         return str(inlet) if role == Qt.ItemDataRole.DisplayRole else None

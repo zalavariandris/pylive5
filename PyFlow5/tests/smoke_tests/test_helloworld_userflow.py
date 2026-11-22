@@ -181,7 +181,7 @@ def test_create_node_from_local_script(qtbot: QtBot, tmp_path) -> None:
         """))
     
     qtbot.wait(WAIT_TIME_MS)
-    current_excecution_data = document.graph_model.nodeData("helloworld", role=PyGraphRTGraphModel.OutputRole)
+    current_excecution_data = document.graph_model.nodeHeaderData("helloworld", role=PyGraphRTGraphModel.OutputRole)
     assert isinstance(current_excecution_data, Exception), f"Expected an Exception, got: {current_excecution_data}"
     qtbot.wait(WAIT_TIME_MS)
 

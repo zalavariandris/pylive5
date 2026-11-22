@@ -100,6 +100,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     nodeMoved = Signal(object) # NodeT #todo: handle multiple nodes to be consistent with the resf of the api
     
     inletsReset = Signal(object) # NodeT
+    inletHeaderDataChanged = Signal(object, tuple, list) # NodeT, tuple[InletT...], roles: list[int]
     inletDataChanged = Signal(object, tuple, list) # NodeT, tuple[InletT...], roles: list[int]
     outletsReset = Signal(object) # NodeT
 
@@ -144,15 +145,21 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         """Check if a node exists in the model."""
         return node in self.nodes()
 
+    def nodeHeaderData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        """Return the header data for the given node and role."""
+        return f"{node_name}"
+
+    def setNodeHeaderData(self, node: NodeName, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
+        """"""
+        return False
+
     @abstractmethod
     def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        """Return the header data for the given node and role."""
+        """Return the data for the given node and role."""
         pass
 
     def setNodeData(self, node: NodeName, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
-        """Sets the data for the given node and role. Returns True if successful, False otherwise.
-        Default implementation does nothing and returns False. Subclasses should override this method
-        to provide actual functionality."""
+        """"""
         return False
     
     def nodePosition(self, node: NodeName) -> QPointF | None:
@@ -246,14 +253,22 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         pass
 
+    def inletHeaderData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
+        match role:
+            case Qt.ItemDataRole.DisplayRole:
+                return f"{inlet}"
+            case _:
+                return None
+
+    def setInletHeaderData(self, node: NodeName, inlet: InletName, value: Any, role:int) -> bool:
+        return False
+
     @abstractmethod
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
+        """Return the data for the given inlet and role."""
         pass
 
     def setInletData(self, node: NodeName, inlet: InletName, value: Any, role:int) -> bool:
-        """Sets the data for the given inlet. Returns True if successful, False otherwise.
-        Default implementation does nothing and returns False. Subclasses should override
-        this method to provide actual functionality."""
         return False
 
     def _beginResetInlets(self, node: NodeName) -> None:
