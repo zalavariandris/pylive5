@@ -12,8 +12,9 @@ from typing import Any
 
 import pytest
 from pytestqt.qtbot import QtBot
-from qtpy.QtCore import QSignalBlocker, Qt
-from qtpy.QtWidgets import QDoubleSpinBox, QFormLayout, QFrame, QLabel, QLineEdit, QSpinBox, QWidget
+from qtpy.QtCore import Property, QObject, QSignalBlocker, Signal, Qt
+from qtpy.QtGui import QContextMenuEvent
+from qtpy.QtWidgets import QAbstractSpinBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QSpinBox, QStackedLayout, QVBoxLayout, QWidget
 
 from graphcook.eager_engine import EagerEngine
 from qdageditor5.models.abstract_dag_model import AbstractDAGModel
@@ -24,7 +25,10 @@ def inspector_classes() -> SimpleNamespace:
     """Load the production classes without the example's unrelated layout imports."""
     path = Path(__file__).parents[1] / "examples/qt_integration/eager_qdageditor.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    names = {"EagerGraphModel", "InspectorRoles", "GraphInspectorView"}
+    names = {
+        "EagerGraphModel", "InspectorRoles", "GraphInspectorView",
+        "GraphInspectorDelegate", "EagerEditorWrapper",
+    }
     definitions = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name in names]
     namespace = dict(globals())
     exec(compile(ast.Module(body=definitions, type_ignores=[]), str(path), "exec"), namespace)
@@ -56,24 +60,25 @@ def test_external_values_refresh_without_feedback(
     view.setModel(model)
     view.setCurrentNode(node)
     editors = dict(view._editors)
-    assert editors["text"].text() == "Initial"
-    assert editors["count"].value() == 3
-    assert editors["fraction"].value() == 1.5
-    assert editors["other"].text() == "None"
+    assert editors["text"]._widget.text() == "Initial"
+    assert editors["count"]._widget.value() == 3
+    assert editors["fraction"]._widget.value() == 1.5
+    assert editors["other"]._widget.text() == "None"
     changes: list[dict[str, Any]] = []
     engine.listen(changes.append)
 
     engine.set(node, text="Updated", count=4, fraction=2.5, other=False)
-    assert editors["text"].text() == "Updated"
-    assert editors["count"].value() == 4
-    assert editors["fraction"].value() == 2.5
-    assert editors["other"].text() == "False"
+    assert editors["text"]._widget.text() == "Updated"
+    assert editors["count"]._widget.value() == 4
+    assert editors["fraction"]._widget.value() == 2.5
+    assert editors["other"]._widget.text() == "False"
     assert sum("nodes" in change for change in changes) == 1
     assert view._editors == editors
 
     for inlet in editors:
         engine.unset(node, inlet)
-        assert editors[inlet].text() == ""
+        assert editors[inlet]._widget.text() == ""
+        assert editors[inlet].getValue() is inspect.Parameter.empty
         assert inlet not in engine.attributes(node)
     assert view._editors == editors
     assert sum("nodes" in change for change in changes) == 5
@@ -92,13 +97,13 @@ def test_selection_changes_keep_model_notifications_and_target_current_node(
     view.setCurrentNode(first)
     view.setCurrentNode(second)
     engine.set(first, text="Ignored")
-    assert view._editors["text"].text() == "Second"
+    assert view._editors["text"]._widget.text() == "Second"
     engine.set(second, text="Refreshed")
-    assert view._editors["text"].text() == "Refreshed"
+    assert view._editors["text"]._widget.text() == "Refreshed"
 
     notifications: list[tuple[Any, ...]] = []
     model.inletDataChanged.connect(lambda *args: notifications.append(args))
-    view._editors["text"].setText("Edited")
+    view._editors["text"]._widget.setText("Edited")
     assert engine.attributes(second)["text"] == "Edited"
     assert engine.attributes(first)["text"] == "Ignored"
     assert len(notifications) == 1
@@ -109,7 +114,7 @@ def test_selection_changes_keep_model_notifications_and_target_current_node(
     view.setCurrentNode(None)
     view.setCurrentNode(first)
     engine.set(first, text="Still listening")
-    assert view._editors["text"].text() == "Still listening"
+    assert view._editors["text"]._widget.text() == "Still listening"
 
 
 def test_deleting_current_node_clears_form(
@@ -142,14 +147,14 @@ def test_extra_inputs_appear_and_disappear_on_external_changes(
     view.setModel(model)
     view.setCurrentNode(node)
     assert list(view._editors) == ["text", "extra"]
-    assert view._editors["extra"].value() == 7
+    assert view._editors["extra"]._widget.value() == 7
     engine.set(node, another="New input")
     assert list(view._editors) == ["text", "extra", "another"]
-    assert view._editors["another"].text() == "New input"
+    assert view._editors["another"]._widget.text() == "New input"
     engine.unset(node, "extra")
     assert list(view._editors) == ["text", "another"]
     engine.set(node, another="Updated")
-    assert view._editors["another"].text() == "Updated"
+    assert view._editors["another"]._widget.text() == "Updated"
 
 
 def test_inlets_include_unique_declared_stored_and_linked_names_without_signature(
@@ -168,9 +173,11 @@ def test_inlets_include_unique_declared_stored_and_linked_names_without_signatur
     qtbot.addWidget(view)
     view.setModel(model)
     view.setCurrentNode(target)
-    assert view._editors["text"].text() == "Initial"
-    assert view._editors["extra"].text() == "(Linked)"
-    assert view._editors["linked"].text() == "(Linked)"
+    assert view._editors["text"]._widget.text() == "Initial"
+    for inlet in ("extra", "linked"):
+        editor = view._editors[inlet]
+        assert editor._stack.currentWidget() is editor._linked_page
+        assert editor._linked_chip.text() == "Linked"
 
 
 def test_replacing_or_detaching_model_clears_old_connections(
@@ -193,7 +200,7 @@ def test_replacing_or_detaching_model_clears_old_connections(
     first_engine.delete(first)
     assert view._current_node == second
     second_engine.set(second, text="Updated")
-    assert view._editors["text"].text() == "Updated"
+    assert view._editors["text"]._widget.text() == "Updated"
     view.setModel(None)
     view.setModel(None)
     second_engine.set(second, text="Detached")

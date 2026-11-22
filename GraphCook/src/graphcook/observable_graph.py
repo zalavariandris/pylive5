@@ -74,7 +74,10 @@ class ObservableGraph(Graph[NodeT]):
         ))
 
     def unset(self, node: NodeT, name: str) -> None:
-        old = self.attributes(node)[name]
+        attributes = self.attributes(node)
+        if name not in attributes:
+            return # Attribute not present, nothing to unset #todo: consider raising an error
+        old = attributes[name]
 
         super().unset(node, name)
 

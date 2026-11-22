@@ -1,5 +1,7 @@
 
 ## Features
+- [x] the GraphCook Inspector now support unsetting values
+
 - [x] consider detecting contextual operators by its return value (or hint)
       a contextual decorator basically tells the engine, that it should manage the returned calalble cache, 
       and helps the engine, to report its execution state. If it does not change behaviour, we could simply 

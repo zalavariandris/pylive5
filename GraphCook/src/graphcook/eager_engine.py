@@ -37,6 +37,7 @@ from .core.execution_status import (
 ########
 # DATA #
 ########
+EMPTY = inspect.Parameter.empty
 OPERATOR_ATTRIBUTE = "__operator__"
 
 @dataclass(frozen=True)
