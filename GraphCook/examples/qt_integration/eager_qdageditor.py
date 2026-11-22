@@ -27,7 +27,7 @@ from qdageditor5.models.abstract_dag_model import (
     OutletName
 )
 
-from qtpy.QtCore import QPointF, Qt, QAbstractListModel, QSignalBlocker, Signal, Property
+from qtpy.QtCore import QPointF, QTimer, Qt, QAbstractListModel, QSignalBlocker, Signal, Property
 from qtpy.QtWidgets import QAbstractScrollArea, QApplication, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMenuBar, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QStackedLayout, QStatusBar, QVBoxLayout, QWidget
 from graphcook.eager_engine import (
     NodeId, EagerEngineChange, DirtyStatus, RunningStatus, SucceededStatus, FailedStatus,
@@ -1078,12 +1078,16 @@ class EngineWindow(QMainWindow):
         splitter.setSizes([300,180, 500, 180, 300])
         self.resize(1800, 650)
         self.setCentralWidget(splitter)
-        self.editor.fitNodes()
         
         self.setupMenubar()
 
         # set focus to the graph
         self.editor.setFocus()
+
+        # initial node fitting
+        QTimer.singleShot(0, 
+            lambda: self.editor.fitNodes(limit_zoom=True)
+        )
 
     def setupMenubar(self) -> None:
         # Bound callbacks and panel actions must belong to the current editor.

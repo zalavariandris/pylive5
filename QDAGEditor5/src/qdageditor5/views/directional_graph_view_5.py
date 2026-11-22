@@ -1519,6 +1519,8 @@ class DirectionalGraphView5(QFrame):
             self.setNodePosition(node_name, QPointF(x, y))
         self.update()
 
+
+
 if __name__ == "__main__":
     import sys
     from qtpy.QtWidgets import QApplication
