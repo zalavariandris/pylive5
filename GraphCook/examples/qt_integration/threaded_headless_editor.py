@@ -120,12 +120,19 @@ if __name__ == "__main__":
     graph.create_node(OperatorHandle("hello_world"), name=the_name, greeting=the_greeting)
 
     results = _execute_graph(graph, operators, cache=None, callback=None)
-
+    revision = 0
     def update_worker(change):
         if 'script' in change:
-            worker.execute_provider(change['script'])
+            revision += 1
+            future = worker.execute_provider(change['script'], revision=revision)
+            # we might want to copy the graph here to avoid race conditions
+            future.add_done_callback(lambda _: worker.execute_graph(graph, revision=revision))
+
         if 'graph' in change:
-            worker.execute_graph(change['graph'])
+            # we might want to copy the graph here to avoid race conditions
+            worker.execute_graph(graph, revision=revision+1)
+            revision += 1
+            worker.execute_graph(graph, revision=revision)
 
     graph.listen(update_worker)
 
@@ -135,6 +142,9 @@ if __name__ == "__main__":
     def update_ui(change):
 
         if 'provider_status' in change:
+            ...
+
+        if 'operators' in change:
             ...
 
         if 'nodes_status' in change:
