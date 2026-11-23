@@ -265,12 +265,6 @@ class EagerGraphModel(AbstractDAGModel):
                     
         return None
 
-    def nodeCellCount(self, node: NodeName) -> int:
-        return 0
-
-    def nodeCellData(self, node: NodeName, column: CellIdx, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        return None
-
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         node_data = self._engine.attributes(self.mapToSource(node))
         operator_handle: OperatorHandle = node_data['__operator__']

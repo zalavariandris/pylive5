@@ -133,64 +133,6 @@ class StandardDAGModel(AbstractDAGModel):
             return False
         
         return False
-
-    # == CELLS API ==
-    def nodeCellCount(self, node: NodeName) -> int:
-        """Returns the number of cells for the given node."""
-        if node_data := self._nodes.get(node):
-            return len(node_data.cells)
-        else:
-            return 0
-    
-    def nodeCellData(self, node: NodeName, column: CellIdx, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        """Returns the data for the cell at the given index."""
-        if node not in self._nodes:
-            return None
-        
-        if column < 0 or column >= len(self._nodes[node].cells):
-            return None
-        
-        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            return self._nodes[node].cells[column]
-
-    def nodeCellFlags(self, node: NodeName, column: CellIdx) -> Qt.ItemFlags:
-        """Returns the item flags for the cell at the given index."""
-        if node not in self._nodes:
-            return Qt.ItemFlag.NoItemFlags
-        
-        if column < 0 or column >= self.nodeCellCount(node):
-            return Qt.ItemFlag.NoItemFlags
-        
-        return Qt.ItemFlag.ItemIsEditable
-
-    def setNodeCellData(self, node: NodeName, column: CellIdx, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
-        """Sets the data for the cell at the given index."""
-
-        if node not in self._nodes:
-            return False  # BUG 7 fixed: was returning None
-        
-        if column < 0 or column >= len(self._nodes[node].cells):
-            return False  # BUG 7 fixed: was returning None
-        
-        try:
-            self._nodes[node].cells[column] = value
-            self.cellsDataChanged.emit(node, column, column)
-            return True
-        except IndexError:
-            warnings.warn(f"Attempted to set cell data for node {node} at invalid column {column}.")
-            return False
-    
-    def insertCells(self, position: CellIdx, count: int, node: NodeName) -> bool:
-        self._beginInsertCells(node, position, position + count - 1)
-        self._nodes[node].cells[position:position] = [None] * count  # Insert None or a default value
-        self._endInsertCells()
-        return True
-    
-    def removeCells(self, first: CellIdx, last: CellIdx, node: NodeName) -> bool:
-        self._beginRemoveCells(node, first, last)
-        del self._nodes[node].cells[first:last + 1]
-        self._endRemoveCells()
-        return True
     
     # == INLETS API ==
     def inlets(self, node: NodeName) -> tuple[InletName]:

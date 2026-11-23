@@ -671,15 +671,6 @@ class PyGraphRTGraphModel(AbstractDAGModel):
     def outletData(self, node:NodeName, outlet:OutletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
         return None
 
-    # cells
-    @override
-    def nodeCellCount(self, node_name: NodeName) -> int:
-        return 0
-
-    @override
-    def nodeCellData(self, node_name: NodeName, cell: CellIdx, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        return None
-
     @override
     def nodePosition(self, node_name:NodeName)->QPointF:
         if node_name in self._positions:

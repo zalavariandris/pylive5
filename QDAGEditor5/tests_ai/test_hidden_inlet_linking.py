@@ -35,12 +35,6 @@ class HiddenInletsModel(AbstractDAGModel):
     def nodePosition(self, node: NodeName) -> QPointF:
         return QPointF(200, 80 + tuple(self.ports).index(node) * 120)
 
-    def nodeCellCount(self, node: NodeName) -> int:
-        return 0
-
-    def nodeCellData(self, node: NodeName, column: int, role: int) -> object:
-        return None
-
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         return tuple(self.ports[node])
 

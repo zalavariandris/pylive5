@@ -102,13 +102,8 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     inletsReset = Signal(object) # NodeT
     inletHeaderDataChanged = Signal(object, tuple, list) # NodeT, tuple[InletT...], roles: list[int]
     inletDataChanged = Signal(object, tuple, list) # NodeT, tuple[InletT...], roles: list[int]
+    
     outletsReset = Signal(object) # NodeT
-
-    cellsAboutToBeInserted = Signal(object, int, int) # NodeT, first, last
-    cellsInserted = Signal(object, int, int) # # NodeT, first, last
-    cellsAboutToBeRemoved = Signal(object, int, int) # NodeT, first, last
-    cellsRemoved = Signal(object, int, int) # NodeT, first, last
-    cellsDataChanged = Signal(object, int, int) # NodeT, first, last
 
     linksAboutToBeAdded = Signal(tuple) # list[DirectionalLinkId]
     linksAdded = Signal(tuple) # list[DirectionalLinkId]
@@ -193,60 +188,6 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         msg = self._message_queue.pop()
         assert isinstance(msg, RemoveNodeMessage), f"Expected RemoveNodeMessage, got {type(msg)}"
         self.nodesRemoved.emit(msg.nodes)
-
-    # == CELLS API ==
-    @abstractmethod
-    def nodeCellCount(self, node: NodeName) -> int:
-        """Returns the number of cells for the given node."""
-        pass
-    
-    @abstractmethod
-    def nodeCellData(self, node: NodeName, column: CellIdx, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        """Returns the data for the cell at the given index."""
-        pass
-
-    def setNodeCellData(self, node: NodeName, column: CellIdx, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
-        """Sets the data for the cell at the given index. Returns True if
-        successful, False otherwise. Default implementation does nothing and 
-        returns False. Subclasses should override this method to provide actual
-        functionality."""
-        return False
-
-    def nodeCellFlags(self, node: NodeName, column: CellIdx) -> Qt.ItemFlags:
-        """Returns the item flags for the cell at the given index."""
-        return Qt.ItemFlag.NoItemFlags
-
-    def insertCells(self, position: CellIdx, count: int, node: NodeName) -> bool:
-        return False
-    
-    def removeCells(self, first: CellIdx, last: CellIdx, node: NodeName) -> bool:
-        return False
-    
-    def _beginInsertCells(self, node: NodeName, first: CellIdx, last: CellIdx) -> None:
-        assert len(self._message_queue) == 0, "Message queue should be empty before inserting cells."
-        assert 0 <= first <= last <= self.nodeCellCount(node), f"Invalid cell range: first={first}, last={last}, cellCount={self.nodeCellCount(node)}"
-
-        self._message_queue.append(InsertCellsMessage(node, first, last))
-        self.cellsAboutToBeInserted.emit(node, first, last)
-    
-    def _endInsertCells(self) -> None:
-        msg = self._message_queue.pop()
-        assert isinstance(msg, InsertCellsMessage), f"Expected InsertCellsMessage, got {type(msg)}"
-        node, first, last = msg.node, msg.first, msg.last
-        self.cellsInserted.emit(node, first, last)
-
-    def _beginRemoveCells(self, node: NodeName, first: CellIdx, last: CellIdx) -> None:
-        assert len(self._message_queue) == 0, "Message queue should be empty before removing cells."
-        assert 0 <= first <= last < self.nodeCellCount(node), f"Invalid cell range: first={first}, last={last}, cellCount={self.nodeCellCount(node)}"
-
-        self._message_queue.append(RemoveCellsMessage(node, first, last))
-        self.cellsAboutToBeRemoved.emit(node, first, last)
-
-    def _endRemoveCells(self) -> None:
-        msg = self._message_queue.pop()
-        assert isinstance(msg, RemoveCellsMessage), f"Expected RemoveCellsMessage, got {type(msg)}"
-        node, first, last = msg.node, msg.first, msg.last
-        self.cellsRemoved.emit(node, first, last)
     
     # == INLETS API ==
     @abstractmethod

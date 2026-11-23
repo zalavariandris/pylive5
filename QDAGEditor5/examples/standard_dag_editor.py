@@ -77,12 +77,6 @@ class NXDagModel(AbstractDAGModel):
                     
         return None
 
-    def nodeCellCount(self, node: NodeName) -> int:
-        return 0
-
-    def nodeCellData(self, node: NodeName, column: CellIdx, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        return None
-
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         for key, value in self._graph.nodes[node].items():
             yield key
