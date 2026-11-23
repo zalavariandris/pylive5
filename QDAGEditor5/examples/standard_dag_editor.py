@@ -186,8 +186,8 @@ class Window(QMainWindow):
         self.setCentralWidget(splitter)
         self.editor1 = DirectionalGraphView5()
         splitter.addWidget(self.editor1)
-        self.editor2 = DirectionalGraphView5()
-        splitter.addWidget(self.editor2)
+        # self.editor2 = DirectionalGraphView5()
+        # splitter.addWidget(self.editor2)
 
         self.inspector = NodeInspectorView()
         self.inspector._delegate = StandardNodeInspectorDelegate()
@@ -201,12 +201,12 @@ class Window(QMainWindow):
             self.new_node(pos, source, editor))
         self.editor1.requestLink.connect(lambda src, outlet, dst, inlet: 
             self.model.addLinks([(src, outlet, dst, inlet)]))
-        self.editor2.setModel(self.model)
-        self.editor2.setSelectionModel(self.selection)
-        self.editor2.requestNode.connect(lambda pos, source, editor=self.editor2: 
-            self.new_node(pos, source, editor))
-        self.editor2.requestLink.connect(lambda src, outlet, dst, inlet: 
-            self.model.addLinks([(src, outlet, dst, inlet)]))
+        # self.editor2.setModel(self.model)
+        # self.editor2.setSelectionModel(self.selection)
+        # self.editor2.requestNode.connect(lambda pos, source, editor=self.editor2: 
+        #     self.new_node(pos, source, editor))
+        # self.editor2.requestLink.connect(lambda src, outlet, dst, inlet: 
+        #     self.model.addLinks([(src, outlet, dst, inlet)]))
         
         self.inspector.setModel(self.model)
         self.selection.currentNodeChanged.connect(

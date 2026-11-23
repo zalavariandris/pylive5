@@ -26,6 +26,14 @@ class ColorWheel(QWidget):
         return QColor(self._color)
 
     def setColor(self, color: QColor) -> None:
+        if not color.isValid():
+            return
+        hue, saturation, value, alpha = color.getHsvF()
+        if hue < 0:
+            hue = max(0.0, self._color.hsvHueF())
+            if value == 0:
+                saturation = self._color.hsvSaturationF()
+        color = QColor.fromHsvF(hue, saturation, value, alpha)
         if color == self._color:
             return
         self._color = QColor(color)
@@ -45,18 +53,19 @@ class ColorWheel(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         center = rect.center()
+        value = self._color.valueF()
         hues = QConicalGradient(center, 0)
         for index in range(7):
             position = index / 6
-            hues.setColorAt(position, QColor.fromHsvF(position, 1.0, 1.0))
+            hues.setColorAt(position, QColor.fromHsvF(position, 1.0, value))
 
         painter.setPen(Qt.NoPen)
         painter.setBrush(hues)
         painter.drawEllipse(rect)
 
         saturation = QRadialGradient(center, radius)
-        saturation.setColorAt(0, QColor(255, 255, 255))
-        saturation.setColorAt(1, QColor(255, 255, 255, 0))
+        saturation.setColorAt(0, QColor.fromRgbF(value, value, value))
+        saturation.setColorAt(1, QColor.fromRgbF(value, value, value, 0.0))
         painter.setBrush(saturation)
         painter.drawEllipse(rect)
 
@@ -79,7 +88,9 @@ class ColorWheel(QWidget):
         offset = position - rect.center()
         hue = (atan2(-offset.y(), offset.x()) / tau) % 1.0
         saturation = min(1.0, hypot(offset.x(), offset.y()) / radius)
-        color = QColor.fromHsvF(hue, saturation, 1.0, self._color.alphaF())
+        color = QColor.fromHsvF(
+            hue, saturation, self._color.valueF(), self._color.alphaF(),
+        )
         self.setColor(color)
 
     def mousePressEvent(self, event):
