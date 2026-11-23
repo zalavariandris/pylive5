@@ -1,6 +1,6 @@
 from graphcook.provider import OperatorHandle, OperatorProvider
 import pytest
-from graphcook.eager_engine import EagerEngine
+from graphcook.eager_observable_engine import EagerEngine
 from typing import Any, Callable
 from textwrap import dedent
 
@@ -30,7 +30,7 @@ def test_eager_engine():
     engine.evaluate_node(hello_world)
 
 def test_eager_engine_smoketest():
-    from graphcook.eager_engine import EagerEngine, EagerEngineChange
+    from graphcook.eager_observable_engine import EagerEngine, EagerEngineChange
 
     engine = EagerEngine(
         "def source(): return 1\n"

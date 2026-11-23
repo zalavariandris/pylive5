@@ -2,7 +2,7 @@
 
 import pytest
 
-from graphcook.eager_engine import (
+from graphcook.eager_observable_engine import (
     EagerEngine,
     EagerEngineChange,
     EagerScriptProvider,

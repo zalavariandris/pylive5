@@ -600,4 +600,3 @@ class EagerEngine:
 
     def _forward_executor_change(self, change: ExecutorChange) -> None:
         self._notify(EagerEngineChange(**change))
-

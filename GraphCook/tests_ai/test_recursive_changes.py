@@ -3,7 +3,7 @@
 import pytest
 
 from graphcook.core.changes import Change, ObservableValue, ValueChange, apply_change
-from graphcook.eager_engine import EagerEngine, EagerEngineChange
+from graphcook.eager_observable_engine import EagerEngine, EagerEngineChange
 from graphcook.graph_index import GraphAttributeIndex
 from graphcook.observable_graph import GraphChange, ObservableGraph
 

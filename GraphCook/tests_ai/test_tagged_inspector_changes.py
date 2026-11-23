@@ -13,7 +13,7 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QSignalBlocker
 from qtpy.QtWidgets import QFormLayout, QFrame, QLabel, QLineEdit, QSpinBox, QWidget
 
-from graphcook.eager_engine import EagerEngine, EagerEngineChange
+from graphcook.eager_observable_engine import EagerEngine, EagerEngineChange
 
 
 def inspector_type() -> type[QFrame]:

@@ -5,7 +5,8 @@ from textwrap import dedent
 from typing import Callable, Iterable, Any, Protocol, TypedDict, cast
 
 
-from graphcook.eager_engine import (
+import bidict
+from graphcook.eager_observable_engine import (
     InletSignature,
     OperatorHandle, 
     OperatorSignature, 
@@ -14,7 +15,7 @@ from graphcook.eager_engine import (
     GraphChange
 )
 
-from graphcook.eager_engine import EagerEngine
+from graphcook.eager_observable_engine import EagerEngine
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
@@ -28,8 +29,8 @@ from qdageditor5.models.abstract_dag_model import (
 )
 
 from qtpy.QtCore import QPointF, QTimer, Qt, QAbstractListModel, QSignalBlocker, Signal, Property
-from qtpy.QtWidgets import QAbstractScrollArea, QApplication, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMenuBar, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QStackedLayout, QStatusBar, QVBoxLayout, QWidget
-from graphcook.eager_engine import (
+from qtpy.QtWidgets import QAbstractScrollArea, QApplication, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QGraphicsColorizeEffect, QGraphicsEffect, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMenuBar, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QStackedLayout, QStatusBar, QVBoxLayout, QWidget
+from graphcook.eager_observable_engine import (
     NodeId, EagerEngineChange, DirtyStatus, RunningStatus, SucceededStatus, FailedStatus,
 )
 
@@ -426,139 +427,7 @@ from qtpy.QtGui import QAction
 import inspect
 EMPTY = inspect.Parameter.empty
 
-class EagerEditorWrapper(QWidget):
-    valueChanged = Signal(object)
-    emptyChanged = Signal(bool)
-    linkedChanged = Signal(bool)
-
-    def __init__(
-        self, widget: QWidget, parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._is_linked = False
-        self._is_empty: bool = False
-        self._wrapped = widget
-        self.setSizePolicy(widget.sizePolicy())
-        self._wrapped.installEventFilter(self)
-        self._property = widget.metaObject().userProperty()
-
-        if not self._property.isValid():
-            raise ValueError(
-                f"{type(widget).__name__} has no user property"
-            )
-
-        self._stacked_layout = QStackedLayout(self)
-        self._stacked_layout.setContentsMargins(0, 0, 0, 0)
-        self._stacked_layout.setSpacing(0)
-
-        self._stacked_layout.addWidget(widget)
-        self._stacked_layout.addWidget(QLabel("- linked -"))
-        
-        if self._property.hasNotifySignal():
-            signal_name = bytes(
-                self._property.notifySignal().name()
-            ).decode()
-            signal = getattr(widget, signal_name)
-            signal.connect(self._handle_value_changed)
-
-    def isEmpty(self) -> bool:
-        return self._is_empty
-
-    def setEmpty(self, empty: bool = True) -> None:
-        self._is_empty = empty
-        self.emptyChanged.emit(self._is_empty)
-        with QSignalBlocker(self._wrapped):
-            try:
-                self._wrapped.clear()
-            except AttributeError:
-                pass
-
-    def isLinked(self) -> bool:
-        return self._is_linked
-
-    def setLinked(self, linked: bool) -> None:
-        self._is_linked = linked
-        if linked:
-            self._stacked_layout.setCurrentIndex(1)
-        else:
-            self._stacked_layout.setCurrentIndex(0)
-
-        self.linkedChanged.emit(linked)
-
-    def getValue(self) -> Any:
-        if self._is_empty:
-            return EMPTY
-        return self._property.read(self._wrapped)
-
-    def _handle_value_changed(self, *args: Any) -> None:
-        self._is_empty = False
-        self.valueChanged.emit(self.getValue())
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if (
-            isinstance(watched, QLineEdit)
-            and event.type() == QEvent.Type.ContextMenu
-            and isinstance(event, QContextMenuEvent)
-        ):
-            menu = watched.createStandardContextMenu()
-            first_action = next(iter(menu.actions()), None)
-
-            unset_action = QAction("Unset", menu)
-            unset_action.setEnabled(
-                not self.isEmpty()
-            )
-            unset_action.triggered.connect(
-                lambda checked=False: self.setEmpty()
-            )
-
-            menu.insertAction(first_action, unset_action)
-            if first_action is not None:
-                menu.insertSeparator(first_action)
-
-            event.accept()
-            try:
-                selected = menu.exec(event.globalPos())
-                if selected is unset_action:
-                    # Handle your application's unset operation here.
-                    pass
-            finally:
-                menu.deleteLater()
-
-            return True
-
-        return super().eventFilter(watched, event)
-
-    def setShowLinked(self, linked: bool) -> None:
-        self._is_linked = linked
-        self.showLinkedChanged.emit(linked)
-
-    def _handle_value_changed(self, *args: Any) -> None:
-        # Read the property: notify signals can have different arguments.
-        self.valueChanged.emit(self.getValue())
-
-    def getValue(self) -> Any:
-        return self._property.read(self._wrapped)
-
-    def setValue(self, value: Any) -> None:
-        with QSignalBlocker(self._wrapped):
-            if not self._property.write(self._wrapped, value):
-                raise ValueError(
-                    f"Could not write property {self._property.name()!r}"
-                )
-            self._is_empty = False
-
-        self.valueChanged.emit(self.getValue())
-
-
-    value = Property(
-        "QVariant",
-        getValue,
-        setValue,
-        notify=valueChanged,
-        user=True,
-    )
-
-
+from qtpy.QtWidgets import QGraphicsOpacityEffect
 class GraphInspectorDelegate(QObject):
     def __init__(self, parent:QObject|None=None):
         super().__init__(parent=parent)
@@ -597,31 +466,47 @@ class GraphInspectorDelegate(QObject):
             editor = QLineEdit()
             editor.setReadOnly(True)
 
-        wrapper = EagerEditorWrapper(editor)
-        def unset_inlet(empty):
-            if empty:
-                model.setInletData(node, inlet, EMPTY, Qt.ItemDataRole.EditRole)
-        wrapper.emptyChanged.connect(unset_inlet)
-        return wrapper
+        # add the dim effect to the editors
+        opacity_effect = QGraphicsOpacityEffect(editor)
+        opacity_effect.setOpacity(0.15)
+        opacity_effect.setEnabled(False)
+        colorize_effect = QGraphicsColorizeEffect(editor)
+        colorize_effect.setColor(Qt.GlobalColor.gray)
+        colorize_effect.setStrength(0.5)
+        colorize_effect.setEnabled(False)
+        editor.setGraphicsEffect(colorize_effect)
+        return editor
 
     def setEditorData(self, model:AbstractDAGModel, node: NodeName, inlet: InletName, widget: QWidget) -> None:
-        assert isinstance(widget, EagerEditorWrapper)
         value = model.inletData(node, inlet, Qt.ItemDataRole.EditRole)
         is_connected = bool(list(model.inLinks(node, inlet)))
         is_empty = value is EMPTY
-
-        print(f"setEditorData {inlet}: {value} CONNECTED:{is_connected} EMPTY:{is_empty}")
+        effect = widget.graphicsEffect()
+        assert isinstance(effect, QGraphicsEffect)
+        effect.setEnabled(is_connected or is_empty)
 
         with QSignalBlocker(widget):
-            
+            metaobject = widget.metaObject()
+            if metaobject is None:
+                return
+
+            user_property = metaobject.userProperty()
+            if not user_property.isValid():
+                return
+
             if is_connected:
-                widget.setLinked(True)
-            elif is_empty:
-                widget.setEmpty(True)
+                widget.setEnabled(False)
             else:
-                widget.setEmpty(False)
-                widget.setLinked(False)
-                widget.setValue(value)
+                widget.setEnabled(True)
+
+            if is_empty:
+                try:
+                    widget.clear()
+                except AttributeError:
+                    pass
+            else:
+                # write the value to the widget's user property
+                user_property.write(widget, value)
 
     def setModelData(self, model:AbstractDAGModel, node: NodeName, key: InletName, widget: QWidget) -> None:
         metaobject = widget.metaObject()
@@ -636,6 +521,7 @@ class GraphInspectorDelegate(QObject):
         model.setInletData(node, key, new_value, Qt.ItemDataRole.EditRole)
 
 
+from bidict import bidict
 class GraphInspectorView(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -646,6 +532,7 @@ class GraphInspectorView(QFrame):
         self._editor_connections: list[tuple[SignalInstance, Callable[..., None]]] = []
         self._delegate = GraphInspectorDelegate(self)
         self._editors: dict[InletName, QWidget] = {}
+        self._labels: bidict[InletName, QWidget] = bidict()
 
         # Layout
         main_layout = QVBoxLayout(self)
@@ -724,6 +611,7 @@ class GraphInspectorView(QFrame):
             signal.disconnect(handler)
         self._editor_connections.clear()
         self._editors.clear()
+        self._labels.clear()
         while self._form.rowCount():
             self._form.removeRow(0)
 
@@ -733,12 +621,19 @@ class GraphInspectorView(QFrame):
         assert node is not None
 
         for inlet_name in self._model.inlets(node):
+            # create label
+            label = QLabel(str(inlet_name))
+            self._labels[inlet_name] = label
+            label.installEventFilter(self)
+
+            # create editor
             editor = self._delegate.createEditor(self._model, node, inlet_name)
             self._editors[inlet_name] = editor
-            self._form.addRow(QLabel(str(inlet_name)), editor)
+            self._form.addRow(label, editor)
 
             # Initialize before connecting signals.
-            self._delegate.setEditorData(self._model, node, inlet_name, editor)
+            self.__set_label_data(node, inlet_name, Qt.ItemDataRole.EditRole)
+            self._delegate.setEditorData(self._model, node, inlet_name, self._editors[inlet_name])
 
             # bind user property if available
             user_property = editor.metaObject().userProperty()
@@ -757,6 +652,54 @@ class GraphInspectorView(QFrame):
                 signal.connect(handle_change)
                 self._editor_connections.append((signal, handle_change))
 
+    def eventFilter(self, a0: QObject|None, a1: QEvent|None) -> bool:
+        assert self._model is not None
+        watched = a0
+        event = a1
+        
+        if watched is not None and event is not None and event.type() == QEvent.Type.ContextMenu:
+
+            # create context menu
+            if watched not in self._labels.inverse:
+                return False
+            label = cast(QLabel, watched)
+            
+            menu = QMenu(label)
+            inlet_name = self._labels.inverse[label]
+            node_name = self._current_node
+
+            # unset
+            is_set = self._model.inletData(node_name, inlet_name, Qt.ItemDataRole.EditRole) != EMPTY
+            unset_action = QAction("Unset", menu)
+            unset_action.setEnabled(is_set)
+            def set_inlet_empty():
+                assert self._model is not None
+                self._model.setInletData(node_name, inlet_name, EMPTY, Qt.ItemDataRole.EditRole)
+            unset_action.triggered.connect(set_inlet_empty)
+            menu.addAction(unset_action)
+
+            # disconnect
+            is_connected = bool(list(self._model.inLinks(node_name, inlet_name)))
+            disconnect_action = QAction("Disconnect", menu)
+            disconnect_action.setEnabled(is_connected)
+            def disconnect_inlet():
+                assert self._model is not None
+                links = list(self._model.inLinks(node_name, inlet_name))
+                self._model.removeLinks(links)
+            disconnect_action.triggered.connect(disconnect_inlet)
+            menu.addAction(disconnect_action)
+
+            # show context menu
+            event.accept()
+            try:
+                menu.exec(event.globalPos())
+            finally:
+                menu.deleteLater()
+
+            return True
+
+        return super().eventFilter(watched, event)
+
     def _handle_nodes_removed(self, nodes: tuple[NodeName, ...]) -> None:
         if self._current_node in nodes:
             self.setCurrentNode(None)
@@ -769,15 +712,42 @@ class GraphInspectorView(QFrame):
     def _handle_inlet_data_change(
         self, node: NodeName, inlets: tuple[InletName, ...], roles: list[int],
     ) -> None:
+        assert self._model is not None
+
         if node != self._current_node:
             return
+        
         if not roles or InspectorRoles.DataTypeRole in roles:
             self._handle_inlets_reset(node)
+
         elif Qt.ItemDataRole.EditRole in roles:
             for inlet in inlets:
+                self.__set_label_data(node, inlet, Qt.ItemDataRole.EditRole)
                 if inlet in self._editors:
                     self._delegate.setEditorData(self._model, node, inlet, self._editors[inlet])
 
+    def __set_label_data(self, node, inlet, role:Qt.ItemDataRole):
+        if inlet in self._labels:
+            is_empty = self._model.inletData(node, inlet, Qt.ItemDataRole.EditRole) == EMPTY
+            is_connected = bool(list(self._model.inLinks(node, inlet)))
+            # Update the label to reflect the inlet's state
+            # icons = '✏️', '🌫️','🔗'
+            icons = '🔵', '⚪','🔗'
+            # icons = '◯','●','🔗'
+            # icons = "-", "+", "/"
+            # icons = '🔵', '⚪', '🔘'
+            # icons = '■', '□', '▣'
+            # icons = '■', '▧', '▰'
+            # icons = '◈', '◇', '↔'
+            # icons = '⬤', '◯', '◉'
+
+            label = cast(QLabel, self._labels[inlet])
+            if is_connected:
+                label.setText(f"{icons[2]} {inlet}")
+            elif is_empty:
+                label.setText(f"{icons[1]} {inlet}")
+            else:
+                label.setText(f"{icons[0]} {inlet}")
 
 class ProviderView(QWidget):
     def __init__(self, engine: EagerEngine, parent=None):

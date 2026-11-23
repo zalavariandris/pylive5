@@ -16,7 +16,7 @@ from qtpy.QtCore import Property, QObject, QSignalBlocker, Signal, Qt
 from qtpy.QtGui import QContextMenuEvent
 from qtpy.QtWidgets import QAbstractSpinBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QSpinBox, QStackedLayout, QVBoxLayout, QWidget
 
-from graphcook.eager_engine import EagerEngine
+from graphcook.eager_observable_engine import EagerEngine
 from qdageditor5.models.abstract_dag_model import AbstractDAGModel
 
 

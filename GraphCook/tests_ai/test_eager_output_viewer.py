@@ -7,7 +7,7 @@ from pytestqt.qtbot import QtBot
 from qtpy.QtWidgets import QLabel
 from myqtx.widgets.responsive_label import ResponsiveLabel
 
-from graphcook.eager_engine import EagerEngine
+from graphcook.eager_observable_engine import EagerEngine
 from GraphCook.examples.eager_qdageditor import OutputViewer, ProviderView
 
 

@@ -5,7 +5,7 @@ from textwrap import dedent
 
 import pytest
 
-from graphcook.eager_engine import (
+from graphcook.eager_observable_engine import (
     DirtyStatus,
     EagerEngine,
     EagerEngineChange,

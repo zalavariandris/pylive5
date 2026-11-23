@@ -7,7 +7,7 @@ import pytest
 from pytestqt.qtbot import QtBot
 from qtpy.QtWidgets import QLabel, QLineEdit, QSpinBox
 
-from graphcook.eager_engine import EagerEngine, EagerEngineChange, SucceededStatus
+from graphcook.eager_observable_engine import EagerEngine, EagerEngineChange, SucceededStatus
 from GraphCook.examples.eager_qdageditor import InspectorView, OutputViewer
 
 

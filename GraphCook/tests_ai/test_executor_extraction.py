@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from graphcook.core.changes import ObservableValue
-from graphcook.eager_engine import (
+from graphcook.eager_observable_engine import (
     DirtyStatus,
     EagerEngine,
     EagerEngineChange,

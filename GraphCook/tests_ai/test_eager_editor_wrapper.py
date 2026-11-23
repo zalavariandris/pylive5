@@ -13,7 +13,7 @@ from qtpy.QtCore import Property, QPoint, QSignalBlocker, Qt
 from qtpy.QtGui import QAction, QContextMenuEvent
 from qtpy.QtWidgets import QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QLabel, QLineEdit, QMenu, QSpinBox, QWidget
 
-from graphcook.eager_engine import EagerEngine
+from graphcook.eager_observable_engine import EagerEngine
 from .test_graph_inspector_view import inspector_classes, make_engine
 
 
