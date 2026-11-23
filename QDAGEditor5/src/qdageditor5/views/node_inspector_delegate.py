@@ -74,8 +74,8 @@ class NodeInspectorDelegate(QObject):
         is_connected = bool(list(model.inLinks(node, inlet)))
         is_empty = value is self.EMPTY
         effect = widget.graphicsEffect()
-        assert isinstance(effect, QGraphicsEffect)
-        effect.setEnabled(is_connected or is_empty)
+        if effect is not None:
+            effect.setEnabled(is_connected or is_empty)
 
         with QSignalBlocker(widget):
             metaobject = widget.metaObject()
@@ -98,7 +98,8 @@ class NodeInspectorDelegate(QObject):
                     pass
             else:
                 # write the value to the widget's user property
-                user_property.write(widget, value)
+                if user_property.read(widget) != value:
+                    user_property.write(widget, value)
 
     def setModelData(self, model:AbstractDAGModel, node: NodeName, key: InletName, widget: QWidget) -> None:
         metaobject = widget.metaObject()

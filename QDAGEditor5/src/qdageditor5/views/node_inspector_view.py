@@ -75,7 +75,7 @@ class NodeInspectorView(QFrame):
         separator.setFrameShadow(QFrame.Shadow.Sunken)
         main_layout.addWidget(separator)
         ## Body
-        self._form = QFormLayout(self)
+        self._form = QFormLayout()
         self._form.setSpacing(8)
         main_layout.addLayout(self._form)
 
@@ -224,14 +224,14 @@ class NodeInspectorView(QFrame):
         if node != self._current_node:
             return
         
-        if not roles or InspectorRoles.DataTypeRole in roles:
-            self._handle_inlets_reset(node)
+        # if not roles or InspectorRoles.DataTypeRole in roles:
+        #     self._handle_inlets_reset(node)
 
-        elif Qt.ItemDataRole.EditRole in roles:
-            for inlet in inlets:
-                self.__set_label_data(node, inlet, Qt.ItemDataRole.EditRole)
-                if inlet in self._editors:
-                    self._delegate.setEditorData(self._model, node, inlet, self._editors[inlet])
+        # elif Qt.ItemDataRole.EditRole in roles:
+        for inlet in inlets:
+            self.__set_label_data(node, inlet, Qt.ItemDataRole.EditRole)
+            if inlet in self._editors:
+                self._delegate.setEditorData(self._model, node, inlet, self._editors[inlet])
 
     def __set_label_data(self, node, inlet, role:Qt.ItemDataRole):
         if inlet in self._labels:

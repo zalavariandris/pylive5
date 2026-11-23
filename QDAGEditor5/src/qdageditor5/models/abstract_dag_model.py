@@ -327,13 +327,13 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     def links(self) -> Iterable[DirectionalLinkId]:
         pass
 
-    @abstractmethod
     def linkSource(self, link: DirectionalLinkId) -> tuple[NodeName,OutletName]:
-        pass
+        src, outlet, dst, inlet = link
+        return src, outlet
 
-    @abstractmethod
     def linkTarget(self, link: DirectionalLinkId) -> tuple[NodeName,InletName]:
-        pass
+        src, outlet, dst, inlet = link
+        return dst, inlet
 
     def _beginAddLinks(self, links: Iterable[DirectionalLinkId]) -> None:
         """Begin the process of adding multiple links at once.

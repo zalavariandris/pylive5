@@ -161,36 +161,40 @@ class StyledGraphNodeDelegate(QObject):
         style:QStyle = option.widget.style() if option.widget else QApplication.style()
         title_rect = labels[0].boundingRect(option)
         shape = QPainterPath()
-        shape.addRoundedRect(title_rect, 5, 5)
+        roundness = 5
+        shape.addRoundedRect(title_rect, roundness, roundness)
 
         # Style options and measured geometry both use node-local coordinates.
         option = QStyleOptionViewItem(option)
         option.rect = title_rect.toAlignedRect()
 
+        # paint inside
         painter.save()
-
+        painter.setClipPath(shape, Qt.ClipOperation.IntersectClip)
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, option.widget)
-        for label in labels[1:]:
-            
-            label.paint(painter, option)
+
         painter.restore()
 
-        # paint ouside
+        # paint outside
+        for label in labels[1:]:
+            label.paint(painter, option)
+
+        # paint inside
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setClipPath(shape, Qt.ClipOperation.IntersectClip)
         painter.setPen(QPen(option.palette.text().color(), 0)) # cosmetic pen: always 1 device pixel, even when scaled
-        painter.drawRoundedRect(title_rect, 5, 5)
+        painter.drawRoundedRect(title_rect, roundness, roundness)
         
         if option.state & QStyle.StateFlag.State_HasFocus:
             # draw a horizontal line at the top of the title label
             painter.setPen(QPen(option.palette.text().color(), 0))
-            padding = 2
+            padding = 1.5
             inner_rect = title_rect.adjusted(padding, padding, -padding, -padding)
             pen = QPen()
             pen.setColor(option.palette.placeholderText().color())
             # dashed line
             pen.setStyle(Qt.PenStyle.DashLine)
             painter.setPen(pen)
-            painter.drawRoundedRect(inner_rect, 3,3)
+            painter.drawRoundedRect(inner_rect, roundness-padding, roundness-padding)
         painter.restore()

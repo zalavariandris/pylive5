@@ -282,6 +282,7 @@ class DirectionalGraphView5(QFrame):
     def _on_inlet_data_changed(
         self, node: NodeName, inlets: Sequence[InletName], roles: Sequence[int],
     ) -> None:
+        #todo: consider repainting the inlet only instead of the whole node
         self._on_node_presentation_changed((node,))
 
     def _on_outlet_data_changed(
