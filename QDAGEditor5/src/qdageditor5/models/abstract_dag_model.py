@@ -102,7 +102,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     inletsReset = Signal(object) # NodeT
     inletHeaderDataChanged = Signal(object, tuple, list) # NodeT, tuple[InletT...], roles: list[int]
     inletDataChanged = Signal(object, tuple, list) # NodeT, tuple[InletT...], roles: list[int]
-    
+
     outletsReset = Signal(object) # NodeT
 
     linksAboutToBeAdded = Signal(tuple) # list[DirectionalLinkId]
@@ -114,6 +114,8 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     
     modelAboutToBeReset = Signal()
     modelReset = Signal()
+
+    EMPTY = None
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent=parent)
