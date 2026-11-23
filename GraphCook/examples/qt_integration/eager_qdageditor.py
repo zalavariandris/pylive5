@@ -1,24 +1,29 @@
-import builtins
-from enum import IntEnum
-import inspect
+
 from textwrap import dedent
-from typing import Callable, Iterable, Any, Protocol, TypedDict, cast
+from typing import Iterable, Any
 
-
-import bidict
 from graphcook.eager_observable_engine import (
     InletSignature,
     OperatorHandle, 
     OperatorSignature, 
     NodeStatus,
     ProviderStatus,
-    GraphChange
+    GraphChange,
+    NodeId, 
+    EagerEngineChange, 
+    DirtyStatus, 
+    RunningStatus, 
+    SucceededStatus, 
+    FailedStatus,
+    EagerEngine,
 )
 
-from graphcook.eager_observable_engine import EagerEngine
+from qdageditor5.core.inspector_roles import InspectorRoles
 from qdageditor5.core.item_data_roles import NodeDataRole
-from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
+from qdageditor5.views.node_inspector_view import NodeInspectorView
+
+from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel, 
     CellIdx,
@@ -28,16 +33,31 @@ from qdageditor5.models.abstract_dag_model import (
     OutletName
 )
 
-from qtpy.QtCore import QPointF, QTimer, Qt, QAbstractListModel, QSignalBlocker, Signal, Property
-from qtpy.QtWidgets import QAbstractScrollArea, QApplication, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QGraphicsColorizeEffect, QGraphicsEffect, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMenuBar, QPlainTextEdit, QSizePolicy, QSpinBox, QSplitter, QStackedLayout, QStatusBar, QVBoxLayout, QWidget
-from graphcook.eager_observable_engine import (
-    NodeId, EagerEngineChange, DirtyStatus, RunningStatus, SucceededStatus, FailedStatus,
+from qtpy.QtCore import (
+    QPointF, 
+    QTimer, 
+    Qt, 
+    QAbstractListModel
+)
+
+from qtpy.QtWidgets import (
+    QAbstractScrollArea, 
+    QApplication, QDialog, 
+    QGridLayout, 
+    QListView, 
+    QMainWindow, 
+    QMenu, 
+    QMenuBar, 
+    QSizePolicy, 
+    QSplitter, 
+    QStatusBar, 
+    QVBoxLayout, 
+    QWidget
 )
 
 from myqtx.selection_dialog_view import SelectionDialog
 from myqtx.widgets.displaywidget import DisplayWidget
 from QtScriptEditorAdvanced import ScriptEditAdvanced
-from qtpy.QtCore import SignalInstance, QObject
 
 
 ############
@@ -111,6 +131,7 @@ from qtpy.QtCore import SignalInstance, QObject
 # MODELS #
 ##########
 class EagerGraphModel(AbstractDAGModel):
+    EMPTY = None
     def __init__(self, engine: EagerEngine, parent=None):
         super().__init__(parent=parent)
         self._engine = engine
@@ -271,19 +292,19 @@ class EagerGraphModel(AbstractDAGModel):
             case Qt.ItemDataRole.DisplayRole:
                 node_id = self.mapToSource(node)
                 inputs = self._engine.attributes(node_id)
-                return str(inputs.get(inlet, EMPTY))
+                return str(inputs.get(inlet, self.EMPTY))
 
             case Qt.ItemDataRole.EditRole:
                 node_id = self.mapToSource(node)
                 inputs = self._engine.attributes(node_id)
-                return inputs.get(inlet, EMPTY)
+                return inputs.get(inlet, self.EMPTY)
             
             case InspectorRoles.DataTypeRole:
                 node_data = self._engine.attributes(self.mapToSource(node))
                 operator_handle: OperatorHandle = node_data['__operator__']
                 operator_signature: OperatorSignature = self._engine.operator_signature(operator_handle)
                 parameter = operator_signature.inlets.get(inlet) if operator_signature is not None else None
-                return parameter.type if parameter is not None else EMPTY
+                return parameter.type if parameter is not None else self.EMPTY
             case _:
                 return None
 
@@ -349,7 +370,7 @@ class EagerGraphModel(AbstractDAGModel):
     def setInletData(self, node: NodeName, inlet: InletName, value: Any, role: int) -> bool:
         if role == Qt.ItemDataRole.EditRole:
             try:
-                if value is EMPTY:
+                if value is self.EMPTY:
                     self._engine.unset(self.mapToSource(node), str(inlet))
                     return True
                 else:
@@ -408,346 +429,6 @@ class OperatorListModel(QAbstractListModel):
 # VIEWS #
 #########
 
-class InspectorRoles(IntEnum):
-    DataTypeRole = Qt.ItemDataRole.UserRole + 100
-    DefaultValueRole = Qt.ItemDataRole.UserRole + 101
-
-from typing import Any
-
-from qtpy.QtCore import Property, Signal
-from qtpy.QtWidgets import QLineEdit
-from qtpy.QtWidgets import QVBoxLayout, QWidget
-
-from qtpy.QtGui import QContextMenuEvent
-
-from qtpy.QtCore import QEvent, QObject
-from qtpy.QtGui import QContextMenuEvent
-from qtpy.QtGui import QAction
-
-import inspect
-EMPTY = inspect.Parameter.empty
-
-from qtpy.QtWidgets import QGraphicsOpacityEffect
-class GraphInspectorDelegate(QObject):
-    def __init__(self, parent:QObject|None=None):
-        super().__init__(parent=parent)
-        self._model = None
-
-    def createEditor(self, model:AbstractDAGModel, node: NodeName, inlet: InletName) -> QWidget:
-        inlet_value = model.inletData(node, inlet, Qt.ItemDataRole.EditRole)
-        is_connected = bool(list(model.inLinks(node, inlet)))
-
-        # if is_connected:
-        #     return QLabel("(Linked)")
-        
-        datatype = model.inletData(node, inlet, InspectorRoles.DataTypeRole)
-
-        # fallback
-        if datatype is EMPTY or datatype is Any:
-            datatype = type(inlet_value)
-
-        # match editor based on datatype
-        editor:QWidget|None = None
-        if datatype is str:
-            editor = QLineEdit()
-
-        if datatype is int:
-            editor = QSpinBox()
-            editor.setRange(-(2**31), 2**31 - 1)
-            editor.clear()
-
-        if datatype is float:
-            editor = QDoubleSpinBox()
-            editor.setRange(-999, 999)
-            editor.clear()
-
-        if editor is None:
-            # fallback to display the data
-            editor = QLineEdit()
-            editor.setReadOnly(True)
-
-        # add the dim effect to the editors
-        opacity_effect = QGraphicsOpacityEffect(editor)
-        opacity_effect.setOpacity(0.15)
-        opacity_effect.setEnabled(False)
-        colorize_effect = QGraphicsColorizeEffect(editor)
-        colorize_effect.setColor(Qt.GlobalColor.gray)
-        colorize_effect.setStrength(0.5)
-        colorize_effect.setEnabled(False)
-        editor.setGraphicsEffect(colorize_effect)
-        return editor
-
-    def setEditorData(self, model:AbstractDAGModel, node: NodeName, inlet: InletName, widget: QWidget) -> None:
-        value = model.inletData(node, inlet, Qt.ItemDataRole.EditRole)
-        is_connected = bool(list(model.inLinks(node, inlet)))
-        is_empty = value is EMPTY
-        effect = widget.graphicsEffect()
-        assert isinstance(effect, QGraphicsEffect)
-        effect.setEnabled(is_connected or is_empty)
-
-        with QSignalBlocker(widget):
-            metaobject = widget.metaObject()
-            if metaobject is None:
-                return
-
-            user_property = metaobject.userProperty()
-            if not user_property.isValid():
-                return
-
-            if is_connected:
-                widget.setEnabled(False)
-            else:
-                widget.setEnabled(True)
-
-            if is_empty:
-                try:
-                    widget.clear()
-                except AttributeError:
-                    pass
-            else:
-                # write the value to the widget's user property
-                user_property.write(widget, value)
-
-    def setModelData(self, model:AbstractDAGModel, node: NodeName, key: InletName, widget: QWidget) -> None:
-        metaobject = widget.metaObject()
-        if metaobject is None:
-            return
-        
-        user_property = metaobject.userProperty()
-        if not user_property.isValid():
-            return
-        
-        new_value = user_property.read(widget)
-        model.setInletData(node, key, new_value, Qt.ItemDataRole.EditRole)
-
-
-from bidict import bidict
-class GraphInspectorView(QFrame):
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        self._model: AbstractDAGModel | None = None
-        self._current_node: NodeName | None = None
-        self._model_connections: list[tuple[SignalInstance, Callable[..., None]]] = []
-        self._editor_connections: list[tuple[SignalInstance, Callable[..., None]]] = []
-        self._delegate = GraphInspectorDelegate(self)
-        self._editors: dict[InletName, QWidget] = {}
-        self._labels: bidict[InletName, QWidget] = bidict()
-
-        # Layout
-        main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(16)
-
-        ## heading
-        self._heading = QFrame(self)
-        self._heading.setFrameShape(QFrame.Shape.NoFrame)
-        # self._heading.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
-        
-        heading_layout =QVBoxLayout(self._heading)
-        heading_layout.setContentsMargins(0,0,0,0)
-        heading_layout.setSpacing(2)
-        from qtpy.QtGui import QFont
-
-        self._title = QLabel("- no selection -", self._heading)
-        font = self._title.font()
-        font.setBold(True)
-        font.setPointSize(int(font.pointSize() * 1.25))
-        self._title.setFont(font)
-        heading_layout.addWidget(self._title)
-
-        self._subtitle = QLabel("- info -", self._heading)
-        font = self._subtitle.font()
-        font.setPointSize(max(1, font.pointSize() - 1))
-        self._subtitle.setFont(font)
-        heading_layout.addWidget(self._subtitle)
-
-        main_layout.addWidget(self._heading)
-
-        separator = QFrame(self)
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        main_layout.addWidget(separator)
-        ## Body
-        self._form = QFormLayout(self)
-        self._form.setSpacing(8)
-        main_layout.addLayout(self._form)
-
-        main_layout.addStretch()
-
-    def setModel(self, model: AbstractDAGModel | None) -> None:
-        if model is self._model:
-            return
-        for signal, slot in self._model_connections:
-            signal.disconnect(slot)
-        self._model_connections.clear()
-        self._clear_form()
-        self._current_node = None
-        self._model = model
-
-        if model is not None:
-            self._model_connections = [
-                (model.nodesRemoved, self._handle_nodes_removed),
-                (model.inletsReset, self._handle_inlets_reset),
-                (model.inletDataChanged, self._handle_inlet_data_change),
-            ]
-            for signal, slot in self._model_connections:
-                signal.connect(slot)
-
-    def setCurrentNode(self, node: NodeName | None) -> None:
-        if node == self._current_node:
-            return
-        
-        self._clear_form()
-        self._current_node = node
-
-        if node is not None:
-            assert self._model is not None
-            self._title.setText(self._model.nodeHeaderData(node, Qt.ItemDataRole.DisplayRole))
-            self._subtitle.setText(self._model.nodeData(node, Qt.ItemDataRole.DisplayRole))
-            self._build_form()
-
-    def _clear_form(self) -> None:
-        for signal, handler in self._editor_connections:
-            signal.disconnect(handler)
-        self._editor_connections.clear()
-        self._editors.clear()
-        self._labels.clear()
-        while self._form.rowCount():
-            self._form.removeRow(0)
-
-    def _build_form(self) -> None:
-        node = self._current_node
-        assert self._model is not None
-        assert node is not None
-
-        for inlet_name in self._model.inlets(node):
-            # create label
-            label = QLabel(str(inlet_name))
-            self._labels[inlet_name] = label
-            label.installEventFilter(self)
-
-            # create editor
-            editor = self._delegate.createEditor(self._model, node, inlet_name)
-            self._editors[inlet_name] = editor
-            self._form.addRow(label, editor)
-
-            # Initialize before connecting signals.
-            self.__set_label_data(node, inlet_name, Qt.ItemDataRole.EditRole)
-            self._delegate.setEditorData(self._model, node, inlet_name, self._editors[inlet_name])
-
-            # bind user property if available
-            user_property = editor.metaObject().userProperty()
-            if user_property.isValid() and user_property.hasNotifySignal():
-                signal_name = bytes(user_property.notifySignal().name()).decode()
-                signal = getattr(editor, signal_name)
-
-                def handle_change(
-                    *args: Any,
-                    node: NodeName = node,
-                    inlet: InletName = inlet_name,
-                    widget: QWidget = editor,
-                ) -> None:
-                    self._delegate.setModelData(self._model, node, inlet, widget)
-
-                signal.connect(handle_change)
-                self._editor_connections.append((signal, handle_change))
-
-    def eventFilter(self, a0: QObject|None, a1: QEvent|None) -> bool:
-        assert self._model is not None
-        watched = a0
-        event = a1
-        
-        if watched is not None and event is not None and event.type() == QEvent.Type.ContextMenu:
-
-            # create context menu
-            if watched not in self._labels.inverse:
-                return False
-            label = cast(QLabel, watched)
-            
-            menu = QMenu(label)
-            inlet_name = self._labels.inverse[label]
-            node_name = self._current_node
-
-            # unset
-            is_set = self._model.inletData(node_name, inlet_name, Qt.ItemDataRole.EditRole) != EMPTY
-            unset_action = QAction("Unset", menu)
-            unset_action.setEnabled(is_set)
-            def set_inlet_empty():
-                assert self._model is not None
-                self._model.setInletData(node_name, inlet_name, EMPTY, Qt.ItemDataRole.EditRole)
-            unset_action.triggered.connect(set_inlet_empty)
-            menu.addAction(unset_action)
-
-            # disconnect
-            is_connected = bool(list(self._model.inLinks(node_name, inlet_name)))
-            disconnect_action = QAction("Disconnect", menu)
-            disconnect_action.setEnabled(is_connected)
-            def disconnect_inlet():
-                assert self._model is not None
-                links = list(self._model.inLinks(node_name, inlet_name))
-                self._model.removeLinks(links)
-            disconnect_action.triggered.connect(disconnect_inlet)
-            menu.addAction(disconnect_action)
-
-            # show context menu
-            event.accept()
-            try:
-                menu.exec(event.globalPos())
-            finally:
-                menu.deleteLater()
-
-            return True
-
-        return super().eventFilter(watched, event)
-
-    def _handle_nodes_removed(self, nodes: tuple[NodeName, ...]) -> None:
-        if self._current_node in nodes:
-            self.setCurrentNode(None)
-
-    def _handle_inlets_reset(self, node: NodeName) -> None:
-        if node == self._current_node:
-            self._clear_form()
-            self._build_form()
-
-    def _handle_inlet_data_change(
-        self, node: NodeName, inlets: tuple[InletName, ...], roles: list[int],
-    ) -> None:
-        assert self._model is not None
-
-        if node != self._current_node:
-            return
-        
-        if not roles or InspectorRoles.DataTypeRole in roles:
-            self._handle_inlets_reset(node)
-
-        elif Qt.ItemDataRole.EditRole in roles:
-            for inlet in inlets:
-                self.__set_label_data(node, inlet, Qt.ItemDataRole.EditRole)
-                if inlet in self._editors:
-                    self._delegate.setEditorData(self._model, node, inlet, self._editors[inlet])
-
-    def __set_label_data(self, node, inlet, role:Qt.ItemDataRole):
-        if inlet in self._labels:
-            is_empty = self._model.inletData(node, inlet, Qt.ItemDataRole.EditRole) == EMPTY
-            is_connected = bool(list(self._model.inLinks(node, inlet)))
-            # Update the label to reflect the inlet's state
-            # icons = '✏️', '🌫️','🔗'
-            icons = '🔵', '⚪','🔗'
-            # icons = '◯','●','🔗'
-            # icons = "-", "+", "/"
-            # icons = '🔵', '⚪', '🔘'
-            # icons = '■', '□', '▣'
-            # icons = '■', '▧', '▰'
-            # icons = '◈', '◇', '↔'
-            # icons = '⬤', '◯', '◉'
-
-            label = cast(QLabel, self._labels[inlet])
-            if is_connected:
-                label.setText(f"{icons[2]} {inlet}")
-            elif is_empty:
-                label.setText(f"{icons[1]} {inlet}")
-            else:
-                label.setText(f"{icons[0]} {inlet}")
 
 class ProviderView(QWidget):
     def __init__(self, engine: EagerEngine, parent=None):
@@ -1029,7 +710,7 @@ class EngineWindow(QMainWindow):
         splitter.addWidget(self.editor)
 
         # - inspector
-        self.inspector = GraphInspectorView()
+        self.inspector = NodeInspectorView()
         self.inspector.setModel(self.model)
         self.graphselection.currentNodeChanged.connect(lambda current, prev: 
             self.inspector.setCurrentNode(self.model.mapToSource(current)))

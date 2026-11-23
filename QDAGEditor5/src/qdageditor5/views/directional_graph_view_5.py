@@ -57,7 +57,7 @@ from qtpy.QtWidgets import (
     QAction
 )
 
-from .styled_node_delegate import StyledNodeDelegate
+from .styled_graph_node_delegate import StyledGraphNodeDelegate
 
 from qdageditor5.utils import geo
 
@@ -148,7 +148,7 @@ class DirectionalGraphView5(QFrame):
         self._model_connections = []
         self._selection_model: GraphSelectionModel | None = None
         self._selection_model_connections = []
-        self._nodes_delegate = StyledNodeDelegate()
+        self._nodes_delegate = StyledGraphNodeDelegate()
 
         # Positions for nodes whose model does not provide one.
         self._node_positions: dict[NodeName, QPointF] = {}

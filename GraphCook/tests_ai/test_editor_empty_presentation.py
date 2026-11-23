@@ -12,7 +12,7 @@ from qtpy.QtWidgets import (
 
 from graphcook.eager_observable_engine import EagerEngine, NodeId, OperatorHandle
 from GraphCook.examples.qt_integration.eager_qdageditor import (
-    EagerEditorWrapper, EagerGraphModel, GraphInspectorView,
+    EagerEditorWrapper, EagerGraphModel, NodeInspectorView,
 )
 
 
@@ -122,7 +122,7 @@ def test_delegate_unsets_preserves_values_and_commits_edits(qtbot: QtBot) -> Non
         engine._graph_config.add_node(source, __operator__=OperatorHandle("source"))
         engine._graph_config.add_node(target, __operator__=OperatorHandle("target"), text="kept")
         model = EagerGraphModel(engine)
-        view = GraphInspectorView()
+        view = NodeInspectorView()
         qtbot.addWidget(view)
         view.setModel(model)
         view.setCurrentNode(target)

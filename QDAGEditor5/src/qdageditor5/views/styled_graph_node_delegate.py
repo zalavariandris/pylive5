@@ -108,7 +108,7 @@ def _bounding_rect(rects: list[QRectF]) -> QRectF:
     return united_rect
 
 
-class StyledNodeDelegate(QObject):
+class StyledGraphNodeDelegate(QObject):
     def __init__(self, parent=None) -> None:
         super().__init__(parent=parent)
 

@@ -18,7 +18,7 @@ from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.abstract_dag_model import AbstractDAGModel, NodeName
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
-from qdageditor5.views.styled_node_delegate import StyledNodeDelegate
+from qdageditor5.views.styled_graph_node_delegate import StyledGraphNodeDelegate
 
 
 def make_model() -> PyGraphRTGraphModel:
@@ -229,7 +229,7 @@ def test_view_owns_geometry_returned_by_a_custom_delegate(
     local_shape.addEllipse(QRectF(-40, -15, 80, 30))
     painted_nodes: list[NodeName] = []
 
-    class CustomDelegate(StyledNodeDelegate):
+    class CustomDelegate(StyledGraphNodeDelegate):
         def _nodeLocalRect(
             self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName,
         ) -> QRectF:
@@ -394,7 +394,7 @@ def test_inlet_value_can_resize_node_and_move_its_outlet_and_link(
     second = model.mapToSource("second")
     set_inputs(second, value=40)
 
-    class ValueSizedDelegate(StyledNodeDelegate):
+    class ValueSizedDelegate(StyledGraphNodeDelegate):
         def _nodeLocalShape(
             self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName,
         ) -> QPainterPath:
