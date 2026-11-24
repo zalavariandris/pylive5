@@ -685,8 +685,8 @@ class EngineWindow(QMainWindow):
         )
         # self.operator_list.setFixedWidth(180)
         self.operator_list.setResizeMode(QListView.ResizeMode.Adjust)
-        self.operator_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents);
-        self.operator_list.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding);
+        self.operator_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        self.operator_list.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
         self.operator_list_model = OperatorListModel(self.engine)
         self.operator_list.setModel(self.operator_list_model)
         splitter.addWidget(self.operator_list)

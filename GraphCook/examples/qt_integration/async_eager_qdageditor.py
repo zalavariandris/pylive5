@@ -1,4 +1,5 @@
 import asyncio
+from textwrap import dedent
 from typing import Iterable, Any
 from qasync import QEventLoop, asyncSlot
 from qdageditor5.core.item_data_roles import NodeDataRole
@@ -18,7 +19,7 @@ from qtpy.QtGui import QColor
 
 from qdageditor5.views.node_inspector_delegate import NodeInspectorDelegate
 from myqtx.widgets.coloredit import ColorEdit
-from qtpy.QtWidgets import QDialog, QListView, QSplitter, QWidget
+from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QListView, QSizePolicy, QSplitter, QWidget
 
 from typing import Any, Callable, Iterable, Mapping
 
@@ -275,40 +276,35 @@ class Worker(Thread):
         self._tasks = Queue()
         self.cache = MemoryCache()
 
-    def run(self):
-        # init
+    def run(self) -> None:
+        while True:
+            task = self._tasks.get()
 
-        # process tasks
-        try:
-            while True:
-                # wait for the next task
-                task = self._tasks.get()
+            if task is None:
+                break
 
-                if task is None:
-                    break
+            operation, future, *args = task
 
-                operation, future, *args = task
+            if not future.set_running_or_notify_cancel():
+                continue
 
-                if not future.set_running_or_notify_cancel():
-                    continue
+            match operation:
+                case "execute_script":
+                    worker_logger.info("Executing script")
 
-                match operation:
-                    case 'execute_script':
-                        worker_logger.info("Executing script")
+                    try:
+                        operators = _execute_provider(args[0])
+                    except BaseException as exc:
+                        worker_logger.exception("Script execution failed")
+                        future.set_exception(exc)
+                    else:
+                        worker_logger.info("Loaded %d operators", len(operators))
+                        future.set_result(operators)
 
-                        try:
-                            operators = _execute_provider(args[0])
-                            
-                        except BaseException as exc:
-                            worker_logger.exception("Script execution failed")
-                            future.set_exception(exc)
-                        else:
-                            worker_logger.info("Loaded %d operators", len(operators))
-                            future.set_result(operators)
-                    case _:
-                        future.set_exception(RuntimeError(f"Unknown operation: {operation}"))
-        finally:
-            self.close()
+                case _:
+                    future.set_exception(
+                        RuntimeError(f"Unknown operation: {operation}")
+                    )
 
     def close(self):
         # signal the thread to exit
@@ -320,9 +316,6 @@ class Worker(Thread):
         future = Future()
         self._tasks.put(('execute_script', future, script))
         return await asyncio.wrap_future(future)
-
-    def __del__(self):
-        self.close()
 
 from QtScriptEditorAdvanced import ScriptEditAdvanced
 class Window(QMainWindow):
@@ -338,11 +331,29 @@ class Window(QMainWindow):
         self.script_editor = ScriptEditAdvanced()
         script_document = self.script_editor.document()
         assert script_document is not None
-        script_document.contentsChanged.connect(self._handle_script_changed)
+        script_document.setPlainText(dedent("""\
+        def the_name():
+            return 'Mása'
+        def the_greeting():
+            return 'Hey'
+
+        def hello_world(name:str, greeting:str="Hello"):
+            return f"{greeting}, {name}!"
+        """))
+        
+        script_document.contentsChanged.connect(self.submit_execute_script)
         splitter.addWidget(self.script_editor)
-        operators_list_view = QListView()
-        operators_list_view.setModel(self.operator_list_model)
-        splitter.addWidget(operators_list_view)
+        self.operator_list = QListView()
+        self.operator_list.setSizePolicy(
+            QSizePolicy.Policy.Minimum, 
+            QSizePolicy.Policy.Expanding
+        )
+        # self.operator_list.setFixedWidth(180)
+        self.operator_list.setResizeMode(QListView.ResizeMode.Adjust)
+        self.operator_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents);
+        self.operator_list.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding);
+        self.operator_list.setModel(self.operator_list_model)
+        splitter.addWidget(self.operator_list)
         self.editor1 = DirectionalGraphView5()
         splitter.addWidget(self.editor1)
 
@@ -380,7 +391,7 @@ class Window(QMainWindow):
         self.worker.start()
 
     @asyncSlot()
-    async def _handle_script_changed(self) -> None:
+    async def submit_execute_script(self) -> None:
         document = self.script_editor.document()
         if document is None:
             return
@@ -429,6 +440,7 @@ if __name__ == "__main__":
 
     editor = Window()
     editor.show()
+    loop.call_soon(editor.submit_execute_script)
 
     with loop:
         try:
