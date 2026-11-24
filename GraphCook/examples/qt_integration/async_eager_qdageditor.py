@@ -11,7 +11,7 @@ from qdageditor5.models.abstract_dag_model import (
 )
 
 import networkx as nx
-from qtpy.QtCore import QPointF, Qt, QObject
+from qtpy.QtCore import QAbstractListModel, QPointF, Qt, QObject
 from qtpy.QtGui import QColor
 
 
@@ -42,6 +42,26 @@ from graphcook.eager_observable_engine import (
     NodeStatus,
     ProviderStatus
 )
+
+class OperatorListModel(QAbstractListModel):
+    def __init__(self, functions: Iterable[Callable], parent=None):
+        super().__init__(parent=parent)
+        self._funcs = {OperatorHandle(func.__name__): func for func in functions}
+
+    def rowCount(self, parent=None) -> int:
+        return len(self._funcs)
+
+    def data(self, index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        if not index.isValid():
+            return None
+        match role:
+            case Qt.ItemDataRole.DisplayRole:
+                all_operators = list(self._funcs.keys())
+                return all_operators[index.row()].name
+            
+            case Qt.ItemDataRole.EditRole:
+                all_operators = list(self._funcs.keys())
+                return all_operators[index.row()]
 
 
 class AsyncEagerDGraphModel(AbstractDAGModel):
@@ -235,7 +255,15 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.model = AsyncEagerDGraphModel()
-        self.operator_list_model = QStringListModel(["A", "B", "C"])
+        def the_name():
+            return "Mása"
+        def the_greeting():
+            return "Hey"
+
+        def hello_world(name: str, greeting: str="Hello"):
+            return f"{greeting}, {name}!"
+        self.operator_list_model = OperatorListModel([
+            the_name,the_greeting,hello_world])
         self.selection = GraphSelectionModel(self.model)
         splitter = QSplitter()
         self.setCentralWidget(splitter)
@@ -259,8 +287,6 @@ class Window(QMainWindow):
         self.selection.currentNodeChanged.connect(
             lambda current, previous: self.inspector.setCurrentNode(current))
 
-        
-
     def new_node(self, scene_pos, source, editor):
         if scene_pos is None:
             viewport_center = QPointF(editor.contentsRect().center())
@@ -270,8 +296,8 @@ class Window(QMainWindow):
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
-                operator_name = selected_index.data(Qt.ItemDataRole.DisplayRole)
-                new_node = self.model.addNode(operator_name)
+                operator_handle = selected_index.data(Qt.ItemDataRole.EditRole)
+                new_node = self.model.addNode(operator_handle)
                 editor.setNodePosition(new_node, scene_pos)
 
         finally:
