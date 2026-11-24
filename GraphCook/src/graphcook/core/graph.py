@@ -40,7 +40,8 @@ class MutableGraphProtocol(
     def remove_node(self, node: NodeT) -> None: ...
     def add_link(self, source: NodeT, target: NodeT, inlet: str) -> None: ...
     def remove_link(self, source: NodeT, target: NodeT, inlet: str) -> None: ...
-    def set(self, node: NodeT, **attributes: object) -> None: ...
+    def set(self, node: NodeT, name: str, value: object) -> None: ...
+    def update(self, node: NodeT, /, **attributes: object) -> None: ...
     def unset(self, node: NodeT, name: str) -> None: ...
 
 
@@ -101,7 +102,7 @@ class Graph(Generic[NodeT]):
     """Store node dictionaries and one incoming link per (target, inlet).
 
     Incoming dictionaries are shallow-copied. attributes() returns a live,
-    read-only mapping; edit attributes through set() and unset(). Nested
+    read-only mapping; edit attributes through set(), update(), and unset(). Nested
     values remain shared and may be mutable. dict describes input data,
     including TypedDict schemas; per-key edits do not validate that schema.
     """
@@ -198,8 +199,12 @@ class Graph(Generic[NodeT]):
         """Return a live, shallow read-only view of the node's attributes."""
         return MappingProxyType(self._nodes[node])
 
-    def set(self, node: NodeT, **attributes: object) -> None:
-        """Update the node's dictionary with keyword attributes."""
+    def set(self, node: NodeT, name: str, value: object) -> None:
+        """Assign one attribute, preserving the node's other attributes."""
+        self.update(node, **{name: value})
+
+    def update(self, node: NodeT, /, **attributes: object) -> None:
+        """Merge keyword attributes into the node's existing dictionary."""
         self._nodes[node].update(attributes)
 
     def unset(self, node: NodeT, name: str) -> None:

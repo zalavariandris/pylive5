@@ -42,9 +42,9 @@ def test_executor_starts_once_and_works_without_engine() -> None:
         assert set(executor.operators()) == {OperatorHandle("source")}
         signature = executor.operator_signature(OperatorHandle("source"))
         assert signature is not None
-        assert signature.inlets["value"].type is int
+        assert signature.inlets["value"].annotation is int
         assert executor.evaluate_node(node)[node] == 3
-        graph.set(node, value=4)
+        graph.update(node, value=4)
         assert isinstance(executor.nodes_status(node), DirtyStatus)
         assert executor.evaluate_node(node)[node] == 4
     finally:
@@ -65,7 +65,7 @@ def test_facade_forwards_sparse_changes_and_reads_executor_metadata() -> None:
         engine.set_script('def source(value: str = "new"): return value')
         assert sum("script" in event for event in events) == 1
         assert sum("provider_status" in event for event in events) == 1
-        assert engine.attributes(node)["__operator__"].inlets["value"].type is str
+        assert engine.attributes(node)["__operator__"].inlets["value"].annotation is str
         assert engine.evaluate_node(node)[node] == "new"
 
         target = engine.create_node("source")
@@ -91,12 +91,12 @@ def test_attribute_and_script_changes_execute_effect_once() -> None:
         engine.effect(node)
         engine.effect(node)
         assert engine.evaluate_node(node)[node] == (1, 1)
-        engine.set(node, value=2)
+        engine.update(node, value=2)
         assert engine.evaluate_node(node)[node] == (2, 2)
         engine.set_script(script + '\n# edited\n')
         assert engine.evaluate_node(node)[node] == (2, 1)
         engine.remove_effect(node)
-        engine.set(node, value=3)
+        engine.update(node, value=3)
         assert isinstance(engine.nodes_status(node), DirtyStatus)
         assert engine.evaluate_node(node)[node] == (3, 2)
 
@@ -140,7 +140,7 @@ def test_operator_index_tracks_operator_reassignment() -> None:
     with engine_for('def first(): return 1\ndef second(): return 2') as engine:
         node = engine.create_node("first")
         engine.effect(node)
-        engine.set(node, __operator__=OperatorHandle("second"))
+        engine.update(node, __operator__=OperatorHandle("second"))
         assert engine.evaluate_node(node)[node] == 2
         engine.set_script('def first(): return 10\ndef second(): return 20')
         status = engine.nodes_status(node)
@@ -159,7 +159,7 @@ def test_dirty_listener_cannot_read_stale_cache() -> None:
                 results.append(engine.evaluate_node(node)[node])
 
         engine.listen(on_change)
-        engine.set(node, value=2)
+        engine.update(node, value=2)
         assert results == [2]
 
 
@@ -189,7 +189,7 @@ def test_close_unsubscribes_facade_and_executor_idempotently() -> None:
         events.clear()
         engine.close()
         engine.close()
-        engine.set(node, extra=2)
+        engine.update(node, extra=2)
         engine.set_script('def source(): return 3')
         assert events == []
         assert engine._graph_config._listeners == []

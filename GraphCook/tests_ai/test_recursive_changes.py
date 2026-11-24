@@ -101,7 +101,7 @@ def test_graph_events_replay_membership_attributes_and_links() -> None:
     replay()
     graph.add_link("a", "b", "value")
     replay()
-    graph.set("a", greeting="Hey", enabled=False)
+    graph.update("a", greeting="Hey", enabled=False)
     assert events[-1]["nodes"]["updated"]["a"] == {
         "kind": "map",
         "added": {"enabled": False},
@@ -123,14 +123,14 @@ def test_index_handles_nested_attribute_changes() -> None:
     index = GraphAttributeIndex(graph, "kind", str)
     graph.listen(index.update)
     graph.add_node("a", kind="one")
-    graph.set("a", unrelated=1)
+    graph.update("a", unrelated=1)
     assert index.nodes_with("one") == frozenset({"a"})
-    graph.set("a", kind="two")
+    graph.update("a", kind="two")
     assert index.nodes_with("one") == frozenset()
     assert index.nodes_with("two") == frozenset({"a"})
     graph.unset("a", "kind")
     assert index.value_of("a") is None
-    graph.set("a", kind="three")
+    graph.update("a", kind="three")
     graph.remove_node("a")
     assert index.nodes_with("three") == frozenset()
     index.update({})
@@ -145,7 +145,7 @@ def test_engine_invalidates_cache_for_nested_attribute_changes() -> None:
         assert events[0]["nodes_status"]["kind"] == "map"
         assert node in events[0]["nodes_status"]["added"]
         assert engine.evaluate_node(node)[node] == "Hello"
-        engine.set(node, greeting="Hey")
+        engine.update(node, greeting="Hey")
         assert engine.evaluate_node(node)[node] == "Hey"
         engine.unset(node, "greeting")
         assert engine.evaluate_node(node)[node] == "Hello"

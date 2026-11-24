@@ -148,7 +148,7 @@ def test_delegate_unsets_preserves_values_and_commits_edits(qtbot: QtBot) -> Non
         wrapper._wrapped.setText("")
         assert engine.attributes(target)["text"] == ""
         assert not wrapper.isEmpty()
-        engine.set(target, text="external")
+        engine.update(target, text="external")
         assert wrapper.getValue() == "external"
         assert edits == ["edited", ""]
 

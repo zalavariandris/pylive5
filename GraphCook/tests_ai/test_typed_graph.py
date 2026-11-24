@@ -75,7 +75,7 @@ def test_default_dictionary_api_and_keyword_names_are_preserved() -> None:
     graph.add_node("explicit", empty)
     assert graph.attributes("empty") == {}
     assert graph.attributes("explicit") is empty
-    graph.set("keywords", data=4, key=5, value=6)
+    graph.update("keywords", data=4, key=5, value=6)
     graph.set("keywords", "optional", None)
     graph.unset("keywords", "key")
     assert graph.attributes("keywords") == {"data": 4, "value": 6, "optional": None}
@@ -107,7 +107,7 @@ def test_observable_dictionary_api_still_emits_attribute_deltas() -> None:
     events: list[GraphChange[str]] = []
     graph.listen(events.append)
 
-    graph.set("node", label="New", added=2)
+    graph.update("node", label="New", added=2)
     change = events[-1].attributes["node"]
     assert change.updated["label"].old == "Old"
     assert change.updated["label"].new == "New"
@@ -181,6 +181,6 @@ def test_invalid_attribute_edits_do_not_mutate_or_notify(
     with pytest.raises(KeyError):
         graph.unset("node", "missing")
     with pytest.raises(KeyError):
-        graph.set("missing", label="New")
+        graph.update("missing", label="New")
     assert graph.attributes("node") == {"label": "Before"}
     assert events == []

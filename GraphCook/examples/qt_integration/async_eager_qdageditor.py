@@ -1,6 +1,7 @@
 import asyncio
 from textwrap import dedent
 from typing import Iterable, Any, cast
+from graphcook.observable_graph import GraphChange, ObservableGraph
 from qasync import QEventLoop, asyncSlot
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.abstract_dag_model import (
@@ -53,7 +54,9 @@ from graphcook.eager_observable_engine import (
     _execute_provider, 
     _execute_graph,
     NodeStatus,
-    ProviderStatus
+    ProviderStatus,
+    NodeExecutionError,
+    ExecutionResult
 )
 from graphcook.eager_observable_engine import OperatorSignature
 
@@ -61,7 +64,7 @@ import logging
 
 from qtpy.QtCore import Signal, Slot
 from qtpy.QtWidgets import QPlainTextEdit
-
+from QtScriptEditorAdvanced import ScriptEditAdvanced
 
 worker_logger = logging.getLogger("graphcook.worker")
 
@@ -94,12 +97,12 @@ class QtLogHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
-
+NODE_STATUS_ROLE = Qt.ItemDataRole.UserRole+647 #todo: AbstractDAGModel.core has to have a GraphItemUserRole. also, i think we should support multiple data for nodes. like the cells.
 class AsyncEagerGraphModel(AbstractDAGModel):
-    def __init__(self, parent: QObject|None = None):
+    def __init__(self, graph:ObservableGraph[NodeId], parent: QObject|None = None):
         super().__init__(parent=parent)
-        self._graph = Graph[NodeId]()
-        self._node_status: Mapping[NodeId, NodeStatus] = {}
+        self._config_graph = graph
+        self._node_status: dict[NodeName, NodeStatus] = dict()
 
     # Adapter
     def mapFromSource(self, node: 'NodeId', inlet: InletName|None = None)->NodeName|tuple[NodeName, InletName]:
@@ -122,14 +125,14 @@ class AsyncEagerGraphModel(AbstractDAGModel):
 
     # READ
     def nodes(self) -> Iterable[NodeName]:
-        for node in self._graph.nodes():
+        for node in self._config_graph.nodes():
             yield node
 
     def addNode(self, operator: OperatorSignature|None = None) -> NodeName|None:
         from unique_names_generator import get_random_name
         node_id = NodeId(get_random_name())
         self._beginAddNodes([node_id])
-        self._graph.add_node(node_id, 
+        self._config_graph.add_node(node_id, 
             __operator__ = operator
         )
         self._endAddNodes()
@@ -142,8 +145,8 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         return None
 
     def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        node_data: Mapping[str, Any] = self._graph.attributes(self.mapToSource(node_name))
-        node_status = self._node_status.get(self.mapToSource(node_name), DirtyStatus())
+        node_data: Mapping[str, Any] = self._config_graph.attributes(self.mapToSource(node_name))
+        node_status = self._node_status.get(self.mapToSource(node_name), None)
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 operator_handle = node_data.get(OPERATOR_ATTRIBUTE)
@@ -178,7 +181,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         return None
 
     def inlets(self, node: NodeName) -> Iterable[InletName]:
-        node_data: Mapping[str, Any] = self._graph.attributes(self.mapToSource(node))
+        node_data: Mapping[str, Any] = self._config_graph.attributes(self.mapToSource(node))
         signature:OperatorSignature|None = node_data.get(OPERATOR_ATTRIBUTE)
         if signature is not None:
             for inlet_name, inlet_signature in signature.inlets.items():
@@ -204,7 +207,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                 return None
 
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
-        node_data: Mapping[str, Any] = self._graph.attributes(self.mapToSource(node))
+        node_data: Mapping[str, Any] = self._config_graph.attributes(self.mapToSource(node))
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 if inlet in node_data:
@@ -213,7 +216,24 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                     return self.EMPTY
 
             case Qt.ItemDataRole.EditRole:
-                return node_data.get(inlet, self.EMPTY)
+                # Preserve explicitly assigned values, including None.
+                if inlet in node_data:
+                    return node_data[inlet]
+
+                operator_signature = node_data.get(OPERATOR_ATTRIBUTE)
+                assert isinstance(operator_signature, OperatorSignature) or operator_signature is None
+                if operator_signature is None:
+                    return self.EMPTY
+
+                inlet_signature = operator_signature.inlets.get(inlet)
+                if inlet_signature is None:
+                    return self.EMPTY
+
+                annotation = inlet_signature.annotation
+                if annotation in (str, int, float, bool):
+                    return annotation()
+
+                return self.EMPTY
             
             case _:
                 return None
@@ -225,17 +245,17 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         return None
 
     def inLinks(self, target_node: NodeName, inlet: InletName) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._graph.in_links(target_node):
+        for src, dst, key in self._config_graph.in_links(target_node):
             if key == inlet:
                 yield (src, 'out', dst, key)
 
     def outLinks(self, source_node: NodeName, outlet: OutletName) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._graph.out_links(source_node):
+        for src, dst, key in self._config_graph.out_links(source_node):
             if outlet == 'out':
                 yield (src, 'out', dst, key)
 
     def links(self) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._graph.links():
+        for src, dst, key in self._config_graph.links():
             yield (src, 'out', dst, key)
 
     # update
@@ -243,7 +263,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         self._beginRemoveNodes(nodes)
         for node in nodes:
             node_id = self.mapToSource(node)
-            self._graph.remove_node(node_id)
+            self._config_graph.remove_node(node_id)
         self._endRemoveNodes()
         return True
 
@@ -252,7 +272,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         for src, out_, dst, in_ in links:
             src_id = self.mapToSource(src)
             dst_id, inlet = self.mapToSource(dst, in_)
-            self._graph.add_link(src_id, dst_id, inlet)
+            self._config_graph.add_link(src_id, dst_id, inlet)
         self._endAddLinks()
         return True
 
@@ -262,7 +282,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
             src, outlet, dst, inlet = link
             src_id = self.mapToSource(src)
             dst_id, inlet = self.mapToSource(dst, inlet)
-            self._graph.remove_edge(src_id, dst_id, inlet)
+            self._config_graph.remove_edge(src_id, dst_id, inlet)
         self._endRemoveLinks()
         return True
 
@@ -270,22 +290,30 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         if role == Qt.ItemDataRole.EditRole:
             if value is self.EMPTY:
                 node_id, inlet_id = self.mapToSource(node, inlet)
-                self._graph.unset(node_id, inlet_id)
+                self._config_graph.unset(node_id, inlet_id)
                 self.inletDataChanged.emit(node, tuple([inlet]), [])
                 return True
             else:
                 node_id, inlet_id = self.mapToSource(node, inlet)
-                self._graph.set(node_id, inlet_id, value)
+                self._config_graph.set(node_id, inlet_id, value)
                 self.inletDataChanged.emit(node, tuple([inlet]), [])
                 return True
 
         return False
 
+    def setNodeData(self, node: NodeName, value: Any, role: int) -> bool:
+        return False
+
+    def updateNodeStatus(self, node: NodeName, status: NodeStatus) -> bool:
+        self._node_status[node] = status
+        self.nodesDataChanged.emit((node,), ())
+        return True
+
     def closeEvent(self, event):
         self._unsubscribe()
         super().closeEvent(event)
 
-    
+
 class Worker(Thread):
     def __init__(self):
         super().__init__()
@@ -328,19 +356,33 @@ class Worker(Thread):
                         }
                         future.set_result(signatures)
 
-                case "execute_graph":
+                case 'execute_graph':
                     worker_logger.info("Executing graph")
-
                     try:
                         G = cast(Graph[NodeId], args[0])
                         def callback(node_id: NodeId, status: NodeStatus) -> None:
                             worker_logger.info("Node %s status: %s", node_id, status)
-                        result = _execute_graph(G, self._resolved_functions, cache=self.cache, callback=callback)
+                        results = _execute_graph(G, self._resolved_functions, cache=self.cache, callback=callback)
                     except BaseException as exc:
                         worker_logger.exception("Graph execution failed")
                         future.set_exception(exc)
                     else:
-                        future.set_result(result)
+                        print("!!!!!!!!!! results:", results)
+                        future.set_result(results)
+
+                case "invalidate":
+                    worker_logger.info("Invalidating nodes")
+                    try:
+                        nodes = args[0]
+                        for node in nodes:
+                            # Invalidate logic here, e.g., mark nodes as dirty and clear cache
+                            worker_logger.info("Invalidated node: %s", node)
+                            if node in self.cache:
+                                self.cache.remove(node)
+                        future.set_result(None)
+                    except BaseException as exc:
+                        worker_logger.exception("Invalidation failed")
+                        future.set_exception(exc)
 
                 case _:
                     future.set_exception(
@@ -358,30 +400,44 @@ class Worker(Thread):
         self._tasks.put(('execute_script', future, script))
         return await asyncio.wrap_future(future)
 
-    async def execute_graph(self, subgraph: Graph[NodeId]) -> dict[NodeId, NodeStatus]:
-        from concurrent.futures import Future
-        future = Future()
-        self._tasks.put(('execute_graph', future, subgraph))
+    async def execute_graph(
+        self, subgraph: Graph[NodeId],
+    ) -> ExecutionResult:
+        future: concurrent.futures.Future[ExecutionResult] = (
+            concurrent.futures.Future()
+        )
+        self._tasks.put(("execute_graph", future, subgraph))
         return await asyncio.wrap_future(future)
 
+    async def invalidate_node(self, *nodes: NodeId) -> None:
+        future = concurrent.futures.Future()
+        self._tasks.put(("invalidate", future, nodes))
+        return await asyncio.wrap_future(future)
+    
+class ExecutionCoordinator:
+    def __init__(self, config: ObservableGraph[NodeId]):
+        self.config = config
 
-from QtScriptEditorAdvanced import ScriptEditAdvanced
+    def add_effect(self, node: NodeId) -> None:
+        ...
+
+    def remove_effect(self, node: NodeId) -> None:
+        ...
+
+    def invalidate(self, *nodes: NodeId) -> None:
+        ...
+
+from myqtx.widgets.displaywidget import DisplayWidget
+
+
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         
         self.operator_list_model = QStringListModel([])
-        self.model = AsyncEagerGraphModel()
+        config_graph = ObservableGraph[NodeId]()
+        self.model = AsyncEagerGraphModel(config_graph)
         self.selection = GraphSelectionModel(self.model)
-
-        self._execute_graph_signals = [
-            self.model.nodesAdded,
-            self.model.nodesDataChanged,
-            self.model.inletDataChanged,
-            self.selection.currentNodeChanged
-        ]
-        for signal in self._execute_graph_signals:
-            signal.connect(self.submit_execute_graph)
 
         splitter = QSplitter()
         self.setCentralWidget(splitter)
@@ -419,6 +475,10 @@ class Window(QMainWindow):
         dockwidget.setWidget(self.inspector)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dockwidget)
 
+        
+        self._output_viewer = DisplayWidget()
+        splitter.addWidget(self._output_viewer)
+
         self.editor1.setModel(self.model)
         self.editor1.setSelectionModel(self.selection)
         self.editor1.requestNode.connect(lambda pos, source, editor=self.editor1: 
@@ -446,6 +506,22 @@ class Window(QMainWindow):
         worker_logger.setLevel(logging.INFO)
         worker_logger.addHandler(self.log_handler)
         self.worker.start()
+
+        def on_config_graph_changed(change:GraphChange):
+            if 'nodes' in change:
+                event_nodes = change['nodes']
+                for node_id, value in event_nodes.get('updated', dict()).items():
+                    self.submit_invalidate_node(node_id)
+
+            worker_logger.info("Config graph changed: %s", change)
+            self.submit_execute_graph()
+
+        config_graph.listen(on_config_graph_changed)
+        self.selection.currentNodeChanged.connect(self.submit_execute_graph)
+
+    @asyncSlot()
+    async def submit_invalidate_node(self, node_id: NodeId) -> None:
+        nodes_invalidated = await self.worker.invalidate_node(node_id)
 
     @asyncSlot()
     async def submit_execute_script(self) -> None:
@@ -476,7 +552,7 @@ class Window(QMainWindow):
         # get relevant subgraph from the editor
         current_name = self.selection.currentNode()
         current_node_id = self.model.mapToSource(current_name)
-        G = self.model._graph
+        G = self.model._config_graph
         # prepare subgraph
         resolved_subgraph = Graph[NodeId]()
         for node in G.nodes():
@@ -498,8 +574,28 @@ class Window(QMainWindow):
 
 
         # send the subgraph to the worker for execution
-        results: dict[NodeId, NodeStatus] = await self.worker.execute_graph(resolved_subgraph)
-        print(results)
+        try:
+            outputs = await self.worker.execute_graph(resolved_subgraph)
+        except NodeExecutionError as exc:
+            node_name = self.model.mapFromSource(exc.node)
+            if node_name in self.model.nodes():
+                self.model.updateNodeStatus(
+                    node_name,
+                    FailedStatus(reason=exc.reason),
+                )
+            if self.selection.currentNode() == node_name:
+                self._output_viewer.display(exc.reason)
+        else:
+            for node_id, output in outputs.items():
+                node_name = self.model.mapFromSource(node_id)
+                if node_name in self.model.nodes():
+                    self.model.updateNodeStatus(
+                        node_name,
+                        SucceededStatus(value=output),
+                    )
+                node_name = self.model.mapFromSource(node_id)
+                if self.selection.currentNode() == node_name:
+                    self._output_viewer.display(output)
 
     def new_node(self, scene_pos, source, editor):
         if scene_pos is None:

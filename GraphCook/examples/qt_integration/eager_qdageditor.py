@@ -117,7 +117,8 @@ from QtScriptEditorAdvanced import ScriptEditAdvanced
 #     ObservableProtocol, 
 #     Protocol
 # ):
-#     def set(self, node: NodeId, **attributes: object) -> None: ...
+#     def set(self, node: NodeId, name: str, value: object) -> None: ...
+#     def update(self, node: NodeId, /, **attributes: object) -> None: ...
 #     def unset(self, node: NodeId, name: str) -> None: ...
 #     def script(self) -> str: ...
 #     def set_script(self, script: str) -> None: ...
@@ -298,7 +299,7 @@ class EagerGraphModel(AbstractDAGModel):
                 operator_handle: OperatorHandle = node_data['__operator__']
                 operator_signature: OperatorSignature = self._engine.operator_signature(operator_handle)
                 parameter = operator_signature.inlets.get(inlet) if operator_signature is not None else None
-                return parameter.type if parameter is not None else self.EMPTY
+                return parameter.annotation if parameter is not None else self.EMPTY
             case _:
                 return None
 
@@ -368,7 +369,7 @@ class EagerGraphModel(AbstractDAGModel):
                     self._engine.unset(self.mapToSource(node), str(inlet))
                     return True
                 else:
-                    self._engine.set(self.mapToSource(node), **{str(inlet): value})
+                    self._engine.set(self.mapToSource(node), str(inlet), value)
                     return True
             except ValueError as error:
                 return False

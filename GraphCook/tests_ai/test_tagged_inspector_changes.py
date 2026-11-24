@@ -52,12 +52,12 @@ def test_inspector_refreshes_nested_add_update_remove_without_feedback(qtbot: Qt
         events: list[EagerEngineChange] = []
         engine.listen(events.append)
 
-        engine.set(node, greeting="Hey")
+        engine.update(node, greeting="Hey")
         assert editor.text() == "Hey"
         assert sum("nodes" in event for event in events) == 1
         events.clear()
 
-        engine.set(node, greeting="Hi")
+        engine.update(node, greeting="Hi")
         assert editor.text() == "Hi"
         assert inspector._editors["greeting"] is editor
         assert sum("nodes" in event for event in events) == 1

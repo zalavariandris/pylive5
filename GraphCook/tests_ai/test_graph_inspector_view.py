@@ -67,7 +67,7 @@ def test_external_values_refresh_without_feedback(
     changes: list[dict[str, Any]] = []
     engine.listen(changes.append)
 
-    engine.set(node, text="Updated", count=4, fraction=2.5, other=False)
+    engine.update(node, text="Updated", count=4, fraction=2.5, other=False)
     assert editors["text"]._widget.text() == "Updated"
     assert editors["count"]._widget.value() == 4
     assert editors["fraction"]._widget.value() == 2.5
@@ -96,9 +96,9 @@ def test_selection_changes_keep_model_notifications_and_target_current_node(
     view.setModel(model)
     view.setCurrentNode(first)
     view.setCurrentNode(second)
-    engine.set(first, text="Ignored")
+    engine.update(first, text="Ignored")
     assert view._editors["text"]._widget.text() == "Second"
-    engine.set(second, text="Refreshed")
+    engine.update(second, text="Refreshed")
     assert view._editors["text"]._widget.text() == "Refreshed"
 
     notifications: list[tuple[Any, ...]] = []
@@ -113,7 +113,7 @@ def test_selection_changes_keep_model_notifications_and_target_current_node(
 
     view.setCurrentNode(None)
     view.setCurrentNode(first)
-    engine.set(first, text="Still listening")
+    engine.update(first, text="Still listening")
     assert view._editors["text"]._widget.text() == "Still listening"
 
 
@@ -148,12 +148,12 @@ def test_extra_inputs_appear_and_disappear_on_external_changes(
     view.setCurrentNode(node)
     assert list(view._editors) == ["text", "extra"]
     assert view._editors["extra"]._widget.value() == 7
-    engine.set(node, another="New input")
+    engine.update(node, another="New input")
     assert list(view._editors) == ["text", "extra", "another"]
     assert view._editors["another"]._widget.text() == "New input"
     engine.unset(node, "extra")
     assert list(view._editors) == ["text", "another"]
-    engine.set(node, another="Updated")
+    engine.update(node, another="Updated")
     assert view._editors["another"]._widget.text() == "Updated"
 
 
@@ -199,10 +199,10 @@ def test_replacing_or_detaching_model_clears_old_connections(
     view.setCurrentNode(second)
     first_engine.delete(first)
     assert view._current_node == second
-    second_engine.set(second, text="Updated")
+    second_engine.update(second, text="Updated")
     assert view._editors["text"]._widget.text() == "Updated"
     view.setModel(None)
     view.setModel(None)
-    second_engine.set(second, text="Detached")
+    second_engine.update(second, text="Detached")
     assert view._current_node is None
     assert view._form.rowCount() == 0

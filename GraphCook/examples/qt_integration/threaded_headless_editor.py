@@ -29,12 +29,12 @@ class DAG(Graph[NodeId]):
         self.add_node(node_id, {OPERATOR_ATTRIBUTE: operator, **inputs})
         return node_id
 
-    def set(self, node_id: NodeId, **inputs) -> None:
+    def update(self, node_id: NodeId, /, **inputs: object) -> None:
         # also add links for any inputs that are NodeIds
         for key, value in inputs.items():
             if isinstance(value, NodeId):
                 super().add_link(Link(value, "", node_id, key))  # Example link, adjust as needed
-        super().set(node_id, **inputs)
+        super().update(node_id, **inputs)
 
     def unset(self, node_id: NodeId, inlet) -> None:
         # also remove any links associated with this inlet before unsetting it
@@ -46,7 +46,7 @@ class DAG(Graph[NodeId]):
     def add_link(self, link: Link[NodeId]) -> None:
         super().add_link(link)
         # also set inputs
-        self.set(link.target, **{link.inlet: link.source})
+        self.set(link.target, link.inlet, link.source)
 
     def remove_link(self, link: Link[NodeId]) -> None:
         super().remove_link(link)

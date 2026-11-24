@@ -4,6 +4,7 @@ from bidict import bidict
 from qtpy.QtWidgets import (
     QFormLayout, 
     QFrame, 
+    QGraphicsColorizeEffect,
     QLabel,
     QMenu, 
     QVBoxLayout, 
@@ -23,7 +24,6 @@ from qtpy.QtGui import (
     QAction
 )
 
-from ..core.inspector_roles import InspectorRoles
 from ..models.abstract_dag_model import AbstractDAGModel, NodeName, InletName
 from ..views.node_inspector_delegate import NodeInspectorDelegate
 
@@ -96,6 +96,9 @@ class NodeInspectorView(QFrame):
                 (model.nodesRemoved, self._handle_nodes_removed),
                 (model.inletsReset, self._handle_inlets_reset),
                 (model.inletDataChanged, self._handle_inlet_data_change),
+                (model.linksAdded, self._handle_connections_changed),
+                (model.linksRemoved, self._handle_connections_changed),
+                (model.linksReset, self._handle_connections_changed),
             ]
             for signal, slot in self._model_connections:
                 signal.connect(slot)
@@ -130,16 +133,22 @@ class NodeInspectorView(QFrame):
         for inlet_name in self._model.inlets(node):
             # create label
             label = QLabel(str(inlet_name))
+            label.setTextFormat(Qt.TextFormat.PlainText)
             self._labels[inlet_name] = label
             label.installEventFilter(self)
 
             # create editor
             editor = self._delegate.createEditor(self._model, node, inlet_name)
+            effect = QGraphicsColorizeEffect(editor)
+            effect.setColor(Qt.GlobalColor.gray)
+            effect.setStrength(0.5)
+            effect.setEnabled(False)
+            editor.setGraphicsEffect(effect)
             self._editors[inlet_name] = editor
             self._form.addRow(label, editor)
 
             # Initialize before connecting signals.
-            self.__set_label_data(node, inlet_name, Qt.ItemDataRole.EditRole)
+            self._update_inlet_presentation(node, inlet_name)
             self._delegate.setEditorData(self._model, node, inlet_name, self._editors[inlet_name])
 
             # bind user property if available
@@ -224,34 +233,24 @@ class NodeInspectorView(QFrame):
         if node != self._current_node:
             return
         
-        # if not roles or InspectorRoles.DataTypeRole in roles:
-        #     self._handle_inlets_reset(node)
-
-        # elif Qt.ItemDataRole.EditRole in roles:
         for inlet in inlets:
-            self.__set_label_data(node, inlet, Qt.ItemDataRole.EditRole)
+            self._update_inlet_presentation(node, inlet)
             if inlet in self._editors:
                 self._delegate.setEditorData(self._model, node, inlet, self._editors[inlet])
 
-    def __set_label_data(self, node, inlet, role:Qt.ItemDataRole):
-        if inlet in self._labels:
-            is_empty = self._model.inletData(node, inlet, Qt.ItemDataRole.EditRole) is self.EMPTY
-            is_connected = bool(list(self._model.inLinks(node, inlet)))
-            # Update the label to reflect the inlet's state
-            # icons = '✏️', '🌫️','🔗'
-            icons = '🔵', '⚪','🔗'
-            # icons = '◯','●','🔗'
-            # icons = "-", "+", "/"
-            # icons = '🔵', '⚪', '🔘'
-            # icons = '■', '□', '▣'
-            # icons = '■', '▧', '▰'
-            # icons = '◈', '◇', '↔'
-            # icons = '⬤', '◯', '◉'
+    def _handle_connections_changed(self, *_args: object) -> None:
+        if self._current_node is not None:
+            for inlet in self._editors:
+                self._update_inlet_presentation(self._current_node, inlet)
 
-            label = cast(QLabel, self._labels[inlet])
-            if is_connected:
-                label.setText(f"{icons[2]} {inlet}")
-            elif is_empty:
-                label.setText(f"{icons[1]} {inlet}")
-            else:
-                label.setText(f"{icons[0]} {inlet}")
+    def _update_inlet_presentation(self, node: NodeName, inlet: InletName) -> None:
+        assert self._model is not None
+        is_empty = self._model.inletData(node, inlet, Qt.ItemDataRole.EditRole) is self.EMPTY
+        is_connected = bool(list(self._model.inLinks(node, inlet)))
+
+        editor = self._editors.get(inlet)
+        if editor is not None:
+            editor.setEnabled(not is_connected)
+            effect = editor.graphicsEffect()
+            if effect is not None:
+                effect.setEnabled(is_connected or is_empty)

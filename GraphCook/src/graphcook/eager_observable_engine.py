@@ -54,7 +54,7 @@ class NodeId:
 @dataclass(frozen=True)
 class InletSignature:
     """Public inlet information."""
-    type: Any
+    annotation: Any
     default: Any = inspect.Parameter.empty
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ class OperatorSignature:
         sig = signature(func, eval_str=True)
         inlets = {
             name: InletSignature(
-                type=param.annotation, 
+                annotation=param.annotation, 
                 default=param.default
             )
             for name, param in sig.parameters.items()
@@ -129,6 +129,14 @@ def _prepare_graph(config_graph: Graph[NodeId], *roots: NodeId) -> Graph[NodeId]
 
     return prepared_graph
 
+
+class NodeExecutionError(Exception):
+    def __init__(self, node: NodeId, reason: Exception) -> None:
+        self.node = node
+        self.reason = reason
+        super().__init__(f"Node {node}: {reason}")
+
+
 def _execute_graph(
     resolved_graph: Graph[NodeId], 
     resolved_operators: dict[OperatorHandle, Callable[..., Any]],
@@ -169,7 +177,7 @@ def _execute_graph(
             resolved_operator = resolved_operators[operator_handle]
         except KeyError as exc:
             callback(current, FailedStatus(reason=exc))
-            return dict()
+            raise NodeExecutionError(current, exc) from exc
 
         # resolve inputs
         
@@ -191,7 +199,7 @@ def _execute_graph(
             duration_seconds = time.process_time() - start_time
         except Exception as exc:
             callback(current, FailedStatus(reason=exc))
-            return dict()
+            raise NodeExecutionError(current, exc) from exc
         else:
             memo[current] = result
             cache.save(current, result)
@@ -530,8 +538,13 @@ class EagerEngine:
     def delete(self, node: NodeId) -> None:
         self._graph_config.remove_node(node)
 
-    def set(self, node: NodeId, **attributes: object) -> None:
-        self._graph_config.set(node, **attributes)
+    def set(self, node: NodeId, name: str, value: object) -> None:
+        """Assign one node attribute."""
+        self._graph_config.set(node, name, value)
+
+    def update(self, node: NodeId, /, **attributes: object) -> None:
+        """Merge several node attributes in one graph mutation."""
+        self._graph_config.update(node, **attributes)
 
     def unset(self, node: NodeId, name: str) -> None:
         self._graph_config.unset(node, name)

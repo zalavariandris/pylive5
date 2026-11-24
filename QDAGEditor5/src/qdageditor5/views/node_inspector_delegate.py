@@ -1,11 +1,10 @@
 from typing import Any
-
+import inspect
+from qtpy.QtGui import QPalette
+from qtpy.QtWidgets import QLabel
 from qtpy.QtCore import Qt, QObject, QSignalBlocker
 from qtpy.QtWidgets import  (
     QDoubleSpinBox, 
-    QGraphicsColorizeEffect, 
-    QGraphicsOpacityEffect,
-    QGraphicsEffect, 
     QLineEdit, 
     QSpinBox,
     QWidget
@@ -28,15 +27,29 @@ class NodeInspectorDelegate(QObject):
         super().__init__(parent=parent)
         self._model = None
 
-    def createEditor(self, model:AbstractDAGModel, node: NodeName, inlet: InletName) -> QWidget:
-        inlet_value = model.inletData(node, inlet, Qt.ItemDataRole.EditRole)
-        is_connected = bool(list(model.inLinks(node, inlet)))
-        
+    def _datatype(
+        self, model: AbstractDAGModel, node: NodeName, inlet: InletName,
+    ) -> object:
         datatype = model.inletData(node, inlet, InspectorRoles.DataTypeRole)
+        if (
+            datatype is not None
+            and datatype is not Any
+            and datatype is not inspect.Parameter.empty
+        ):
+            return datatype
 
-        # fallback to infer the datatype from the type fo the value
-        if datatype is self.EMPTY or datatype is Any:
-            datatype = type(inlet_value)
+        value = model.inletData(node, inlet, Qt.ItemDataRole.EditRole)
+        if value is not self.EMPTY:
+            return type(value)
+
+        default = model.inletData(node, inlet, InspectorRoles.DefaultValueRole)
+        if default is not None and default is not inspect.Parameter.empty:
+            return type(default)
+
+        return None
+
+    def createEditor(self, model:AbstractDAGModel, node: NodeName, inlet: InletName) -> QWidget:
+        datatype = self._datatype(model, node, inlet)
 
         # match editor based on datatype
         editor:QWidget|None = None
@@ -54,28 +67,27 @@ class NodeInspectorDelegate(QObject):
             editor.clear()
 
         if editor is None:
-            # fallback to display the data
-            editor = QLineEdit()
-            editor.setReadOnly(True)
+            if datatype is None:
+                reason = "unset · unknown type"
+                details = "No value is assigned, and no input type could be determined."
+            else:
+                type_name = getattr(datatype, "__name__", str(datatype))
+                reason = f"No editor for {type_name}"
+                details = f"The input type is {type_name}, but no editor is available for it."
+            label = QLabel(reason)
+            label.setToolTip(details)
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+            return label
 
-        # add the dim effect to the editors
-        opacity_effect = QGraphicsOpacityEffect(editor)
-        opacity_effect.setOpacity(0.15)
-        opacity_effect.setEnabled(False)
-        colorize_effect = QGraphicsColorizeEffect(editor)
-        colorize_effect.setColor(Qt.GlobalColor.gray)
-        colorize_effect.setStrength(0.5)
-        colorize_effect.setEnabled(False)
-        editor.setGraphicsEffect(colorize_effect)
         return editor
 
     def setEditorData(self, model:AbstractDAGModel, node: NodeName, inlet: InletName, widget: QWidget) -> None:
         value = model.inletData(node, inlet, Qt.ItemDataRole.EditRole)
-        is_connected = bool(list(model.inLinks(node, inlet)))
         is_empty = value is self.EMPTY
-        effect = widget.graphicsEffect()
-        if effect is not None:
-            effect.setEnabled(is_connected or is_empty)
 
         with QSignalBlocker(widget):
             metaobject = widget.metaObject()
@@ -85,11 +97,6 @@ class NodeInspectorDelegate(QObject):
             user_property = metaobject.userProperty()
             if not user_property.isValid():
                 return
-
-            if is_connected:
-                widget.setEnabled(False)
-            else:
-                widget.setEnabled(True)
 
             if is_empty:
                 try:

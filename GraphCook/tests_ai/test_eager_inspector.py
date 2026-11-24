@@ -90,7 +90,7 @@ def test_external_set_and_unset_refresh_without_feedback(
     inspector.setCurrentNode(node)
     events: list[EagerEngineChange] = []
     engine.listen(events.append)
-    engine.set(node, value=0)
+    engine.update(node, value=0)
     assert cast(QSpinBox, inspector._editors['value']).value() == 0
     assert len(events) == 2  # One attribute event and one dirty event.
     events.clear()

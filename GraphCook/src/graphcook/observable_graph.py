@@ -52,7 +52,8 @@ class ObservableGraph(Graph[NodeT]):
             links=SetChanges(kind="set", removed=removed_links)
         ))
 
-    def set(self, node: NodeT, **attributes: object) -> None:
+    def update(self, node: NodeT, /, **attributes: object) -> None:
+        """Merge attributes and emit one notification after the mutation."""
         old = self.attributes(node)
 
         if not attributes:
@@ -64,7 +65,7 @@ class ObservableGraph(Graph[NodeT]):
             for key, value in attributes.items()
             if key in old
         }
-        super().set(node, **attributes)
+        super().update(node, **attributes)
 
         self._notify(GraphChange(
             nodes=MappingChanges(
