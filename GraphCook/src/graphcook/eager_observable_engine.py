@@ -164,7 +164,7 @@ def _execute_graph(
         attributes = resolved_graph.attributes(current)
 
         # resolve operator handle
-        operator_handle: OperatorHandle = attributes[OPERATOR_ATTRIBUTE]
+        operator_handle: OperatorHandle = attributes["__operator__"]
         try:
             resolved_operator = resolved_operators[operator_handle]
         except KeyError as exc:

@@ -1,6 +1,6 @@
 import asyncio
 from textwrap import dedent
-from typing import Iterable, Any
+from typing import Iterable, Any, cast
 from qasync import QEventLoop, asyncSlot
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.abstract_dag_model import (
@@ -11,6 +11,17 @@ from qdageditor5.models.abstract_dag_model import (
     OutletName,
     DirectionalLinkId
 )
+
+from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
+from qtpy.QtCore import QStringListModel
+from qtpy.QtCore import Qt
+from qdageditor5.views.node_inspector_view import NodeInspectorView
+from qdageditor5.models.graph_selection_model import GraphSelectionModel
+from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
+from myqtx.selection_dialog_view import SelectionDialog
+
+from threading import Thread
+from queue import Queue
 
 import networkx as nx
 from qtpy.QtCore import QAbstractListModel, QPointF, Qt, QObject
@@ -112,9 +123,9 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         for node in self._graph.nodes():
             yield node
 
-    def addNode(self, operator: OperatorHandle|None = None) -> NodeName|None:
+    def addNode(self, operator: OperatorSignature|None = None) -> NodeName|None:
         from unique_names_generator import get_random_name
-        node_id = get_random_name()
+        node_id = NodeId(get_random_name())
         self._beginAddNodes([node_id])
         self._graph.add_node(node_id, 
             __operator__ = operator
@@ -166,10 +177,22 @@ class AsyncEagerGraphModel(AbstractDAGModel):
 
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         node_data: Mapping[str, Any] = self._graph.attributes(self.mapToSource(node))
-        for key, value in node_data.items():
-            if key.startswith('_'):
-                continue
-            yield key
+        signature:OperatorSignature|None = node_data.get(OPERATOR_ATTRIBUTE)
+        if signature is not None:
+            for inlet_name, inlet_signature in signature.inlets.items():
+                yield inlet_name
+
+            for key, value in node_data.items():
+                if key.startswith('_'):
+                    continue
+                if key not in signature.inlets.keys():
+                    yield key
+        else:
+            for key, value in node_data.items():
+                if key.startswith('_'):
+                    continue
+
+                yield key
 
     def inletHeaderData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
         match role:
@@ -259,21 +282,12 @@ class AsyncEagerGraphModel(AbstractDAGModel):
     def closeEvent(self, event):
         self._unsubscribe()
         super().closeEvent(event)
-
-from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
-from qtpy.QtCore import QStringListModel
-from qtpy.QtCore import Qt
-from qdageditor5.views.node_inspector_view import NodeInspectorView
-from qdageditor5.models.graph_selection_model import GraphSelectionModel
-from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
-from myqtx.selection_dialog_view import SelectionDialog
-
-from threading import Thread
-from queue import Queue
+    
 class Worker(Thread):
     def __init__(self):
         super().__init__()
         self._tasks = Queue()
+        self._resolved_functions: dict[OperatorHandle, Callable|None] = {}
         self.cache = MemoryCache()
 
     def run(self) -> None:
@@ -299,7 +313,31 @@ class Worker(Thread):
                         future.set_exception(exc)
                     else:
                         worker_logger.info("Loaded %d operators", len(operators))
-                        future.set_result(operators)
+                        
+                        self._resolved_functions.clear()
+                        self._resolved_functions.update({
+                            op: func 
+                            for op, func in operators.items()
+                        })
+                        signatures = {
+                            op: OperatorSignature.from_func(func)
+                            for op, func in operators.items()
+                        }
+                        future.set_result(signatures)
+
+                case "execute_graph":
+                    worker_logger.info("Executing graph")
+
+                    try:
+                        G = cast(Graph[NodeId], args[0])
+                        def callback(node_id: NodeId, status: NodeStatus) -> None:
+                            worker_logger.info("Node %s status: %s", node_id, status)
+                        result = _execute_graph(G, self._resolved_functions, cache=self.cache, callback=callback)
+                    except BaseException as exc:
+                        worker_logger.exception("Graph execution failed")
+                        future.set_exception(exc)
+                    else:
+                        future.set_result(result)
 
                 case _:
                     future.set_exception(
@@ -311,10 +349,16 @@ class Worker(Thread):
         self._tasks.put(None)
         self.join()
 
-    async def execute_script(self, script:str):
+    async def execute_script(self, script:str)->dict[OperatorHandle, OperatorSignature]:
         from concurrent.futures import Future
         future = Future()
         self._tasks.put(('execute_script', future, script))
+        return await asyncio.wrap_future(future)
+
+    async def execute_graph(self, subgraph: Graph[NodeId]) -> dict[NodeId, NodeStatus]:
+        from concurrent.futures import Future
+        future = Future()
+        self._tasks.put(('execute_graph', future, subgraph))
         return await asyncio.wrap_future(future)
 
 from QtScriptEditorAdvanced import ScriptEditAdvanced
@@ -324,8 +368,17 @@ class Window(QMainWindow):
         
         self.operator_list_model = QStringListModel([])
         self.model = AsyncEagerGraphModel()
-
         self.selection = GraphSelectionModel(self.model)
+
+        self._execute_graph_signals = [
+            self.model.nodesAdded,
+            self.model.nodesDataChanged,
+            self.model.inletDataChanged,
+            self.selection.currentNodeChanged
+        ]
+        for signal in self._execute_graph_signals:
+            signal.connect(self.submit_execute_graph)
+
         splitter = QSplitter()
         self.setCentralWidget(splitter)
         self.script_editor = ScriptEditAdvanced()
@@ -399,7 +452,7 @@ class Window(QMainWindow):
         script_text = document.toPlainText()
 
         try:
-            operators = await self.worker.execute_script(script_text)
+            signatures:dict[OperatorHandle, OperatorSignature] = await self.worker.execute_script(script_text)
         except Exception as exc:
             # Incomplete code is expected while typing.
             # print(f"Script execution failed: {exc}")
@@ -410,8 +463,39 @@ class Window(QMainWindow):
             return
 
         self.operator_list_model.setStringList(
-            [handle.name for handle in operators]
+            [handle.name for handle in signatures.keys()]
         )
+        self._operator_signatures = signatures
+
+    @asyncSlot()
+    async def submit_execute_graph(self) -> None:
+        # get relevant subgraph from the editor
+        current_name = self.selection.currentNode()
+        current_node_id = self.model.mapToSource(current_name)
+        G = self.model._graph
+        # prepare subgraph
+        resolved_subgraph = Graph[NodeId]()
+        for node in G.nodes():
+            operator_signature = G.attributes(node)["__operator__"]
+            assert isinstance(operator_signature, OperatorSignature)
+            operator_handle = OperatorHandle(operator_signature.name)
+            resolved_subgraph.add_node(
+                node,
+                __operator__=operator_handle,
+                kwargs={
+                    k: v
+                    for k, v in G.attributes(node).items()
+                    if k != "__operator__"
+                }
+            )
+        for node in G.nodes():
+            for link in G.in_links(node):
+                resolved_subgraph.add_link(link.source, link.target, link.inlet)
+
+
+        # send the subgraph to the worker for execution
+        results: dict[NodeId, NodeStatus] = await self.worker.execute_graph(resolved_subgraph)
+        print(results)
 
     def new_node(self, scene_pos, source, editor):
         if scene_pos is None:
@@ -424,7 +508,8 @@ class Window(QMainWindow):
                 selected_index = dialog.selected_index()
                 operator_name = selected_index.data(Qt.ItemDataRole.EditRole)
                 operator_handle = OperatorHandle(operator_name)
-                new_node = self.model.addNode(operator_handle)
+                operator_signature = self._operator_signatures.get(operator_handle)
+                new_node = self.model.addNode(operator_signature)
                 editor.setNodePosition(new_node, scene_pos)
 
         finally:
