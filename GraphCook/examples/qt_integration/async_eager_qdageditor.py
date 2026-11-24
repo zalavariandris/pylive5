@@ -82,6 +82,7 @@ class LogWidget(QPlainTextEdit):
     def append_message(self, message: str) -> None:
         self.appendPlainText(message)
 
+
 class QtLogHandler(logging.Handler):
     def __init__(self, send_message: Callable[[str], None]) -> None:
         super().__init__()
@@ -92,6 +93,7 @@ class QtLogHandler(logging.Handler):
             self._send_message(self.format(record))
         except Exception:
             self.handleError(record)
+
 
 class AsyncEagerGraphModel(AbstractDAGModel):
     def __init__(self, parent: QObject|None = None):
@@ -282,6 +284,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
     def closeEvent(self, event):
         self._unsubscribe()
         super().closeEvent(event)
+
     
 class Worker(Thread):
     def __init__(self):
@@ -360,6 +363,7 @@ class Worker(Thread):
         future = Future()
         self._tasks.put(('execute_graph', future, subgraph))
         return await asyncio.wrap_future(future)
+
 
 from QtScriptEditorAdvanced import ScriptEditAdvanced
 class Window(QMainWindow):
@@ -514,6 +518,7 @@ class Window(QMainWindow):
 
         finally:
             dialog.deleteLater()
+
 
 if __name__ == "__main__":
     import sys
