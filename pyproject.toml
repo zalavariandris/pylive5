@@ -12,6 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pyflow5",
     "PyGraphRT2",
+    "qasync>=0.28.0",
     "rich>=15.0.0",
 ]
 

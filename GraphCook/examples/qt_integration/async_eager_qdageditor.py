@@ -1,5 +1,6 @@
+import asyncio
 from typing import Iterable, Any
-
+from qasync import QEventLoop, asyncSlot
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel, 
@@ -17,7 +18,7 @@ from qtpy.QtGui import QColor
 
 from qdageditor5.views.node_inspector_delegate import NodeInspectorDelegate
 from myqtx.widgets.coloredit import ColorEdit
-from qtpy.QtWidgets import QDialog, QSplitter, QWidget
+from qtpy.QtWidgets import QDialog, QListView, QSplitter, QWidget
 
 from typing import Any, Callable, Iterable, Mapping
 
@@ -42,29 +43,45 @@ from graphcook.eager_observable_engine import (
     NodeStatus,
     ProviderStatus
 )
+from graphcook.eager_observable_engine import OperatorSignature
 
-class OperatorListModel(QAbstractListModel):
-    def __init__(self, functions: Iterable[Callable], parent=None):
-        super().__init__(parent=parent)
-        self._funcs = {OperatorHandle(func.__name__): func for func in functions}
+import logging
 
-    def rowCount(self, parent=None) -> int:
-        return len(self._funcs)
-
-    def data(self, index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        if not index.isValid():
-            return None
-        match role:
-            case Qt.ItemDataRole.DisplayRole:
-                all_operators = list(self._funcs.keys())
-                return all_operators[index.row()].name
-            
-            case Qt.ItemDataRole.EditRole:
-                all_operators = list(self._funcs.keys())
-                return all_operators[index.row()]
+from qtpy.QtCore import Signal, Slot
+from qtpy.QtWidgets import QPlainTextEdit
 
 
-class AsyncEagerDGraphModel(AbstractDAGModel):
+worker_logger = logging.getLogger("graphcook.worker")
+
+
+class LogWidget(QPlainTextEdit):
+    message_received = Signal(str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setMaximumBlockCount(2000)
+        self.message_received.connect(
+            self.append_message,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+    @Slot(str)
+    def append_message(self, message: str) -> None:
+        self.appendPlainText(message)
+
+class QtLogHandler(logging.Handler):
+    def __init__(self, send_message: Callable[[str], None]) -> None:
+        super().__init__()
+        self._send_message = send_message
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._send_message(self.format(record))
+        except Exception:
+            self.handleError(record)
+
+class AsyncEagerGraphModel(AbstractDAGModel):
     def __init__(self, parent: QObject|None = None):
         super().__init__(parent=parent)
         self._graph = Graph[NodeId]()
@@ -250,27 +267,84 @@ from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 from myqtx.selection_dialog_view import SelectionDialog
 
+from threading import Thread
+from queue import Queue
+class Worker(Thread):
+    def __init__(self):
+        super().__init__()
+        self._tasks = Queue()
+        self.cache = MemoryCache()
 
+    def run(self):
+        # init
+
+        # process tasks
+        try:
+            while True:
+                # wait for the next task
+                task = self._tasks.get()
+
+                if task is None:
+                    break
+
+                operation, future, *args = task
+
+                if not future.set_running_or_notify_cancel():
+                    continue
+
+                match operation:
+                    case 'execute_script':
+                        worker_logger.info("Executing script")
+
+                        try:
+                            operators = _execute_provider(args[0])
+                            
+                        except BaseException as exc:
+                            worker_logger.exception("Script execution failed")
+                            future.set_exception(exc)
+                        else:
+                            worker_logger.info("Loaded %d operators", len(operators))
+                            future.set_result(operators)
+                    case _:
+                        future.set_exception(RuntimeError(f"Unknown operation: {operation}"))
+        finally:
+            self.close()
+
+    def close(self):
+        # signal the thread to exit
+        self._tasks.put(None)
+        self.join()
+
+    async def execute_script(self, script:str):
+        from concurrent.futures import Future
+        future = Future()
+        self._tasks.put(('execute_script', future, script))
+        return await asyncio.wrap_future(future)
+
+    def __del__(self):
+        self.close()
+
+from QtScriptEditorAdvanced import ScriptEditAdvanced
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.model = AsyncEagerDGraphModel()
-        def the_name():
-            return "Mása"
-        def the_greeting():
-            return "Hey"
+        
+        self.operator_list_model = QStringListModel([])
+        self.model = AsyncEagerGraphModel()
 
-        def hello_world(name: str, greeting: str="Hello"):
-            return f"{greeting}, {name}!"
-        self.operator_list_model = OperatorListModel([
-            the_name,the_greeting,hello_world])
         self.selection = GraphSelectionModel(self.model)
         splitter = QSplitter()
         self.setCentralWidget(splitter)
+        self.script_editor = ScriptEditAdvanced()
+        script_document = self.script_editor.document()
+        assert script_document is not None
+        script_document.contentsChanged.connect(self._handle_script_changed)
+        splitter.addWidget(self.script_editor)
+        operators_list_view = QListView()
+        operators_list_view.setModel(self.operator_list_model)
+        splitter.addWidget(operators_list_view)
         self.editor1 = DirectionalGraphView5()
         splitter.addWidget(self.editor1)
-        # self.editor2 = DirectionalGraphView5()
-        # splitter.addWidget(self.editor2)
 
         self.inspector = NodeInspectorView()
         dockwidget = QDockWidget()
@@ -287,6 +361,47 @@ class Window(QMainWindow):
         self.selection.currentNodeChanged.connect(
             lambda current, previous: self.inspector.setCurrentNode(current))
 
+        self.worker = Worker()
+
+        self.log_widget = LogWidget()
+        log_dock = QDockWidget("Worker logs", self)
+        log_dock.setWidget(self.log_widget)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
+        
+        self.log_handler = QtLogHandler(self.log_widget.message_received.emit)
+        self.log_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)s: %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+        worker_logger.setLevel(logging.INFO)
+        worker_logger.addHandler(self.log_handler)
+        self.worker.start()
+
+    @asyncSlot()
+    async def _handle_script_changed(self) -> None:
+        document = self.script_editor.document()
+        if document is None:
+            return
+
+        script_text = document.toPlainText()
+
+        try:
+            operators = await self.worker.execute_script(script_text)
+        except Exception as exc:
+            # Incomplete code is expected while typing.
+            # print(f"Script execution failed: {exc}")
+            return
+
+        # Ignore this result if the script changed while we were waiting.
+        if document.toPlainText() != script_text:
+            return
+
+        self.operator_list_model.setStringList(
+            [handle.name for handle in operators]
+        )
+
     def new_node(self, scene_pos, source, editor):
         if scene_pos is None:
             viewport_center = QPointF(editor.contentsRect().center())
@@ -296,7 +411,8 @@ class Window(QMainWindow):
         try:
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
-                operator_handle = selected_index.data(Qt.ItemDataRole.EditRole)
+                operator_name = selected_index.data(Qt.ItemDataRole.EditRole)
+                operator_handle = OperatorHandle(operator_name)
                 new_node = self.model.addNode(operator_handle)
                 editor.setNodePosition(new_node, scene_pos)
 
@@ -308,6 +424,16 @@ if __name__ == "__main__":
     from qtpy.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
+    loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
+
     editor = Window()
     editor.show()
-    sys.exit(app.exec())
+
+    with loop:
+        try:
+            loop.run_forever()
+        finally:
+            editor.worker.close()
+            worker_logger.removeHandler(editor.log_handler)
+            editor.log_handler.close()
