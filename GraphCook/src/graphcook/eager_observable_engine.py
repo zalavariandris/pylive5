@@ -95,7 +95,10 @@ ExecutionResult = dict[NodeId, Any]
 ###########
 
 
-def _execute_provider(script: str) -> dict[OperatorHandle, Callable[..., Any]]:
+def _execute_provider(script: str) -> dict[OperatorHandle, Callable]:
+    """Execute the given script and return a mapping of operator handles to callables.
+    raises any exception encountered during script execution.
+    """
     namespace:dict[str, Any] = {}
     exec(script, namespace)
     new_functions = {
@@ -139,7 +142,7 @@ class NodeExecutionError(Exception):
 
 def _execute_graph(
     resolved_graph: Graph[NodeId], 
-    resolved_operators: dict[OperatorHandle, Callable[..., Any]],
+    resolved_operators: dict[OperatorHandle, Callable],
     *,
     cache: MemoryCache[NodeId, Any],
     callback: Callable[[NodeId, NodeStatus], None]

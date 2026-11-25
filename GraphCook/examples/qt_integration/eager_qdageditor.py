@@ -205,19 +205,19 @@ class EagerGraphModel(AbstractDAGModel):
             for node, new_value in status_change.get('added', {}).items():
                 print(f"node status added for {node}({new_value})")
                 node_name = self.mapFromSource(node)
-                self.nodesDataChanged.emit(tuple([node_name]), tuple())
+                self.nodesDataChanged.emit(tuple([node_name]), [])
 
             for node, value_change in status_change.get('updated', {}).items():
                 print(f"node status updated for {node}({value_change.get('old')}->{value_change.get('new')})")
                 node_name = self.mapFromSource(node)
-                self.nodesDataChanged.emit(tuple([node_name]), tuple())
+                self.nodesDataChanged.emit(tuple([node_name]), [])
 
             for node, old_value in status_change.get('removed', {}).items():
                 if node not in self._engine.nodes():
                     continue
                 print(f"node status removed for {node}({old_value})")
                 node_name = self.mapFromSource(node)
-                self.nodesDataChanged.emit(tuple([node_name]), tuple())
+                self.nodesDataChanged.emit(tuple([node_name]), [])
 
     # READ
     def nodes(self) -> Iterable[NodeName]:

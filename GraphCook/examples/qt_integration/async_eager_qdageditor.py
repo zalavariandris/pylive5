@@ -1,8 +1,22 @@
 import asyncio
 from textwrap import dedent
 from typing import Iterable, Any, cast
-from graphcook.observable_graph import GraphChange, ObservableGraph
+from typing import Any, Callable, Iterable, Mapping
+from threading import Thread
+from queue import Queue
+import concurrent.futures
+import logging
+
 from qasync import QEventLoop, asyncSlot
+
+from qtpy.QtCore import QAbstractListModel, QPointF, Qt, QObject
+from qtpy.QtCore import QStringListModel
+from qtpy.QtCore import Qt
+from qtpy.QtCore import Signal, Slot
+from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QListView, QSizePolicy, QSplitter, QWidget
+from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
+from qtpy.QtWidgets import QPlainTextEdit
+
 from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel, 
@@ -13,32 +27,17 @@ from qdageditor5.models.abstract_dag_model import (
     DirectionalLinkId
 )
 
-from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
-from qtpy.QtCore import QStringListModel
-from qtpy.QtCore import Qt
 from qdageditor5.views.node_inspector_view import NodeInspectorView
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
+
+from myqtx.widgets.displaywidget import DisplayWidget
 from myqtx.selection_dialog_view import SelectionDialog
+from QtScriptEditorAdvanced import ScriptEditAdvanced
 
-from threading import Thread
-from queue import Queue
-
-import networkx as nx
-from qtpy.QtCore import QAbstractListModel, QPointF, Qt, QObject
-from qtpy.QtGui import QColor
-
-
-from qdageditor5.views.node_inspector_delegate import NodeInspectorDelegate
-from myqtx.widgets.coloredit import ColorEdit
-from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QListView, QSizePolicy, QSplitter, QWidget
-
-from typing import Any, Callable, Iterable, Mapping
-
+from graphcook.observable_graph import GraphChange, ObservableGraph
 from graphcook.core.cache import MemoryCache
-import concurrent.futures
 from graphcook.core.graph import Graph, Link
-
 from graphcook.core.execution_status import (
     ExecutionStatus, 
     DirtyStatus, 
@@ -46,7 +45,6 @@ from graphcook.core.execution_status import (
     SucceededStatus, 
     FailedStatus
 )
-
 from graphcook.eager_observable_engine import (
     OperatorHandle,
     NodeId,
@@ -60,11 +58,6 @@ from graphcook.eager_observable_engine import (
 )
 from graphcook.eager_observable_engine import OperatorSignature
 
-import logging
-
-from qtpy.QtCore import Signal, Slot
-from qtpy.QtWidgets import QPlainTextEdit
-from QtScriptEditorAdvanced import ScriptEditAdvanced
 
 worker_logger = logging.getLogger("graphcook.worker")
 
@@ -97,7 +90,7 @@ class QtLogHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
-NODE_STATUS_ROLE = Qt.ItemDataRole.UserRole+647 #todo: AbstractDAGModel.core has to have a GraphItemUserRole. also, i think we should support multiple data for nodes. like the cells.
+
 class AsyncEagerGraphModel(AbstractDAGModel):
     def __init__(self, graph:ObservableGraph[NodeId], parent: QObject|None = None):
         super().__init__(parent=parent)
@@ -229,6 +222,10 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                 if inlet_signature is None:
                     return self.EMPTY
 
+                default = inlet_signature.default
+                if default is not None:
+                    return default
+
                 annotation = inlet_signature.annotation
                 if annotation in (str, int, float, bool):
                     return annotation()
@@ -301,12 +298,12 @@ class AsyncEagerGraphModel(AbstractDAGModel):
 
         return False
 
-    def setNodeData(self, node: NodeName, value: Any, role: int) -> bool:
+    def setNodeData(self, node: NodeName, value: Any, role: int=Qt.ItemDataRole.EditRole) -> bool:
         return False
 
     def updateNodeStatus(self, node: NodeName, status: NodeStatus) -> bool:
         self._node_status[node] = status
-        self.nodesDataChanged.emit((node,), ())
+        self.nodesDataChanged.emit((node,), [])
         return True
 
     def closeEvent(self, event):
@@ -319,7 +316,7 @@ class Worker(Thread):
         super().__init__()
         self._tasks = Queue()
         self._resolved_functions: dict[OperatorHandle, Callable|None] = {}
-        self.cache = MemoryCache()
+        self.cache = MemoryCache[NodeId, Any]()
 
     def run(self) -> None:
         while True:
@@ -328,92 +325,84 @@ class Worker(Thread):
             if task is None:
                 break
 
-            operation, future, *args = task
+            message, future, payload = task
 
             if not future.set_running_or_notify_cancel():
                 continue
 
-            match operation:
-                case "execute_script":
-                    worker_logger.info("Executing script")
+            self.process(message, future, payload)
 
-                    try:
-                        operators = _execute_provider(args[0])
-                    except BaseException as exc:
-                        worker_logger.exception("Script execution failed")
-                        future.set_exception(exc)
-                    else:
-                        worker_logger.info("Loaded %d operators", len(operators))
-                        
-                        self._resolved_functions.clear()
-                        self._resolved_functions.update({
-                            op: func 
-                            for op, func in operators.items()
-                        })
-                        signatures = {
-                            op: OperatorSignature.from_func(func)
-                            for op, func in operators.items()
-                        }
-                        future.set_result(signatures)
+    async def submit(self, message: str, payload: Any) -> Any:
+        from concurrent.futures import Future
+        future = Future()
+        self._tasks.put((message, future, payload))
+        return await asyncio.wrap_future(future)
 
-                case 'execute_graph':
-                    worker_logger.info("Executing graph")
-                    try:
-                        G = cast(Graph[NodeId], args[0])
-                        def callback(node_id: NodeId, status: NodeStatus) -> None:
-                            worker_logger.info("Node %s status: %s", node_id, status)
-                        results = _execute_graph(G, self._resolved_functions, cache=self.cache, callback=callback)
-                    except BaseException as exc:
-                        worker_logger.exception("Graph execution failed")
-                        future.set_exception(exc)
-                    else:
-                        print("!!!!!!!!!! results:", results)
-                        future.set_result(results)
+    def process(self, 
+        message: str, 
+        future: concurrent.futures.Future, 
+        payload: Any
+    ) -> None:
+        worker_logger.info(f"{message}...")
+        match message:
+            case "execute_script":
+                try:
+                    operators: dict[OperatorHandle, Callable] = _execute_provider(payload)
+                except BaseException as exc:
+                    worker_logger.exception("Script execution failed")
+                    future.set_exception(exc)
+                else:
+                    worker_logger.info("Loaded %d operators", len(operators))
+                    
+                    self._resolved_functions.clear()
+                    self._resolved_functions.update({
+                        op: func 
+                        for op, func in operators.items()
+                    })
+                    signatures = {
+                        op: OperatorSignature.from_func(func)
+                        for op, func in operators.items()
+                    }
+                    future.set_result(signatures)
 
-                case "invalidate":
-                    worker_logger.info("Invalidating nodes")
-                    try:
-                        nodes = args[0]
-                        for node in nodes:
-                            # Invalidate logic here, e.g., mark nodes as dirty and clear cache
-                            worker_logger.info("Invalidated node: %s", node)
-                            if node in self.cache:
-                                self.cache.remove(node)
-                        future.set_result(None)
-                    except BaseException as exc:
-                        worker_logger.exception("Invalidation failed")
-                        future.set_exception(exc)
-
-                case _:
-                    future.set_exception(
-                        RuntimeError(f"Unknown operation: {operation}")
+            case 'execute_graph':
+                G = cast(Graph[NodeId], payload)
+                def callback(node_id: NodeId, status: NodeStatus) -> None:
+                    worker_logger.info("Node %s status: %s", node_id, status)
+                
+                try:
+                    results = _execute_graph(
+                        G, 
+                        self._resolved_functions, 
+                        cache=self.cache, 
+                        callback=callback
                     )
+                except Exception as exc:
+                    future.set_exception(exc)
+                else:
+                    future.set_result(results)
+
+            case "invalidate":
+                nodes = payload
+                for node in nodes:
+                    # Invalidate logic here, e.g., mark nodes as dirty and clear cache
+                    if node in self.cache:
+                        self.cache.remove(node)
+                future.set_result(None)
+
+        if exc:=future.exception():
+            worker_logger.error(f"{message} failed with exception: {exc}")
+        elif future.done():
+            worker_logger.info(f"{message} succeeded with result: {future.result()}")
+        else:
+            worker_logger.info(f"{message} {future}")
 
     def close(self):
         # signal the thread to exit
         self._tasks.put(None)
         self.join()
 
-    async def execute_script(self, script:str)->dict[OperatorHandle, OperatorSignature]:
-        from concurrent.futures import Future
-        future = Future()
-        self._tasks.put(('execute_script', future, script))
-        return await asyncio.wrap_future(future)
 
-    async def execute_graph(
-        self, subgraph: Graph[NodeId],
-    ) -> ExecutionResult:
-        future: concurrent.futures.Future[ExecutionResult] = (
-            concurrent.futures.Future()
-        )
-        self._tasks.put(("execute_graph", future, subgraph))
-        return await asyncio.wrap_future(future)
-
-    async def invalidate_node(self, *nodes: NodeId) -> None:
-        future = concurrent.futures.Future()
-        self._tasks.put(("invalidate", future, nodes))
-        return await asyncio.wrap_future(future)
-    
 class ExecutionCoordinator:
     def __init__(self, config: ObservableGraph[NodeId]):
         self.config = config
@@ -426,8 +415,6 @@ class ExecutionCoordinator:
 
     def invalidate(self, *nodes: NodeId) -> None:
         ...
-
-from myqtx.widgets.displaywidget import DisplayWidget
 
 
 class Window(QMainWindow):
@@ -475,7 +462,6 @@ class Window(QMainWindow):
         dockwidget.setWidget(self.inspector)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dockwidget)
 
-        
         self._output_viewer = DisplayWidget()
         splitter.addWidget(self._output_viewer)
 
@@ -521,7 +507,8 @@ class Window(QMainWindow):
 
     @asyncSlot()
     async def submit_invalidate_node(self, node_id: NodeId) -> None:
-        nodes_invalidated = await self.worker.invalidate_node(node_id)
+        # nodes_invalidated = await self.worker.invalidate_node(node_id)
+        await self.worker.submit('invalidate_node', [node_id])
 
     @asyncSlot()
     async def submit_execute_script(self) -> None:
@@ -532,10 +519,8 @@ class Window(QMainWindow):
         script_text = document.toPlainText()
 
         try:
-            signatures:dict[OperatorHandle, OperatorSignature] = await self.worker.execute_script(script_text)
+            signatures:dict[OperatorHandle, OperatorSignature] = await self.worker.submit('execute_script', script_text)
         except Exception as exc:
-            # Incomplete code is expected while typing.
-            # print(f"Script execution failed: {exc}")
             return
 
         # Ignore this result if the script changed while we were waiting.
@@ -572,10 +557,10 @@ class Window(QMainWindow):
             for link in G.in_links(node):
                 resolved_subgraph.add_link(link.source, link.target, link.inlet)
 
-
         # send the subgraph to the worker for execution
         try:
-            outputs = await self.worker.execute_graph(resolved_subgraph)
+            # outputs = await self.worker.execute_graph(resolved_subgraph)
+            outputs = await self.worker.submit('execute_graph', resolved_subgraph)
         except NodeExecutionError as exc:
             node_name = self.model.mapFromSource(exc.node)
             if node_name in self.model.nodes():

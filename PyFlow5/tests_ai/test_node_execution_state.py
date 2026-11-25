@@ -240,7 +240,7 @@ def test_state_observer_can_supersede_a_completion(
     engine.nodes_executed.connect(outputs.append)
     engine.execute_nodes(node)
 
-    def rerun(nodes: tuple[str, ...], roles: tuple[int, ...]) -> None:
+    def rerun(nodes: tuple[str, ...], roles: list[int]) -> None:
         if model.nodeHeaderData(node.name(), model.StateRole) is NodeExecutionState.IDLE and len(backend.executions) == 1:
             engine._graph._update_node(node, lambda: 99)
             engine.execute_nodes(node)

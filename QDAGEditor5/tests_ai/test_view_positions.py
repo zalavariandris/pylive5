@@ -130,7 +130,7 @@ def test_positions_are_per_view_and_survive_geometry_invalidation(
     position.setX(999)
     returned_position = view.nodePosition(node)
     returned_position.setY(999)
-    model.nodesDataChanged.emit((node,), ())
+    model.nodesDataChanged.emit((node,), [])
     assert view.nodePosition(node) == QPointF(120, 140)
     assert other_view.nodePosition(node) == other_position
 

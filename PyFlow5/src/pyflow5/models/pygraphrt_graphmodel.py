@@ -274,7 +274,7 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         if changed_headers:
             self.nodesDataChanged.emit(
                 tuple(changed_headers),
-                (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.BackgroundRole),
+                [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.BackgroundRole],
             )
         self._refresh_node_states()
 
@@ -338,14 +338,14 @@ class PyGraphRTGraphModel(AbstractDAGModel):
         if notify and changed:
             self.nodesDataChanged.emit(
                 tuple(name for name in self._nodes if name in changed),
-                (
+                [
                     self.StateRole, 
                     self.OutputRole, 
                     self.ErrorRole,
                     NodeDataRole.TrailingRole,
                     Qt.ItemDataRole.BackgroundRole, 
                     Qt.ItemDataRole.ForegroundRole,
-                ),
+                ],
             )
 
     def _on_nodes_invalidated(self, nodes: list[rt2.NodeRef]) -> None:

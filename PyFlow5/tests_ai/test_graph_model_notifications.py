@@ -157,7 +157,7 @@ def test_operator_change_updates_header_without_resetting_identical_inlets(
     args, kwargs = (target.resolve().args, target.resolve().kwargs)
     model._engine._graph._update_node(target, renamed, args, kwargs)
     assert events == [(
-        "nodes", ("target",), (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.BackgroundRole),
+        "nodes", ("target",), [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.BackgroundRole],
     )]
 
 
