@@ -323,6 +323,7 @@ class Engine:
         # notify connected clients about the state changes
         ...
 
+
 class EngineClient(Thread):
     def __init__(self):
         super().__init__()
@@ -644,8 +645,6 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self._client = EngineClient()
-
         self._config_graph = ObservableGraph[NodeId]()
         self._operator_signatures: dict[OperatorHandle, OperatorSignature] = {}
 
@@ -857,6 +856,10 @@ class Window(QMainWindow):
 
         finally:
             dialog.deleteLater()
+
+
+
+
 
 
 if __name__ == "__main__":
