@@ -62,9 +62,10 @@ class OperatorSignature:
     """Public operator information."""
     name: str
     inlets: dict[str, InletSignature] # todo: move this to the operator's signature
+    revision: int
 
     @staticmethod
-    def from_func(func: Callable[..., Any]) -> "OperatorSignature":
+    def from_func(func: Callable[..., Any], revision: int) -> "OperatorSignature":
         from inspect import signature
         sig = signature(func, eval_str=True)
         inlets = {
@@ -74,12 +75,12 @@ class OperatorSignature:
             )
             for name, param in sig.parameters.items()
         }
-        return OperatorSignature(name=func.__name__, inlets=inlets)
+        return OperatorSignature(name=func.__name__, inlets=inlets, revision=revision)
 
 
 class EagerNodeData(TypedDict, total=False):
     """Public node information, without computed results."""
-    __operator__: OperatorSignature
+    __operator__: OperatorHandle
     
 
 class NodeData(TypedDict):

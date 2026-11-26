@@ -29,6 +29,13 @@ class MappingChanges[K: Hashable, V, U](TypedDict, total=False):
     updated: dict[K, U]
 
 
+def diff_mapping(before:Mapping, after:Mapping)->MappingChanges:
+    added = {k: v for k, v in after.items() if k not in before}
+    removed = {k: v for k, v in before.items() if k not in after}
+    updated = {k: after[k] for k in after if k in before and before[k] != after[k]}
+    return MappingChanges(kind='map', added=added, removed=removed, updated=updated)
+
+
 type Change = ValueChange[Any] | SetChanges[Any] | MappingChanges[Any, Any, Change]
 
 
@@ -40,8 +47,6 @@ class ObservableProtocol(Protocol):
 
     def notify(self, change: Change) -> None:
         ...
-
-
 
 
 def apply_change(target: object, change: Change) -> object:
