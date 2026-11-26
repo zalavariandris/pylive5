@@ -16,7 +16,7 @@ from qtpy.QtCore import QAbstractListModel, QModelIndex, QPointF, Qt, QObject
 from qtpy.QtCore import QStringListModel
 from qtpy.QtCore import Qt
 from qtpy.QtCore import Signal, Slot
-from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QListView, QSizePolicy, QSplitter, QWidget
+from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QHBoxLayout, QListView, QSizePolicy, QSplitter, QWidget
 from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
 from qtpy.QtWidgets import QPlainTextEdit
 
@@ -112,7 +112,9 @@ from concurrent.futures import Future
 class Worker(Thread):
     def __init__(self):
         super().__init__()
-        self._tasks = Queue()
+        self._tasks: Queue[
+            tuple[Future, Callable[[Engine], Any] | None]
+        ] = Queue()
         self._resolved_functions: dict[OperatorHandle, Callable|None] = {}
         self._source: str = ""
         self._signatures: dict[OperatorHandle, OperatorSignature] = {}
@@ -209,6 +211,7 @@ class Worker(Thread):
 class Executor:
     def __init__(self):
         # internal state?
+        self._source: str = "" # hold the current script to compare against new submissions
         self.operators: dict[OperatorHandle, Callable] = dict()
         self.signatures: dict[OperatorHandle, OperatorSignature] = dict()
         self.cache = MemoryCache[NodeId, Any]()
@@ -216,8 +219,37 @@ class Executor:
         # computed
         self.node_statuses = dict()
 
-    def execute_script(self, script: str) -> dict[OperatorHandle, tuple[Callable, int]]:
-        ...
+    def execute_script(
+        self, script: str
+    ) -> dict[OperatorHandle, OperatorSignature]:
+        try:
+            operators = _execute_provider(script)
+            changes = ast_functions_diff(self._source, script)
+            signatures: dict[OperatorHandle, OperatorSignature] = {}
+
+            for handle, func in operators.items():
+                previous = self.signatures.get(handle)
+                revision = previous.revision if previous is not None else 0
+
+                if previous is not None and handle.name in changes.changed:
+                    revision += 1
+
+                signatures[handle] = OperatorSignature.from_func(
+                    func, revision=revision
+                )
+        except Exception:
+            self.operators.clear()
+            self.signatures.clear()
+            raise
+
+        self._source = script
+        self.operators = operators
+        self.signatures = signatures
+
+        return {
+            handle: (func, signatures[handle].revision)
+            for handle, func in operators.items()
+        }
 
     def execute_subgraph(self, subgraph: Graph[NodeId]) -> dict[NodeId, NodeStatus]:
         ...
@@ -328,6 +360,7 @@ class EngineClient(Thread):
     def __init__(self):
         super().__init__()
         self._tasks: Queue[tuple[Future, Callable[[Engine], Any]]] = Queue()
+        self._listeners: list[Callable[[Any], None]] = []
 
     def run(self):
         engine = Engine()
@@ -348,11 +381,31 @@ class EngineClient(Thread):
         self._tasks.put((future, process))
         return future
 
+    def request_get_signatures(self) -> Future[dict[OperatorHandle, OperatorSignature]]:
+        return self.submit(lambda server: {
+            handle: OperatorSignature.from_func(func, revision=revision)
+            for handle, (func, revision) in server.executor.get_signatures().items()
+        })
+
     def request_get_script(self) -> Future[str]:
         return self.submit(lambda server: server.script.get())
 
-    def request_execute_script(self) -> Future[None]:
-        return self.submit(lambda server: server.executor.execute_script(server.script.get()))
+    def request_set_script(self, new_script: str) -> Future[None]:
+        return self.submit(lambda server: server.script.set(new_script))
+
+    def request_execute_script(
+        self,
+    ) -> Future[dict[OperatorHandle, OperatorSignature]]:
+        def execute(
+            engine: Engine,
+        ) -> dict[OperatorHandle, OperatorSignature]:
+            operators = engine.executor.execute_script(engine.script.get())
+            return {
+                handle: OperatorSignature.from_func(func, revision=revision)
+                for handle, (func, revision) in operators.items()
+            }
+
+        return self.submit(execute)
 
     def request_get_graph(self) -> Future[Graph[NodeId]]:
         def map_graph_to_view(engine_graph: Graph[NodeId]) -> Graph[NodeId]:
@@ -371,21 +424,71 @@ class EngineClient(Thread):
     def request_execute_graph(self, subgraph: Graph[NodeId]) -> Future[dict[NodeId, NodeStatus]]:
         return self.submit(lambda server: server.executor.execute_subgraph(subgraph))
 
+    def listen(self, callback: Callable[[Any], None]) -> Callable[[Any], None]:
+        self._listeners.append(callback)
+        def unsubscribe(callback: Callable[[Any], None]) -> None:
+            self._listeners.remove(callback)
+        return unsubscribe
+
+    def _notify(self, result: Any) -> None:
+        for listener in self._listeners:
+            listener(result)
+
+    def close(self) -> None:
+        self._tasks.put((Future(), None))
+        self.join()
+
 ##########
 # MODELS #
 ##########
+from typing import TypedDict
+
+class _NodeShadow(TypedDict):
+    node_id: NodeId
+    operator: OperatorHandle | None = None
+    status: NodeStatus | None = None
+
 
 class AsyncEagerGraphModel(AbstractDAGModel):
     def __init__(
         self,
-        graph: ObservableGraph[NodeId],
-        operator_signature: Callable[[OperatorHandle], OperatorSignature | None],
+        client: EngineClient,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent=parent)
-        self._config_graph = graph
-        self._operator_signature = operator_signature
-        self._node_status: dict[NodeName, NodeStatus] = dict()
+        self._graph: ObservableGraph[NodeId, _NodeShadow] = ObservableGraph()
+        self._client = client
+        # sync the observable graph with the engine client
+        def _sync_client(change: GraphChange) -> None:
+            # handle changes from the engine client and update the observable graph
+            if link_change := change.get("links"):
+                for link_id in link_change.get('added', []):
+                    self._client.submit(lambda engine, link_id=link_id: 
+                        engine.graph.add_link(link_id))
+
+                for link_id in link_change.get('removed', []):
+                    self._client.submit(lambda engine, link_id=link_id: 
+                        engine.graph.remove_link(link_id))
+                    
+            if nodes_change := change.get("nodes"):
+                for node_id in nodes_change.get('added', []):
+                    self._client.submit(lambda engine, node_id=node_id: 
+                        engine.graph.add_node(node_id))
+
+                for node_id in nodes_change.get('removed', []):
+                    self._client.submit(lambda engine, node_id=node_id: 
+                        engine.graph.remove_node(node_id))
+
+                for node_id in nodes_change.get('updated', []):
+                    ...
+
+        self._graph.listen(_sync_client)
+
+        def _sync_local(change: EngineChange) -> None:
+            # handle changes from the engine client and update the observable graph
+            pass
+
+        client.listen(_sync_local)
 
     # Adapter
     def mapFromSource(self, node: 'NodeId', inlet: InletName|None = None)->NodeName|tuple[NodeName, InletName]:
@@ -408,14 +511,14 @@ class AsyncEagerGraphModel(AbstractDAGModel):
 
     # READ
     def nodes(self) -> Iterable[NodeName]:
-        for node in self._config_graph.nodes():
+        for node in self._graph.nodes():
             yield node
 
     def addNode(self, operator: OperatorHandle | None = None) -> NodeName:
         from unique_names_generator import get_random_name
         node_id = NodeId(get_random_name())
         self._beginAddNodes([node_id])
-        self._config_graph.add_node(node_id, 
+        self._graph.add_node(node_id, 
             __operator__ = operator
         )
         self._endAddNodes()
@@ -423,7 +526,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
 
     def operatorSignature(self, node: NodeName) -> OperatorSignature | None:
         """Resolve a node's handle against the current operator registry."""
-        node_data = self._config_graph.attributes(self.mapToSource(node))
+        node_data = self._graph.attributes(self.mapToSource(node))
         handle = node_data.get(OPERATOR_ATTRIBUTE)
         if handle is None:
             return None
@@ -434,7 +537,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         """Refresh ports and inspector editors after the registry changes."""
         changed = set(operators)
         for node in self.nodes():
-            node_data = self._config_graph.attributes(self.mapToSource(node))
+            node_data = self._graph.attributes(self.mapToSource(node))
             if node_data.get(OPERATOR_ATTRIBUTE) in changed:
                 self._beginResetInlets(node)
                 self._endResetInlets()
@@ -446,7 +549,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         return None
 
     def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        node_data: Mapping[str, Any] = self._config_graph.attributes(self.mapToSource(node_name))
+        node_data: Mapping[str, Any] = self._graph.attributes(self.mapToSource(node_name))
         node_status = self._node_status.get(self.mapToSource(node_name), None)
         match role:
             case Qt.ItemDataRole.DisplayRole:
@@ -483,11 +586,11 @@ class AsyncEagerGraphModel(AbstractDAGModel):
 
     def inlets(self, node: NodeName) -> Iterable[InletName]:
         node_id = self.mapToSource(node)
-        node_data = self._config_graph.attributes(node_id)
+        node_data = self._graph.attributes(node_id)
         signature = self.operatorSignature(node)
         parameters = signature.inlets if signature is not None else {}
         inputs = [name for name in node_data if not name.startswith('_')]
-        linked_inlets = [link.inlet for link in self._config_graph.in_links(node_id)]
+        linked_inlets = [link.inlet for link in self._graph.in_links(node_id)]
         yield from dict.fromkeys((*parameters, *inputs, *linked_inlets))
 
     def inletHeaderData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
@@ -498,7 +601,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                 return None
 
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
-        node_data: Mapping[str, Any] = self._config_graph.attributes(self.mapToSource(node))
+        node_data: Mapping[str, Any] = self._graph.attributes(self.mapToSource(node))
         signature = self.operatorSignature(node)
         inlet_signature = signature.inlets.get(inlet) if signature is not None else None
         match role:
@@ -542,17 +645,17 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         return None
 
     def inLinks(self, target_node: NodeName, inlet: InletName) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._config_graph.in_links(target_node):
+        for src, dst, key in self._graph.in_links(target_node):
             if key == inlet:
                 yield (src, 'out', dst, key)
 
     def outLinks(self, source_node: NodeName, outlet: OutletName) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._config_graph.out_links(source_node):
+        for src, dst, key in self._graph.out_links(source_node):
             if outlet == 'out':
                 yield (src, 'out', dst, key)
 
     def links(self) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._config_graph.links():
+        for src, dst, key in self._graph.links():
             yield (src, 'out', dst, key)
 
     # update
@@ -560,7 +663,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         self._beginRemoveNodes(nodes)
         for node in nodes:
             node_id = self.mapToSource(node)
-            self._config_graph.remove_node(node_id)
+            self._graph.remove_node(node_id)
         self._endRemoveNodes()
         return True
 
@@ -569,7 +672,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         for src, out_, dst, in_ in links:
             src_id = self.mapToSource(src)
             dst_id, inlet = self.mapToSource(dst, in_)
-            self._config_graph.add_link(src_id, dst_id, inlet)
+            self._graph.add_link(src_id, dst_id, inlet)
         self._endAddLinks()
         return True
 
@@ -579,7 +682,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
             src, outlet, dst, inlet = link
             src_id = self.mapToSource(src)
             dst_id, inlet = self.mapToSource(dst, inlet)
-            self._config_graph.remove_edge(src_id, dst_id, inlet)
+            self._graph.remove_edge(src_id, dst_id, inlet)
         self._endRemoveLinks()
         return True
 
@@ -587,12 +690,12 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         if role == Qt.ItemDataRole.EditRole:
             if value is self.EMPTY:
                 node_id, inlet_id = self.mapToSource(node, inlet)
-                self._config_graph.unset(node_id, inlet_id)
+                self._graph.unset(node_id, inlet_id)
                 self.inletDataChanged.emit(node, tuple([inlet]), [])
                 return True
             else:
                 node_id, inlet_id = self.mapToSource(node, inlet)
-                self._config_graph.set(node_id, inlet_id, value)
+                self._graph.set(node_id, inlet_id, value)
                 self.inletDataChanged.emit(node, tuple([inlet]), [])
                 return True
 
@@ -612,52 +715,41 @@ class AsyncEagerGraphModel(AbstractDAGModel):
 
 from dataclasses import dataclass
 
-@dataclass
-class _OperatorShadow:
-    handle: OperatorHandle
-    signature: OperatorSignature
 
-class OperatorsModel(QAbstractListModel):
-    def __init__(self, client: EngineClient, parent:QObject|None=None):
+from qtpy.QtGui import QTextDocument
+
+class EngineModel(QObject):
+    scriptStatusChanged = Signal(str, bool)
+    def __init__(self, parent: QObject|None = None):
         super().__init__(parent=parent)
-        self._client = client
-        self._operators: list[_OperatorShadow] = []
+        self._executing = False
+        self._operator_signatures: dict[
+            OperatorHandle, OperatorSignature
+        ] = {}
 
-        client.listen(self._handle_client_changes)
-
-    def _handle_client_changes(self, changes):
-        if operator_changes:=changes.get("operators", dict):
-            ...
-        
-    def rowCount(self, parent=QModelIndex()) -> int:
-        return len(self._operators)
-
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        if not index.isValid():
-            return None
-        if role == Qt.ItemDataRole.DisplayRole:
-            operators = self._client.get_operators()
-            if 0 <= index.row() < len(operators):
-                return operators[index.row()]
-        return None
-
-class Window(QWidget):
-    def __init__(self):
-        super().__init__()
-        # client
         self._client = EngineClient()
         self._client.listen(self._handle_client_changes)
 
         # models
-        self.operator_list_model = QStringListModel()
-        self._operator_signatures = {}
-        self.graphmodel = AsyncEagerGraphModel(self._client)
+        self.script = QTextDocument()
+        self.script.contentsChanged.connect(
+            lambda: self._client.request_set_script(
+                self.script.toPlainText()
+            )
+        )
+        self.operators = QStringListModel(self)
+
+        self._client.start()
+        self.graph = AsyncEagerGraphModel(self._client)
+
+    def close(self) -> None:
+        self._client.close()
 
     def _handle_client_changes(self, changes):
         if operator_changes:=changes.get("operators", dict):
             fut = self._client.get_operators()
             def refresh_operator_model(oparetos: dict):
-                self.operator_list_model.setStringList([op["name"] for op in oparetos.values()])
+                self.operators.setStringList([op["name"] for op in oparetos.values()])
 
             fut.add_done_callback(lambda f: (
                 self._operator_signatures.update({
@@ -675,7 +767,98 @@ class Window(QWidget):
                 print(link_changes)
 
 
+    @asyncSlot()
+    async def execute_script(self) -> None:
+        if self._executing:
+            return
 
+        self._executing = True
+        self.scriptStatusChanged.emit("Evaluating script...", False)
+
+        try:
+            # These requests enter the same FIFO queue.
+            self._client.request_set_script(self.script.toPlainText())
+            signatures = await asyncio.wrap_future(
+                self._client.request_execute_script()
+            )
+        except Exception as exc:
+            self._operator_signatures.clear()
+            self.operators.setStringList([])
+            self.scriptStatusChanged.emit(
+                f"{type(exc).__name__}: {exc}", True
+            )
+        else:
+            self._operator_signatures = signatures
+            self.operators.setStringList(
+                sorted(handle.name for handle in signatures)
+            )
+            self.scriptStatusChanged.emit(
+                "Script evaluated successfully", False
+            )
+        finally:
+            self._executing = False
+
+    @asyncSlot()
+    async def execute_graph(self) -> None:
+        ...
+
+
+from qdageditor5.views.node_inspector_view import NodeInspectorView
+from qdageditor5.models.graph_selection_model import GraphSelectionModel
+from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
+
+
+class Window(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        #model
+        self._engine_model = EngineModel()
+        self.graphselection = GraphSelectionModel(self._engine_model.graph)
+
+        self._engine_model.scriptStatusChanged.connect(
+            self._show_script_status
+        )
+
+        # main menubar
+        self.menu_bar = self.menuBar()
+
+        # edit menu
+        self.edit_menu = self.menu_bar.addMenu("Edit")
+        execute_script_action = self.edit_menu.addAction("execute script")
+        execute_script_action.triggered.connect(self._engine_model.execute_script)
+
+        # views
+        self.script_edit = ScriptEditAdvanced()
+        self.script_edit.setDocument(self._engine_model.script)
+
+        self.operators_view = QListView()
+        self.operators_view.setModel(self._engine_model.operators)
+
+        self.graph_edit = DirectionalGraphView5()
+        self.graph_edit.setModel(self._engine_model.graph)
+        self.graph_edit.setSelectionModel(self.graphselection)
+
+        self.inspector = NodeInspectorView()
+        self.inspector.setModel(self._engine_model.graph)
+        self.inspector.setSelectionModel(self.graphselection)
+
+        # layout views
+        main_layout = QHBoxLayout()
+        main_layout.addWidget(self.script_edit)
+        main_layout.addWidget(self.operators_view)
+        main_layout.addWidget(self.graph_edit)
+        main_layout.addWidget(self.inspector)
+        central_widget = QWidget()
+        central_widget.setLayout(main_layout)
+        self.setCentralWidget(central_widget)
+
+    @Slot(str, bool)
+    def _show_script_status(self, message: str, is_error: bool) -> None:
+        status_bar = self.statusBar()
+        status_bar.setStyleSheet(
+            "QStatusBar { color: red; }" if is_error else ""
+        )
+        status_bar.showMessage(message)
 
 
 if __name__ == "__main__":
@@ -688,14 +871,14 @@ if __name__ == "__main__":
 
     editor = Window()
     editor.show()
-    loop.call_soon(editor.submit_execute_script)
-
+    # loop.call_soon(editor.submit_execute_script)
     with loop:
         try:
             loop.run_forever()
         finally:
-            editor.worker.close()
-            worker_logger.removeHandler(editor.log_handler)
-            editor.log_handler.close()
+            editor._engine_model.close()
+            # editor.worker.close()
+            # worker_logger.removeHandler(editor.log_handler)
+            # editor.log_handler.close()
 
 

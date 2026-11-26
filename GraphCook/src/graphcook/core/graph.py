@@ -97,8 +97,13 @@ def topological_sort(graph: GraphProtocol[NodeT], *roots: NodeT) -> tuple[NodeT,
 
     return tuple(order)
 
+AttributesT = TypeVar(
+    "AttributesT",
+    bound=Mapping[str, object],
+    default=Mapping[str, object],
+)
 
-class Graph(Generic[NodeT]):
+class Graph(Generic[NodeT, AttributesT]):
     """Store node dictionaries and one incoming link per (target, inlet).
 
     Incoming dictionaries are shallow-copied. attributes() returns a live,
@@ -108,7 +113,7 @@ class Graph(Generic[NodeT]):
     """
 
     def __init__(self) -> None:
-        self._nodes: dict[NodeT, dict] = {}
+        self._nodes: dict[NodeT, AttributesT] = {}
         self._inputs: dict[NodeT, dict[str, NodeT]] = {} # [dst, [inlet: source]]
         self._outputs: dict[NodeT, dict[NodeT, Set[str]]] = {} # [src, [dst: {in1, in2, ...}]]
 
@@ -195,9 +200,9 @@ class Graph(Generic[NodeT]):
             if not self._outputs[source][target]:
                 del self._outputs[source][target]
 
-    def attributes(self, node: NodeT) -> Mapping[str, object]:
+    def attributes(self, node: NodeT) -> AttributesT:
         """Return a live, shallow read-only view of the node's attributes."""
-        return MappingProxyType(self._nodes[node])
+        return self._nodes[node]
 
     def set(self, node: NodeT, name: str, value: object) -> None:
         """Assign one attribute, preserving the node's other attributes."""
