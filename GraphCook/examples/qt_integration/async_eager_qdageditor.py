@@ -12,7 +12,7 @@ import logging
 from graphcook.core.changes import ObservableValue
 from qasync import QEventLoop, asyncSlot
 
-from qtpy.QtCore import QAbstractListModel, QPointF, Qt, QObject
+from qtpy.QtCore import QAbstractListModel, QModelIndex, QPointF, Qt, QObject
 from qtpy.QtCore import QStringListModel
 from qtpy.QtCore import Qt
 from qtpy.QtCore import Signal, Slot
@@ -108,6 +108,271 @@ class QtLogHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
+from concurrent.futures import Future
+class Worker(Thread):
+    def __init__(self):
+        super().__init__()
+        self._tasks = Queue()
+        self._resolved_functions: dict[OperatorHandle, Callable|None] = {}
+        self._source: str = ""
+        self._signatures: dict[OperatorHandle, OperatorSignature] = {}
+        self.cache = MemoryCache[NodeId, Any]()
+
+    def run(self) -> None:
+        while True:
+            task = self._tasks.get()
+
+            if task is None:
+                break
+
+            message, future, payload = task
+
+            if not future.set_running_or_notify_cancel():
+                continue
+
+            self.process(message, future, payload)
+
+    async def submit(self, message: str, payload: Any) -> Any:
+        
+        future = Future()
+        self._tasks.put((message, future, payload))
+        return await asyncio.wrap_future(future)
+
+    def process(self, 
+        message: str, 
+        future: concurrent.futures.Future, 
+        payload: Any
+    ) -> None:
+        worker_logger.info(f"{message}...")
+        match message:
+            case "execute_script":
+                assert isinstance(payload, str)
+                new_script: str = payload
+                try:
+                    ast_diff: FunctionsDiff = ast_functions_diff(self._source, new_script)
+                    operators: dict[OperatorHandle, Callable] = _execute_provider(new_script)
+                    signatures: dict[OperatorHandle, OperatorSignature] = {}
+                    for handle, func in operators.items():
+                        previous = self._signatures.get(handle)
+                        revision = previous.revision if previous is not None else 0
+                        if previous is not None and handle.name in ast_diff.changed:
+                            revision += 1
+                        signatures[handle] = OperatorSignature.from_func(func, revision=revision)
+                except BaseException as exc:
+                    worker_logger.exception("Script execution failed")
+                    future.set_exception(exc)
+                else:
+                    worker_logger.info("Loaded %d operators", len(operators))
+                    # Only successful submissions become the next comparison baseline.
+                    self._source = new_script
+                    self._resolved_functions = operators
+                    self._signatures = signatures
+                    future.set_result(signatures)
+
+            case 'execute_graph':
+                G = cast(Graph[NodeId], payload)
+                def callback(node_id: NodeId, status: NodeStatus) -> None:
+                    worker_logger.info("Node %s status: %s", node_id, status)
+                
+                try:
+                    results = _execute_graph(
+                        G, 
+                        self._resolved_functions, 
+                        cache=self.cache, 
+                        callback=callback
+                    )
+                except Exception as exc:
+                    future.set_exception(exc)
+                else:
+                    future.set_result(results)
+
+            case "invalidate":
+                nodes = payload
+                for node in nodes:
+                    # Invalidate logic here, e.g., mark nodes as dirty and clear cache
+                    if node in self.cache:
+                        self.cache.remove(node)
+                future.set_result(None)
+
+        if exc:=future.exception():
+            worker_logger.error(f"{message} failed with exception: {exc}")
+        elif future.done():
+            worker_logger.info(f"{message} succeeded with result: {future.result()}")
+        else:
+            worker_logger.info(f"{message} {future}")
+
+    def close(self):
+        # signal the thread to exit
+        self._tasks.put(None)
+        self.join()
+
+class Executor:
+    def __init__(self):
+        # internal state?
+        self.operators: dict[OperatorHandle, Callable] = dict()
+        self.signatures: dict[OperatorHandle, OperatorSignature] = dict()
+        self.cache = MemoryCache[NodeId, Any]()
+
+        # computed
+        self.node_statuses = dict()
+
+    def execute_script(self, script: str) -> dict[OperatorHandle, tuple[Callable, int]]:
+        ...
+
+    def execute_subgraph(self, subgraph: Graph[NodeId]) -> dict[NodeId, NodeStatus]:
+        ...
+
+from graphcook.core.graph import descendants
+class Invalidator:
+    def __init__(self, graph: ObservableGraph[NodeId]) -> None:
+        self.graph = graph
+        self._subscribers: list[Callable[[list[NodeId]], None]] = []
+        self._unsubscribe_graph: Callable[[], None] | None = graph.listen(self._handle_graph_change)
+
+    def close(self) -> None:
+        """Stop observing the graph. Safe to call more than once."""
+        if self._unsubscribe_graph is not None:
+            self._unsubscribe_graph()
+            self._unsubscribe_graph = None
+
+    def _handle_graph_change(self, change: GraphChange) -> None:
+        nodes_to_invalidate: set[NodeId] = set()
+        if nodes_change:=change.get("nodes"):
+            for node_id in nodes_change.get("added", []):
+                nodes_to_invalidate.add(node_id)
+
+            for node_id in nodes_change.get("removed", []):
+                ...
+
+            for node_id in nodes_change.get("updated", []):
+                nodes_to_invalidate.add(node_id)
+                for dep in descendants(self.graph, node_id):
+                    nodes_to_invalidate.add(dep)
+
+        if links_change:=change.get("links"):
+            for link in links_change.get("added", []):
+                src, dst, inlet = link
+                nodes_to_invalidate.add(dst)
+                for dep in descendants(self.graph, dst):
+                    nodes_to_invalidate.add(dep)
+
+            for link in links_change.get("removed", []):
+                src, dst, inlet = link
+                if dst not in self.graph.nodes():
+                    continue
+                nodes_to_invalidate.add(dst)
+                for dep in descendants(self.graph, dst):
+                    nodes_to_invalidate.add(dep)
+
+        if nodes_to_invalidate:
+            self._notify_subscribers(nodes_to_invalidate)
+
+    def _notify_subscribers(self, nodes: set[NodeId]) -> None:
+        for subscriber in tuple(self._subscribers):
+            subscriber(list(nodes))
+
+    def invalidate(self, *nodes: NodeId) -> None:
+        """manually trigger invalidation for the given nodes and their descendants"""
+        nodes_to_invalidate: set[NodeId] = set(nodes)
+        for node in nodes:
+            for dep in descendants(self.graph, node):
+                nodes_to_invalidate.add(dep)
+
+        if nodes_to_invalidate:
+            self._notify_subscribers(nodes_to_invalidate)
+
+    def listen(self, callback: Callable[[Iterable[NodeId]], None]) -> Callable[[], None]:
+        """listen for nodes invalidated"""
+        self._subscribers.append(callback)
+        def unsubscribe():
+            self._subscribers.remove(callback)
+        return unsubscribe
+
+
+class Engine:
+    def __init__(self):
+        self.script:ObservableValue[str] = ObservableValue("")
+        self.graph:ObservableGraph[NodeId] = ObservableGraph()
+        self.invalidator: Invalidator = Invalidator(self.graph)
+        self.invalidator.listen(lambda nodes: self._handle_invalidation(nodes))
+        self.executor: Executor = Executor()
+        self._operators: dict[OperatorHandle, object] = dict()
+        self._status: dict[NodeId, Any] = dict() # consider using an ObservableDict?
+
+    def _handle_script_change(self, new_script: str) -> None:
+        """ Handle script changes here """
+        # - notify connected clients
+        ...
+
+        # - execute operators and update relevant nodes with the changed oprators
+        ...
+
+    def _handle_invalidation(self, nodes: Iterable[NodeId]) -> None:
+        """ Handle invalidated nodes here """
+        # - notify connected clients about the invalidated nodes
+        ...
+
+        # - execute nodes that have been invalidated and update their state accordingly using the executor
+        ...
+
+        # notify clients about the new status
+        self._handle_status_change({node: self._status.get(node) for node in nodes})
+
+    def _handle_status_change(self, changes: dict[NodeId, NodeStatus]) -> None:
+        """ Handle state changes here """
+        # notify connected clients about the state changes
+        ...
+
+class EngineClient(Thread):
+    def __init__(self):
+        super().__init__()
+        self._tasks: Queue[tuple[Future, Callable[[Engine], Any]]] = Queue()
+
+    def run(self):
+        engine = Engine()
+        while True:
+            future, task = self._tasks.get()
+            if task is None:
+                break
+            try:
+                response = task(engine)
+            except Exception as exc:
+                worker_logger.error("Task failed with exception: %s", exc)
+                future.set_exception(exc)
+            else:
+                future.set_result(response)
+
+    def submit(self, process: Callable[[Engine], Any])->Future:
+        future = Future()
+        self._tasks.put((future, process))
+        return future
+
+    def request_get_script(self) -> Future[str]:
+        return self.submit(lambda server: server.script.get())
+
+    def request_execute_script(self) -> Future[None]:
+        return self.submit(lambda server: server.executor.execute_script(server.script.get()))
+
+    def request_get_graph(self) -> Future[Graph[NodeId]]:
+        def map_graph_to_view(engine_graph: Graph[NodeId]) -> Graph[NodeId]:
+            view_graph:Graph[NodeId] = Graph()
+            for node_id in engine_graph.nodes():
+                attributes = engine_graph.attributes(node_id)
+                view_attributes = dict(**attributes)
+                func = attributes[OPERATOR_ATTRIBUTE]
+                assert callable(func)
+                view_attributes[OPERATOR_ATTRIBUTE] = OperatorSignature.from_func(func, 0)
+                view_graph.add_node(node_id, **attributes)
+            return view_graph
+
+        return self.submit(lambda server: map_graph_to_view(server.graph))
+
+    def request_execute_graph(self, subgraph: Graph[NodeId]) -> Future[dict[NodeId, NodeStatus]]:
+        return self.submit(lambda server: server.executor.execute_subgraph(subgraph))
+
+##########
+# MODELS #
+##########
 
 class AsyncEagerGraphModel(AbstractDAGModel):
     def __init__(
@@ -344,277 +609,51 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         self._unsubscribe()
         super().closeEvent(event)
 
-from concurrent.futures import Future
-class Worker(Thread):
-    def __init__(self):
-        super().__init__()
-        self._tasks = Queue()
-        self._resolved_functions: dict[OperatorHandle, Callable|None] = {}
-        self._source: str = ""
-        self._signatures: dict[OperatorHandle, OperatorSignature] = {}
-        self.cache = MemoryCache[NodeId, Any]()
+from dataclasses import dataclass
 
-    def run(self) -> None:
-        while True:
-            task = self._tasks.get()
+@dataclass
+class _OperatorShadow:
+    handle: OperatorHandle
+    signature: OperatorSignature
 
-            if task is None:
-                break
+class OperatorsModel(QAbstractListModel):
+    def __init__(self, client: EngineClient, parent:QObject|None=None):
+        super().__init__(parent=parent)
+        self._client = client
+        self._operators: list[_OperatorShadow] = []
 
-            message, future, payload = task
+        client.listen(self._handle_client_changes)
 
-            if not future.set_running_or_notify_cancel():
-                continue
-
-            self.process(message, future, payload)
-
-    async def submit(self, message: str, payload: Any) -> Any:
+    def _handle_client_changes(self, changes):
+        if operator_changes:=changes.get("operators", dict):
+            ...
         
-        future = Future()
-        self._tasks.put((message, future, payload))
-        return await asyncio.wrap_future(future)
+    def rowCount(self, parent=QModelIndex()) -> int:
+        return len(self._operators)
 
-    def process(self, 
-        message: str, 
-        future: concurrent.futures.Future, 
-        payload: Any
-    ) -> None:
-        worker_logger.info(f"{message}...")
-        match message:
-            case "execute_script":
-                assert isinstance(payload, str)
-                new_script: str = payload
-                try:
-                    ast_diff: FunctionsDiff = ast_functions_diff(self._source, new_script)
-                    operators: dict[OperatorHandle, Callable] = _execute_provider(new_script)
-                    signatures: dict[OperatorHandle, OperatorSignature] = {}
-                    for handle, func in operators.items():
-                        previous = self._signatures.get(handle)
-                        revision = previous.revision if previous is not None else 0
-                        if previous is not None and handle.name in ast_diff.changed:
-                            revision += 1
-                        signatures[handle] = OperatorSignature.from_func(func, revision=revision)
-                except BaseException as exc:
-                    worker_logger.exception("Script execution failed")
-                    future.set_exception(exc)
-                else:
-                    worker_logger.info("Loaded %d operators", len(operators))
-                    # Only successful submissions become the next comparison baseline.
-                    self._source = new_script
-                    self._resolved_functions = operators
-                    self._signatures = signatures
-                    future.set_result(signatures)
-
-            case 'execute_graph':
-                G = cast(Graph[NodeId], payload)
-                def callback(node_id: NodeId, status: NodeStatus) -> None:
-                    worker_logger.info("Node %s status: %s", node_id, status)
-                
-                try:
-                    results = _execute_graph(
-                        G, 
-                        self._resolved_functions, 
-                        cache=self.cache, 
-                        callback=callback
-                    )
-                except Exception as exc:
-                    future.set_exception(exc)
-                else:
-                    future.set_result(results)
-
-            case "invalidate":
-                nodes = payload
-                for node in nodes:
-                    # Invalidate logic here, e.g., mark nodes as dirty and clear cache
-                    if node in self.cache:
-                        self.cache.remove(node)
-                future.set_result(None)
-
-        if exc:=future.exception():
-            worker_logger.error(f"{message} failed with exception: {exc}")
-        elif future.done():
-            worker_logger.info(f"{message} succeeded with result: {future.result()}")
-        else:
-            worker_logger.info(f"{message} {future}")
-
-    def close(self):
-        # signal the thread to exit
-        self._tasks.put(None)
-        self.join()
-
-
-class Executor:
-    def __init__(self):
-        # internal state?
-        self.operators: dict[OperatorHandle, Callable] = dict()
-        self.signatures: dict[OperatorHandle, OperatorSignature] = dict()
-        self.cache = MemoryCache[NodeId, Any]()
-
-        # computed
-        self.node_statuses = dict()
-
-    def execute_script(self, script: str) -> dict[OperatorHandle, tuple[Callable, int]]:
-        ...
-
-    def execute_subgraph(self, subgraph: Graph[NodeId]) -> dict[NodeId, NodeStatus]:
-        ...
-
-from graphcook.core.graph import descendants
-class Invalidator:
-    def __init__(self, graph: ObservableGraph[NodeId]) -> None:
-        self.graph = graph
-        self._subscribers: list[Callable[[list[NodeId]], None]] = []
-        self._unsubscribe_graph: Callable[[], None] | None = graph.listen(self._handle_graph_change)
-
-    def close(self) -> None:
-        """Stop observing the graph. Safe to call more than once."""
-        if self._unsubscribe_graph is not None:
-            self._unsubscribe_graph()
-            self._unsubscribe_graph = None
-
-    def _handle_graph_change(self, change: GraphChange) -> None:
-        nodes_to_invalidate: set[NodeId] = set()
-        if nodes_change:=change.get("nodes"):
-            for node_id in nodes_change.get("added", []):
-                nodes_to_invalidate.add(node_id)
-
-            for node_id in nodes_change.get("removed", []):
-                ...
-
-            for node_id in nodes_change.get("updated", []):
-                nodes_to_invalidate.add(node_id)
-                for dep in descendants(self.graph, node_id):
-                    nodes_to_invalidate.add(dep)
-
-        if links_change:=change.get("links"):
-            for link in links_change.get("added", []):
-                src, dst, inlet = link
-                nodes_to_invalidate.add(dst)
-                for dep in descendants(self.graph, dst):
-                    nodes_to_invalidate.add(dep)
-
-            for link in links_change.get("removed", []):
-                src, dst, inlet = link
-                if dst not in self.graph.nodes():
-                    continue
-                nodes_to_invalidate.add(dst)
-                for dep in descendants(self.graph, dst):
-                    nodes_to_invalidate.add(dep)
-
-        if nodes_to_invalidate:
-            self._notify_subscribers(nodes_to_invalidate)
-
-    def _notify_subscribers(self, nodes: set[NodeId]) -> None:
-        for subscriber in tuple(self._subscribers):
-            subscriber(list(nodes))
-
-    def invalidate(self, *nodes: NodeId) -> None:
-        """manually trigger invalidation for the given nodes and their descendants"""
-        nodes_to_invalidate: set[NodeId] = set(nodes)
-        for node in nodes:
-            for dep in descendants(self.graph, node):
-                nodes_to_invalidate.add(dep)
-
-        if nodes_to_invalidate:
-            self._notify_subscribers(nodes_to_invalidate)
-
-    def listen(self, callback: Callable[[Iterable[NodeId]], None]) -> Callable[[], None]:
-        """listen for nodes invalidated"""
-        self._subscribers.append(callback)
-        def unsubscribe():
-            self._subscribers.remove(callback)
-        return unsubscribe
-
-
-class EngineServer:
-    def __init__(self):
-        self.script:ObservableValue[str] = ObservableValue("")
-        self.graph:ObservableGraph[NodeId] = ObservableGraph()
-        self.invalidator: Invalidator = Invalidator(self.graph)
-        self.invalidator.listen(lambda nodes: self._handle_invalidation(nodes))
-        self.executor: Executor = Executor()
-        self._states: dict[NodeId, Any] = dict() # consider using an ObservableDict?
-
-    def _handle_script_change(self, new_script: str) -> None:
-        """ Handle script changes here """
-        # - notify connected clients
-        ...
-
-        # - execute operators and update relevant nodes with the changed oprators
-        ...
-
-    def _handle_invalidation(self, nodes: Iterable[NodeId]) -> None:
-        """ Handle invalidated nodes here """
-        # - notify connected clients about the invalidated nodes
-        ...
-
-        # - execute nodes that have been invalidated and update their state accordingly using the executor
-        ...
-
-        # notify clients about the new states
-        self._handle_state_change({node: self._states.get(node) for node in nodes})
-
-    def _handle_state_change(self, changes) -> None:
-        """ Handle state changes here """
-        # notify connected clients about the state changes
-        ...
-
-class EngineClient(Thread):
-    def __init__(self):
-        super().__init__()
-        self._tasks: Queue[tuple[Future, Callable[[EngineServer], Any]]] = Queue()
-
-    def run(self):
-        engine = EngineServer()
-        while True:
-            future, task = self._tasks.get()
-            if task is None:
-                break
-            try:
-                response = task(engine)
-            except Exception as exc:
-                worker_logger.error("Task failed with exception: %s", exc)
-                future.set_exception(exc)
-            else:
-                future.set_result(response)
-
-    def submit(self, process: Callable[[EngineServer], Any])->Future:
-        future = Future()
-        self._tasks.put((future, process))
-        return future
-
-    def request_get_script(self) -> Future[str]:
-        return self.submit(lambda server: server.script.get())
-
-    def request_execute_script(self) -> Future[None]:
-        return self.submit(lambda server: server.executor.execute_script(server.script.get()))
-
-    def request_get_graph(self) -> Future[Graph[NodeId]]:
-        def map_graph_to_view(engine_graph: Graph[NodeId]) -> Graph[NodeId]:
-            view_graph:Graph[NodeId] = Graph()
-            for node_id in engine_graph.nodes():
-                attributes = engine_graph.attributes(node_id)
-                view_attributes = dict(**attributes)
-                func = attributes[OPERATOR_ATTRIBUTE]
-                assert callable(func)
-                view_attributes[OPERATOR_ATTRIBUTE] = OperatorSignature.from_func(func, 0)
-                view_graph.add_node(node_id, **attributes)
-            return view_graph
-
-        return self.submit(lambda server: map_graph_to_view(server.graph))
-
-    def request_execute_graph(self, subgraph: Graph[NodeId]) -> Future[dict[NodeId, NodeStatus]]:
-        return self.submit(lambda server: server.executor.execute_subgraph(subgraph))
-
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        if not index.isValid():
+            return None
+        if role == Qt.ItemDataRole.DisplayRole:
+            operators = self._client.get_operators()
+            if 0 <= index.row() < len(operators):
+                return operators[index.row()]
+        return None
 
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        
-        self.operator_list_model = QStringListModel([])
+
+        self._client = EngineClient()
+
         self._config_graph = ObservableGraph[NodeId]()
         self._operator_signatures: dict[OperatorHandle, OperatorSignature] = {}
-        self.model = AsyncEagerGraphModel(self._config_graph, self.operator_signature)
+
+        # MODELS
+        self.operator_list_model = QStringListModel([])
+        self.model = AsyncEagerGraphModel(self._config_graph, self._operator_signatures)
+
+        # 
         self.selection = GraphSelectionModel(self.model)
 
         splitter = QSplitter()
@@ -634,17 +673,17 @@ class Window(QMainWindow):
         
         script_document.contentsChanged.connect(self.submit_execute_script)
         splitter.addWidget(self.script_editor)
-        self.operator_list = QListView()
-        self.operator_list.setSizePolicy(
+        self.operator_list_view = QListView()
+        self.operator_list_view.setSizePolicy(
             QSizePolicy.Policy.Minimum, 
             QSizePolicy.Policy.Expanding
         )
         # self.operator_list.setFixedWidth(180)
-        self.operator_list.setResizeMode(QListView.ResizeMode.Adjust)
-        self.operator_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents);
-        self.operator_list.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding);
-        self.operator_list.setModel(self.operator_list_model)
-        splitter.addWidget(self.operator_list)
+        self.operator_list_view.setResizeMode(QListView.ResizeMode.Adjust)
+        self.operator_list_view.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents);
+        self.operator_list_view.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding);
+        self.operator_list_view.setModel(self.operator_list_model)
+        splitter.addWidget(self.operator_list_view)
         self.editor1 = DirectionalGraphView5()
         splitter.addWidget(self.editor1)
 
