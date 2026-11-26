@@ -539,11 +539,11 @@ class EngineServer:
         """ Handle script changes here """
         # - notify connected clients
         ...
-        
+
         # - execute operators and update relevant nodes with the changed oprators
         ...
 
-    def _handle_invalidation(self, nodes: list[NodeId]) -> None:
+    def _handle_invalidation(self, nodes: Iterable[NodeId]) -> None:
         """ Handle invalidated nodes here """
         # - notify connected clients about the invalidated nodes
         ...
