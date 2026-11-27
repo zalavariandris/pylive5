@@ -19,7 +19,6 @@ from graphcook.eager_observable_engine import (
 )
 
 from qdageditor5.core.inspector_roles import InspectorRoles
-from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 from qdageditor5.views.node_inspector_view import NodeInspectorView
 
@@ -230,28 +229,31 @@ class EagerGraphModel(AbstractDAGModel):
                 return f"{self.mapToSource(node_name)}"
         return None
 
-    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def nodeData(self, node_name: NodeName, column:int, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         node_data = self._engine.attributes(self.mapToSource(node_name))
         node_status = self._engine.nodes_status(self.mapToSource(node_name))
-        match role:
-            case Qt.ItemDataRole.DisplayRole:
-                op:OperatorSignature = node_data['__operator__']
-                return op.name
-            
-            case Qt.ItemDataRole.ForegroundRole:
-                match node_status:
-                    case FailedStatus():
-                        return Qt.GlobalColor.red
-                    case RunningStatus():
-                        return Qt.GlobalColor.yellow
-                    case SucceededStatus():
-                        return None
-                    case DirtyStatus():
-                        return None
-                    case _:
-                        return None
+
+        match column:
+            case 0:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        op:OperatorSignature = node_data['__operator__']
+                        return op.name
                     
-            case NodeDataRole.TrailingRole:
+                    case Qt.ItemDataRole.ForegroundRole:
+                        match node_status:
+                            case FailedStatus():
+                                return Qt.GlobalColor.red
+                            case RunningStatus():
+                                return Qt.GlobalColor.yellow
+                            case SucceededStatus():
+                                return None
+                            case DirtyStatus():
+                                return None
+                            case _:
+                                return None
+                    
+            case 1:
                 match node_status:
                     case FailedStatus() as failed:
                         return f"💥{type(failed.reason).__name__}: {failed.reason}"

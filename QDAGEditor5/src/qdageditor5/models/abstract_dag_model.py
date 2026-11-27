@@ -95,7 +95,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     nodesAdded = Signal(tuple) # list[NodeT]
     nodesAboutToBeRemoved = Signal(tuple) # list[NodeT]
     nodesRemoved = Signal(tuple) # list[NodeT]
-    nodesDataChanged = Signal(tuple, list) # tuple[NodeName, ...], roles: list[int]
+    nodesDataChanged = Signal(tuple, list, list) # tuple[NodeName, ...], columns: list[int], roles: list[int]
     nodeAboutToMove = Signal(object) # NodeT
     nodeMoved = Signal(object) # NodeT #todo: handle multiple nodes to be consistent with the resf of the api
     
@@ -151,11 +151,16 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
         return False
 
     @abstractmethod
-    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def nodeColumnCount(self, node: NodeName) -> int:
+        """Return the number of data columns for the given node."""
+        ...
+
+    @abstractmethod
+    def nodeData(self, node_name: NodeName, column:int, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         """Return the data for the given node and role."""
         pass
 
-    def setNodeData(self, node: NodeName, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
+    def setNodeData(self, node: NodeName, column:int, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
         """"""
         return False
     

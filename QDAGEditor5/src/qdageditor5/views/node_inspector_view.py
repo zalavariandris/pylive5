@@ -1,6 +1,7 @@
 from typing import Callable, cast, Any
 from bidict import bidict
 
+from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qtpy.QtWidgets import (
     QFormLayout, 
     QFrame, 
@@ -16,7 +17,8 @@ from qtpy.QtCore import (
     QObject, 
     Qt, 
     Signal, 
-    Slot
+    SignalInstance,
+    Slot,
 )
 
 from qtpy.QtGui import (
@@ -33,9 +35,11 @@ class NodeInspectorView(QFrame):
         super().__init__(parent)
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self._model: AbstractDAGModel | None = None
+        self._selection_model: GraphSelectionModel | None = None
         self._current_node: NodeName | None = None
-        self._model_connections: list[tuple[Signal, Callable]] = []
-        self._editor_connections: list[tuple[Signal, Callable]] = []
+        self._model_connections: list[tuple[SignalInstance, Callable]] = []
+        self._selection_connections: list[tuple[SignalInstance, Callable]] = []
+        self._editor_connections: list[tuple[SignalInstance, Callable]] = []
         self._delegate = NodeInspectorDelegate(self)
         self._delegate.EMPTY = self.EMPTY
         self._editors: dict[InletName, QWidget] = {}
@@ -82,13 +86,14 @@ class NodeInspectorView(QFrame):
         main_layout.addStretch()
 
     def setModel(self, model: AbstractDAGModel | None) -> None:
+        """Install a model and a fresh selection model; None clears the inspector."""
         if model is self._model:
             return
+
         for signal, slot in self._model_connections:
             signal.disconnect(slot)
+
         self._model_connections.clear()
-        self._clear_form()
-        self._current_node = None
         self._model = model
 
         if model is not None:
@@ -103,18 +108,66 @@ class NodeInspectorView(QFrame):
             for signal, slot in self._model_connections:
                 signal.connect(slot)
 
-    def setCurrentNode(self, node: NodeName | None) -> None:
-        if node == self._current_node:
+        # Replace rather than retarget the old selection model: other views
+        # may still share it. Parent the default selection model to this view.
+        self.setSelectionModel(
+            GraphSelectionModel(model, parent=self) if model is not None else None
+        )
+
+    def model(self) -> AbstractDAGModel | None:
+        return self._model
+
+    def selectionModel(self) -> GraphSelectionModel | None:
+        return self._selection_model
+
+    def setSelectionModel(self, selection_model: GraphSelectionModel | None) -> None:
+        """Use a selection model for this model, preserving the previous one."""
+        if selection_model is not None and (
+            self._model is None or selection_model.model() is not self._model
+        ):
+            raise ValueError("The selection model must use the inspector's model")
+
+        if selection_model is self._selection_model:
             return
-        
+
+        for signal, slot in self._selection_connections:
+            signal.disconnect(slot)
+        self._selection_connections.clear()
+        self._selection_model = selection_model
+
+        if selection_model is not None:
+            self._selection_connections = [
+                (selection_model.currentNodeChanged, self._on_current_node_changed)
+            ]
+            for signal, slot in self._selection_connections:
+                signal.connect(slot)
+
+        # A shared selection model may already have a current node.
+        current = selection_model.currentNode() if selection_model is not None else None
+        self._on_current_node_changed(current, self._current_node)
+
+    def setCurrentNode(self, node: NodeName | None) -> None:
+        if self._selection_model is None:
+            if node is not None:
+                raise ValueError("Set a model and selection model before selecting a node")
+            return
+
+        self._selection_model.setCurrentNode(node)
+
+    def _on_current_node_changed(self, node: NodeName | None, previous: NodeName | None) -> None:
         self._clear_form()
         self._current_node = node
 
-        if node is not None:
-            assert self._model is not None
-            self._title.setText(self._model.nodeHeaderData(node, Qt.ItemDataRole.DisplayRole))
-            self._subtitle.setText(self._model.nodeData(node, Qt.ItemDataRole.DisplayRole))
-            self._build_form()
+        if node is None:
+            self._title.setText("- no selection -")
+            self._subtitle.setText("- info -")
+            return
+
+        assert self._model is not None
+        self._title.setText(self._model.nodeHeaderData(node, Qt.ItemDataRole.DisplayRole))
+        self._subtitle.setText(self._model.nodeData(node, 0, Qt.ItemDataRole.DisplayRole))
+        self._build_form()
+
 
     def _clear_form(self) -> None:
         for signal, handler in self._editor_connections:
@@ -169,7 +222,8 @@ class NodeInspectorView(QFrame):
                 self._editor_connections.append((signal, handle_change))
 
     def eventFilter(self, a0: QObject|None, a1: QEvent|None) -> bool:
-        assert self._model is not None
+        if self._model is None:
+            return super().eventFilter(a0, a1)
         watched = a0
         event = a1
         

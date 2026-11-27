@@ -18,6 +18,12 @@ class Node:
     """Convenient identity-based node. Any hashable object may also be a node."""
     label: str = ""
 
+AttributesT = TypeVar(
+    "AttributesT",
+    bound=Mapping[str, object],
+    default=Mapping[str, object],
+)
+
 class Link(Generic[NodeT], NamedTuple):
     source: NodeT
     target: NodeT
@@ -97,13 +103,9 @@ def topological_sort(graph: GraphProtocol[NodeT], *roots: NodeT) -> tuple[NodeT,
 
     return tuple(order)
 
-AttributesT = TypeVar(
-    "AttributesT",
-    bound=Mapping[str, object],
-    default=Mapping[str, object],
-)
 
-class Graph(Generic[NodeT, AttributesT]):
+
+class Graph(Generic[NodeT]):
     """Store node dictionaries and one incoming link per (target, inlet).
 
     Incoming dictionaries are shallow-copied. attributes() returns a live,
@@ -113,7 +115,7 @@ class Graph(Generic[NodeT, AttributesT]):
     """
 
     def __init__(self) -> None:
-        self._nodes: dict[NodeT, AttributesT] = {}
+        self._nodes: dict[NodeT, Mapping[str, object]] = {}
         self._inputs: dict[NodeT, dict[str, NodeT]] = {} # [dst, [inlet: source]]
         self._outputs: dict[NodeT, dict[NodeT, Set[str]]] = {} # [src, [dst: {in1, in2, ...}]]
 
@@ -200,9 +202,9 @@ class Graph(Generic[NodeT, AttributesT]):
             if not self._outputs[source][target]:
                 del self._outputs[source][target]
 
-    def attributes(self, node: NodeT) -> AttributesT:
+    def attributes(self, node: NodeT) -> MappingProxyType[str, object]:
         """Return a live, shallow read-only view of the node's attributes."""
-        return self._nodes[node]
+        return MappingProxyType(self._nodes[node])
 
     def set(self, node: NodeT, name: str, value: object) -> None:
         """Assign one attribute, preserving the node's other attributes."""

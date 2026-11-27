@@ -1,5 +1,6 @@
 
 ## Features
+- [x] add initial node data columns to QDagEditor
 - [ ] if QDagEditor has its own ItemRoles, it also has to provide a Graph UserRole, so it wont collide with other user provided roles.
 - [ ] consider supporting multiple data 'columns' for nodes.
 - [x] the GraphCook Inspector now support unsetting values

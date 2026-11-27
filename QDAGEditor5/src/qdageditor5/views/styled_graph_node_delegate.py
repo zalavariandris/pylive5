@@ -112,32 +112,45 @@ class StyledGraphNodeDelegate(QObject):
     def __init__(self, parent=None) -> None:
         super().__init__(parent=parent)
 
-    def __labels(self, option: QStyleOptionViewItem, model: 'AbstractDAGModel', node: NodeName) -> tuple[_Label, _Label, _Label]:
+    def __labels(self, option: QStyleOptionViewItem, model: 'AbstractDAGModel', node: NodeName) -> tuple[_Label, ...]:
         palette:QPalette = option.palette
 
         title_label = _Label(
-            text=model.nodeData(node, Qt.ItemDataRole.DisplayRole),
+            text=model.nodeData(node, 0, Qt.ItemDataRole.DisplayRole),
             pos=QPointF(),
             alignment=Qt.AlignmentFlag.AlignCenter,
             pen=QPen(palette.text().color(), 0)
         )
 
         title_rect = title_label.boundingRect(option)
-        leading_label = _Label(
+
+        header_label = _Label(
             text=model.nodeHeaderData(node, Qt.ItemDataRole.DisplayRole),
             pos=title_rect.topLeft(),
             alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
             pen=QPen(palette.placeholderText().color(), 0)
         )
 
-        trailing_label = _Label(
-            text=model.nodeData(node, NodeDataRole.TrailingRole),
-            pos=title_rect.topRight(),
-            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-            pen=QPen(palette.placeholderText().color(), 0)
-        )
+        # trailing_label = _Label(
+        #     text=model.nodeData(node, 0, NodeDataRole.TrailingRole),
+        #     pos=title_rect.topRight(),
+        #     alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        #     pen=QPen(palette.placeholderText().color(), 0)
+        # )
 
-        return title_label, leading_label, trailing_label
+        labels = [title_label, header_label]
+
+        for column in range(1, model.nodeColumnCount(node)):
+            top_right = title_rect.topRight()
+            label = _Label(
+                text=model.nodeData(node, column, Qt.ItemDataRole.DisplayRole),
+                pos=top_right + QPointF(0, 16*(column-1)),
+                alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+                pen=QPen(palette.text().color(), 0)
+            )
+            labels.append(label)
+
+        return tuple(labels)
 
     def _nodeLocalRect(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QRectF:
         """Measure bounds relative to the node origin; do not apply its position."""
@@ -147,7 +160,7 @@ class StyledGraphNodeDelegate(QObject):
 
     def _nodeLocalShape(self, option: QStyleOptionViewItem, model: AbstractDAGModel, node: NodeName) -> QPainterPath:
         """Measure the body shape relative to the node origin."""
-        title_label, _, _ = self.__labels(option, model, node)
+        title_label = self.__labels(option, model, node)[0]
         shape = QPainterPath()
         shape.addRoundedRect(title_label.boundingRect(option), 5, 5)
         return shape

@@ -251,7 +251,7 @@ class DirectionalGraphView5(QFrame):
         self.update()
 
     def _on_node_presentation_changed(
-        self, nodes: Iterable[NodeName], roles: Sequence[int] = (),
+        self, nodes: Iterable[NodeName], columns: Sequence[int]=[], roles: Sequence[int] = (),
     ) -> None:
         nodes = tuple(nodes)
         for node in nodes:
@@ -277,18 +277,18 @@ class DirectionalGraphView5(QFrame):
         self.updateScene(self._get_affected_rect(node))
 
     def _on_ports_changed(self, node: NodeName) -> None:
-        self._on_node_presentation_changed((node,))
+        self._on_node_presentation_changed([node])
 
     def _on_inlet_data_changed(
         self, node: NodeName, inlets: Sequence[InletName], roles: Sequence[int],
     ) -> None:
         #todo: consider repainting the inlet only instead of the whole node
-        self._on_node_presentation_changed((node,))
+        self._on_node_presentation_changed([node])
 
     def _on_outlet_data_changed(
         self, node: NodeName, outlets: Sequence[OutletName], roles: Sequence[int],
     ) -> None:
-        self._on_node_presentation_changed((node,))
+        self._on_node_presentation_changed([node])
 
     def _on_nodes_removed(self, nodes: Iterable[NodeName]) -> None:
         nodes = tuple(nodes)
@@ -388,13 +388,13 @@ class DirectionalGraphView5(QFrame):
             if node == self._selection_model.currentNode():
                 option.state |= QStyle.StateFlag.State_HasFocus
 
-        text = self._model.nodeData(node, Qt.ItemDataRole.DisplayRole)
+        text = self._model.nodeData(node, 0, Qt.ItemDataRole.DisplayRole)
         option.text = str(text) if text is not None else ""
         option.features |= QStyleOptionViewItem.ViewItemFeature.HasDisplay
         option.displayAlignment = Qt.AlignmentFlag.AlignCenter
         option.rect = self._nodeLocalShape(option, node).boundingRect().toAlignedRect()
         foreground: QColor | QBrush | None = self._model.nodeData(
-            node, Qt.ItemDataRole.ForegroundRole
+            node, 0, Qt.ItemDataRole.ForegroundRole
         )
         if foreground is not None:
             foreground_brush = QBrush(foreground)
@@ -406,7 +406,7 @@ class DirectionalGraphView5(QFrame):
                 option.palette.setBrush(color_role, foreground_brush)
 
         background: QColor | QBrush | None = self._model.nodeData(
-            node, Qt.ItemDataRole.BackgroundRole
+            node, 0, Qt.ItemDataRole.BackgroundRole
         )
         option.backgroundBrush = (
             QBrush(background)

@@ -20,7 +20,6 @@ from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QHBoxLayout, QListView,
 from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
 from qtpy.QtWidgets import QPlainTextEdit
 
-from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.core.inspector_roles import InspectorRoles
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel, 
@@ -208,6 +207,7 @@ class Worker(Thread):
         self._tasks.put(None)
         self.join()
 
+
 class Executor:
     def __init__(self):
         # internal state?
@@ -251,8 +251,35 @@ class Executor:
             for handle, func in operators.items()
         }
 
-    def execute_subgraph(self, subgraph: Graph[NodeId]) -> dict[NodeId, NodeStatus]:
-        ...
+    def execute_subgraph(
+        self,
+        subgraph: Graph[NodeId],
+    ) -> dict[NodeId, NodeStatus]:
+        statuses: dict[NodeId, NodeStatus] = {
+            node: DirtyStatus() for node in subgraph.nodes()
+        }
+
+        # Recompute each manual run until invalidation is connected.
+        self.cache.clear()
+
+        def record_status(node: NodeId, status: NodeStatus) -> None:
+            statuses[node] = status
+
+        try:
+            _execute_graph(
+                subgraph,
+                self.operators,
+                cache=self.cache,
+                callback=record_status,
+            )
+        except NodeExecutionError:
+            # The callback already recorded FailedStatus.
+            # Nodes not reached remain DirtyStatus.
+            pass
+
+        self.node_statuses = statuses
+        return statuses
+
 
 from graphcook.core.graph import descendants
 class Invalidator:
@@ -330,6 +357,11 @@ class Engine:
         self.executor: Executor = Executor()
         self._operators: dict[OperatorHandle, object] = dict()
         self._status: dict[NodeId, Any] = dict() # consider using an ObservableDict?
+
+    def operator_handle(self, node: NodeId) -> OperatorHandle|None:
+        attributes = self.graph.attributes(node)
+        handle: OperatorHandle|None = attributes.get('operator', None)
+        return handle
 
     def _handle_script_change(self, new_script: str) -> None:
         """ Handle script changes here """
@@ -416,7 +448,7 @@ class EngineClient(Thread):
                 func = attributes[OPERATOR_ATTRIBUTE]
                 assert callable(func)
                 view_attributes[OPERATOR_ATTRIBUTE] = OperatorSignature.from_func(func, 0)
-                view_graph.add_node(node_id, **attributes)
+                view_graph.add_node(node_id, **view_attributes)
             return view_graph
 
         return self.submit(lambda server: map_graph_to_view(server.graph))
@@ -444,9 +476,10 @@ class EngineClient(Thread):
 from typing import TypedDict
 
 class _NodeShadow(TypedDict):
-    node_id: NodeId
-    operator: OperatorHandle | None = None
-    status: NodeStatus | None = None
+    operator_handle: OperatorHandle
+    operator: OperatorSignature
+    inputs: dict[InletName, object|None]
+    status: NodeStatus
 
 
 class AsyncEagerGraphModel(AbstractDAGModel):
@@ -456,91 +489,87 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent=parent)
-        self._graph: ObservableGraph[NodeId, _NodeShadow] = ObservableGraph()
+        self._local_graph: Graph[NodeName] = Graph() # with OperatorHandles and Signatures
         self._client = client
         # sync the observable graph with the engine client
-        def _sync_client(change: GraphChange) -> None:
-            # handle changes from the engine client and update the observable graph
-            if link_change := change.get("links"):
-                for link_id in link_change.get('added', []):
-                    self._client.submit(lambda engine, link_id=link_id: 
-                        engine.graph.add_link(link_id))
 
-                for link_id in link_change.get('removed', []):
-                    self._client.submit(lambda engine, link_id=link_id: 
-                        engine.graph.remove_link(link_id))
-                    
-            if nodes_change := change.get("nodes"):
-                for node_id in nodes_change.get('added', []):
-                    self._client.submit(lambda engine, node_id=node_id: 
-                        engine.graph.add_node(node_id))
 
-                for node_id in nodes_change.get('removed', []):
-                    self._client.submit(lambda engine, node_id=node_id: 
-                        engine.graph.remove_node(node_id))
+        # def _sync_local(change: EngineChange) -> None:
+        #     # handle changes from the engine client and update the observable graph
+        #     pass
 
-                for node_id in nodes_change.get('updated', []):
-                    ...
+        # client.listen(_sync_local)
 
-        self._graph.listen(_sync_client)
+    # # Adapter
+    # def mapFromSource(self, node: 'NodeId', inlet: InletName|None = None)->NodeName|tuple[NodeName, InletName]:
+    #     # note: right now mapping is straightforward. if the DAGModel will use 
+    #     # its own datastructure to represent nodes and inlets, this will become a bit more
+    #     # complex
+    #     if inlet is not None:
+    #         return node, inlet
+    #     else:
+    #         return node
 
-        def _sync_local(change: EngineChange) -> None:
-            # handle changes from the engine client and update the observable graph
-            pass
-
-        client.listen(_sync_local)
-
-    # Adapter
-    def mapFromSource(self, node: 'NodeId', inlet: InletName|None = None)->NodeName|tuple[NodeName, InletName]:
-        # note: right now mapping is straightforward. if the DAGModel will use 
-        # its own datastructure to represent nodes and inlets, this will become a bit more
-        # complex
-        if inlet is not None:
-            return node, inlet
-        else:
-            return node
-
-    def mapToSource(self, node: NodeName, inlet: InletName|None=None) -> 'NodeId|tuple[NodeId, str]':
-        # note: right now mapping is straightforward. if the DAGModel will use 
-        # its own datastructure to represent nodes and inlets, this will become a bit more
-        # complex
-        if inlet is not None:
-            return node, inlet
-        else:
-            return node
+    # def mapToSource(self, node: NodeName, inlet: InletName|None=None) -> 'NodeId|tuple[NodeId, str]':
+    #     # note: right now mapping is straightforward. if the DAGModel will use 
+    #     # its own datastructure to represent nodes and inlets, this will become a bit more
+    #     # complex
+    #     if inlet is not None:
+    #         return node, inlet
+    #     else:
+    #         return node
 
     # READ
     def nodes(self) -> Iterable[NodeName]:
-        for node in self._graph.nodes():
+        for node in self._local_graph.nodes():
             yield node
 
-    def addNode(self, operator: OperatorHandle | None = None) -> NodeName:
+    def addNode(self, 
+            handle: OperatorHandle | None = None, 
+            operator: OperatorSignature | None = None
+        ) -> NodeName:
         from unique_names_generator import get_random_name
         node_id = NodeId(get_random_name())
         self._beginAddNodes([node_id])
-        self._graph.add_node(node_id, 
-            __operator__ = operator
+        self._local_graph.add_node(
+            node_id, 
+            operator_handle=handle,
+            operator = operator,
+            inputs={},
+            status=DirtyStatus()
         )
         self._endAddNodes()
         return node_id
 
-    def operatorSignature(self, node: NodeName) -> OperatorSignature | None:
-        """Resolve a node's handle against the current operator registry."""
-        node_data = self._graph.attributes(self.mapToSource(node))
-        handle = node_data.get(OPERATOR_ATTRIBUTE)
-        if handle is None:
-            return None
-        assert isinstance(handle, OperatorHandle)
-        return self._operator_signature(handle)
+    def setNodeOperator(
+        self,
+        node: NodeName,
+        operator: OperatorSignature | None,
+    ) -> None:
+        if self._local_graph.attributes(node).get("operator") == operator:
+            return
 
-    def refreshOperatorSignatures(self, operators: Iterable[OperatorHandle]) -> None:
-        """Refresh ports and inspector editors after the registry changes."""
-        changed = set(operators)
+        self._beginResetInlets(node)
+        self._local_graph.update(
+            node,
+            operator=operator,
+            status=DirtyStatus(),
+        )
+        self._endResetInlets()
+        self.nodesDataChanged.emit([node],[0], [])
+
+    def refreshOperatorSignatures(
+        self,
+        signatures: Mapping[OperatorHandle, OperatorSignature],
+    ) -> None:
         for node in self.nodes():
-            node_data = self._graph.attributes(self.mapToSource(node))
-            if node_data.get(OPERATOR_ATTRIBUTE) in changed:
-                self._beginResetInlets(node)
-                self._endResetInlets()
+            handle = self._local_graph.attributes(node).get("operator_handle")
+            operator = (
+                signatures.get(handle)
+                if isinstance(handle, OperatorHandle)
+                else None
+            )
+            self.setNodeOperator(node, operator)
 
     def nodeHeaderData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         match role:
@@ -548,34 +577,36 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                 return f"{node_name}"
         return None
 
-    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        node_data: Mapping[str, Any] = self._graph.attributes(self.mapToSource(node_name))
-        node_status = self._node_status.get(self.mapToSource(node_name), None)
-        match role:
-            case Qt.ItemDataRole.DisplayRole:
-                operator_handle = node_data.get(OPERATOR_ATTRIBUTE)
-                return operator_handle.name if operator_handle is not None else '-no op-'
+    def nodeData(self, node_name: NodeName, column:int, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        node_data: _NodeShadow = self._local_graph.attributes(node_name)
+        match column:
+            case 0:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        operator_handle = node_data.get('operator')
+                        return operator_handle.name if operator_handle is not None else '-no op-'
 
-            case Qt.ItemDataRole.ForegroundRole:
-                match node_status:
-                    case FailedStatus():
-                        return Qt.GlobalColor.red
-                    case RunningStatus():
-                        return Qt.GlobalColor.yellow
-                    case SucceededStatus():
-                        return None
-                    case DirtyStatus():
-                        return None
-                    case _:
-                        return None
+                    case Qt.ItemDataRole.ForegroundRole:
+                        match node_data.get('status'):
+                            case FailedStatus():
+                                return Qt.GlobalColor.red
+                            case RunningStatus():
+                                return Qt.GlobalColor.yellow
+                            case SucceededStatus():
+                                return None
+                            case DirtyStatus():
+                                return None
+                            case _:
+                                return None
                     
-            case NodeDataRole.TrailingRole:
-                match node_status:
+            case 1:
+                match node_data.get('status'):
                     case FailedStatus() as failed:
                         return f"💥{type(failed.reason).__name__}: {failed.reason}"
                     case RunningStatus():
                         return "🧠 running..."
                     case SucceededStatus() as success:
+                        return f"✨ {success.value!r}"
                         return f"✨" + (f" {success.duration_seconds}s" if success.duration_seconds is not None else "")
                     case DirtyStatus():
                         return "🕸️"
@@ -585,12 +616,11 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         return None
 
     def inlets(self, node: NodeName) -> Iterable[InletName]:
-        node_id = self.mapToSource(node)
-        node_data = self._graph.attributes(node_id)
-        signature = self.operatorSignature(node)
+        node_data: _NodeShadow = self._local_graph.attributes(node)
+        signature:OperatorSignature | None = node_data.get('operator')
         parameters = signature.inlets if signature is not None else {}
-        inputs = [name for name in node_data if not name.startswith('_')]
-        linked_inlets = [link.inlet for link in self._graph.in_links(node_id)]
+        inputs = node_data.get("inputs", {})
+        linked_inlets = [link.inlet for link in self._local_graph.in_links(node)]
         yield from dict.fromkeys((*parameters, *inputs, *linked_inlets))
 
     def inletHeaderData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
@@ -601,20 +631,21 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                 return None
 
     def inletData(self, node: NodeName, inlet: InletName, role:int=Qt.ItemDataRole.DisplayRole) -> Any:
-        node_data: Mapping[str, Any] = self._graph.attributes(self.mapToSource(node))
-        signature = self.operatorSignature(node)
+        node_data: _NodeShadow = self._local_graph.attributes(node)
+        signature: OperatorSignature | None = node_data.get('operator')
         inlet_signature = signature.inlets.get(inlet) if signature is not None else None
+        inputs = node_data.get('inputs', dict())
         match role:
             case Qt.ItemDataRole.DisplayRole:
-                if inlet in node_data:
-                    return str(node_data[inlet])
+                if inlet in inputs:
+                    return str(inputs.get(inlet))
                 else:
                     return self.EMPTY
 
             case Qt.ItemDataRole.EditRole:
                 # Preserve explicitly assigned values, including None.
-                if inlet in node_data:
-                    return node_data[inlet]
+                if inlet in inputs:
+                    return inputs[inlet]
 
                 if inlet_signature is None:
                     return self.EMPTY
@@ -645,34 +676,31 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         return None
 
     def inLinks(self, target_node: NodeName, inlet: InletName) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._graph.in_links(target_node):
+        for src, dst, key in self._local_graph.in_links(target_node):
             if key == inlet:
                 yield (src, 'out', dst, key)
 
     def outLinks(self, source_node: NodeName, outlet: OutletName) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._graph.out_links(source_node):
+        for src, dst, key in self._local_graph.out_links(source_node):
             if outlet == 'out':
                 yield (src, 'out', dst, key)
 
     def links(self) -> Iterable[DirectionalLinkId]:
-        for src, dst, key in self._graph.links():
+        for src, dst, key in self._local_graph.links():
             yield (src, 'out', dst, key)
 
     # update
     def removeNodes(self, nodes: Iterable[NodeName]) -> bool:
         self._beginRemoveNodes(nodes)
         for node in nodes:
-            node_id = self.mapToSource(node)
-            self._graph.remove_node(node_id)
+            self._local_graph.remove_node(node)
         self._endRemoveNodes()
         return True
 
     def addLinks(self, links:Iterable[DirectionalLinkId]) -> bool:
         self._beginAddLinks(links)
         for src, out_, dst, in_ in links:
-            src_id = self.mapToSource(src)
-            dst_id, inlet = self.mapToSource(dst, in_)
-            self._graph.add_link(src_id, dst_id, inlet)
+            self._local_graph.add_link(src, dst, in_)
         self._endAddLinks()
         return True
 
@@ -680,33 +708,43 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         self._beginRemoveLinks(links)
         for link in links:
             src, outlet, dst, inlet = link
-            src_id = self.mapToSource(src)
-            dst_id, inlet = self.mapToSource(dst, inlet)
-            self._graph.remove_edge(src_id, dst_id, inlet)
+            self._local_graph.remove_edge(src, dst, inlet)
         self._endRemoveLinks()
         return True
 
-    def setInletData(self, node: NodeName, inlet: InletName, value: Any, role: int) -> bool:
-        if role == Qt.ItemDataRole.EditRole:
-            if value is self.EMPTY:
-                node_id, inlet_id = self.mapToSource(node, inlet)
-                self._graph.unset(node_id, inlet_id)
-                self.inletDataChanged.emit(node, tuple([inlet]), [])
-                return True
-            else:
-                node_id, inlet_id = self.mapToSource(node, inlet)
-                self._graph.set(node_id, inlet_id, value)
-                self.inletDataChanged.emit(node, tuple([inlet]), [])
-                return True
+    def setInletData(
+        self,
+        node: NodeName,
+        inlet: InletName,
+        value: Any,
+        role: int,
+    ) -> bool:
+        if role != Qt.ItemDataRole.EditRole:
+            return False
 
-        return False
+        data = cast(_NodeShadow, self._local_graph.attributes(node))
+        inputs = dict(data["inputs"])
+
+        if value is self.EMPTY:
+            inputs.pop(inlet, None)
+        else:
+            inputs[inlet] = value
+
+        self._local_graph.update(
+            node,
+            inputs=inputs,
+            status=DirtyStatus(),
+        )
+        self.inletDataChanged.emit(node, (inlet,), [])
+        self.nodesDataChanged.emit([node],[0], [])
+        return True
 
     def setNodeData(self, node: NodeName, value: Any, role: int=Qt.ItemDataRole.EditRole) -> bool:
         return False
 
     def updateNodeStatus(self, node: NodeName, status: NodeStatus) -> bool:
-        self._node_status[node] = status
-        self.nodesDataChanged.emit((node,), [])
+        self._local_graph.set(node, 'status', status)
+        self.nodesDataChanged.emit([node], [0], [])
         return True
 
     def closeEvent(self, event):
@@ -720,6 +758,8 @@ from qtpy.QtGui import QTextDocument
 
 class EngineModel(QObject):
     scriptStatusChanged = Signal(str, bool)
+    graphStatusChanged = Signal(str, bool)
+
     def __init__(self, parent: QObject|None = None):
         super().__init__(parent=parent)
         self._executing = False
@@ -727,16 +767,12 @@ class EngineModel(QObject):
             OperatorHandle, OperatorSignature
         ] = {}
 
+
         self._client = EngineClient()
         self._client.listen(self._handle_client_changes)
 
         # models
         self.script = QTextDocument()
-        self.script.contentsChanged.connect(
-            lambda: self._client.request_set_script(
-                self.script.toPlainText()
-            )
-        )
         self.operators = QStringListModel(self)
 
         self._client.start()
@@ -744,6 +780,10 @@ class EngineModel(QObject):
 
     def close(self) -> None:
         self._client.close()
+
+    def create_node(self, handle: OperatorHandle) -> NodeName:
+        signature = self._operator_signatures[handle]
+        return self.graph.addNode(handle, signature)
 
     def _handle_client_changes(self, changes):
         if operator_changes:=changes.get("operators", dict):
@@ -766,7 +806,6 @@ class EngineModel(QObject):
             if link_changes:=graph_changes.get("links", dict):
                 print(link_changes)
 
-
     @asyncSlot()
     async def execute_script(self) -> None:
         if self._executing:
@@ -777,8 +816,10 @@ class EngineModel(QObject):
 
         try:
             # These requests enter the same FIFO queue.
-            self._client.request_set_script(self.script.toPlainText())
-            signatures = await asyncio.wrap_future(
+            await asyncio.wrap_future(
+                self._client.request_set_script(self.script.toPlainText())
+            )
+            signatures:Mapping[OperatorHandle, OperatorSignature] = await asyncio.wrap_future(
                 self._client.request_execute_script()
             )
         except Exception as exc:
@@ -787,7 +828,11 @@ class EngineModel(QObject):
             self.scriptStatusChanged.emit(
                 f"{type(exc).__name__}: {exc}", True
             )
+
+            # update graphmodel
+            self.graph.refreshOperatorSignatures({})
         else:
+            
             self._operator_signatures = signatures
             self.operators.setStringList(
                 sorted(handle.name for handle in signatures)
@@ -795,12 +840,75 @@ class EngineModel(QObject):
             self.scriptStatusChanged.emit(
                 "Script evaluated successfully", False
             )
+
+            # # update graphmodel
+            self.graph.refreshOperatorSignatures(signatures)
+
+                
         finally:
             self._executing = False
 
     @asyncSlot()
     async def execute_graph(self) -> None:
-        ...
+        if self._executing:
+            return
+
+        self._executing = True
+        self.graphStatusChanged.emit("Executing graph...", False)
+
+        try:
+            local_graph = cast(Graph[NodeId], self.graph._local_graph)
+            compute_graph = Graph[NodeId]()
+
+            for node in local_graph.nodes():
+                data = cast(_NodeShadow, local_graph.attributes(node))
+                compute_graph.add_node(
+                    node,
+                    __operator__=data["operator_handle"],
+                    kwargs=dict(data["inputs"]),
+                )
+
+            for link in local_graph.links():
+                compute_graph.add_link(
+                    link.source, link.target, link.inlet
+                )
+
+            for node in compute_graph.nodes():
+                self.graph.updateNodeStatus(node, DirtyStatus())
+
+            statuses = await asyncio.wrap_future(
+                self._client.request_execute_graph(compute_graph)
+            )
+
+            for node, status in statuses.items():
+                if node in self.graph.nodes():
+                    self.graph.updateNodeStatus(node, status)
+
+            failure = next(
+                (
+                    status
+                    for status in statuses.values()
+                    if isinstance(status, FailedStatus)
+                ),
+                None,
+            )
+
+            if failure is not None:
+                self.graphStatusChanged.emit(
+                    f"Execution stopped: {failure.reason}", True
+                )
+            else:
+                self.graphStatusChanged.emit(
+                    "Graph executed successfully", False
+                )
+
+        except Exception as exc:
+            self.graphStatusChanged.emit(
+                f"{type(exc).__name__}: {exc}", True
+            )
+        finally:
+            self._executing = False
+
 
 
 from qdageditor5.views.node_inspector_view import NodeInspectorView
@@ -808,15 +916,43 @@ from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 
 
+from myqtx.selection_dialog_view import SelectionDialog
+
+
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        #model
+        # model
         self._engine_model = EngineModel()
         self.graphselection = GraphSelectionModel(self._engine_model.graph)
 
         self._engine_model.scriptStatusChanged.connect(
-            self._show_script_status
+            self._show_status
+        )
+        self._engine_model.graphStatusChanged.connect(
+            self._show_status
+        )
+
+        # auto execute script
+        self._engine_model.script.contentsChanged.connect(
+            lambda: self._engine_model.execute_script()   
+        )
+
+        # auto execute graph
+        self._engine_model.graph.nodesDataChanged.connect(
+            lambda: self._engine_model.execute_graph()   
+        )
+        self._engine_model.graph.inletDataChanged.connect(
+            lambda: self._engine_model.execute_graph()   
+        )
+        self._engine_model.graph.linksAdded.connect(
+            lambda: self._engine_model.execute_graph()   
+        )
+        self._engine_model.graph.linksRemoved.connect(
+            lambda: self._engine_model.execute_graph()   
+        )
+        self.graphselection.currentNodeChanged.connect(
+            lambda: self._engine_model.execute_graph()   
         )
 
         # main menubar
@@ -827,6 +963,9 @@ class Window(QMainWindow):
         execute_script_action = self.edit_menu.addAction("execute script")
         execute_script_action.triggered.connect(self._engine_model.execute_script)
 
+        execute_graph_action = self.edit_menu.addAction("execute graph")
+        execute_graph_action.triggered.connect(self._engine_model.execute_graph)
+        
         # views
         self.script_edit = ScriptEditAdvanced()
         self.script_edit.setDocument(self._engine_model.script)
@@ -837,6 +976,11 @@ class Window(QMainWindow):
         self.graph_edit = DirectionalGraphView5()
         self.graph_edit.setModel(self._engine_model.graph)
         self.graph_edit.setSelectionModel(self.graphselection)
+        self.graph_edit.requestNode.connect(lambda pos, source, editor=self.graph_edit: 
+            self.open_new_node_dialog(pos, source, editor))
+        
+        self.graph_edit.requestLink.connect(lambda src, outlet, dst, inlet: 
+            self._engine_model.graph.addLinks([(src, outlet, dst, inlet)]))
 
         self.inspector = NodeInspectorView()
         self.inspector.setModel(self._engine_model.graph)
@@ -852,8 +996,20 @@ class Window(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
+    def open_new_node_dialog(self, scene_pos, source, editor):
+        dialog = SelectionDialog(self._engine_model.operators, self)
+        try:
+            if dialog.exec() == SelectionDialog.DialogCode.Accepted:
+                selected_index = dialog.selected_index()
+                operator_name = selected_index.data(Qt.ItemDataRole.EditRole)
+                operator_handle = OperatorHandle(operator_name)
+                new_node = self._engine_model.create_node(operator_handle)
+                editor.setNodePosition(new_node, scene_pos)
+        finally:
+            dialog.deleteLater()
+
     @Slot(str, bool)
-    def _show_script_status(self, message: str, is_error: bool) -> None:
+    def _show_status(self, message: str, is_error: bool) -> None:
         status_bar = self.statusBar()
         status_bar.setStyleSheet(
             "QStatusBar { color: red; }" if is_error else ""

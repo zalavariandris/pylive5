@@ -59,21 +59,28 @@ class NXDagModel(AbstractDAGModel):
                 return f"{node_name}"
         return None
 
-    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        match role:
-            case Qt.ItemDataRole.DisplayRole:
-                return f"{self._graph.nodes[node_name].get('label')}"
-            
-            case Qt.ItemDataRole.ForegroundRole:
-                if 'fg' in self._graph.nodes[node_name]:
-                    return self._graph.nodes[node_name]['fg']
-                
-            case Qt.ItemDataRole.BackgroundRole:
-                if 'bg' in self._graph.nodes[node_name]:
-                    return self._graph.nodes[node_name]['bg']
+    def nodeColumnCount(self, node: NodeName) -> int:
+        return 2
+
+    def nodeData(self, node_name: NodeName, column:int, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        match column:
+            case 0:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        return f"{self._graph.nodes[node_name].get('label')}"
                     
-            case NodeDataRole.TrailingRole:
-                return self._graph.nodes[node_name].get('footer')
+                    case Qt.ItemDataRole.ForegroundRole:
+                        if 'fg' in self._graph.nodes[node_name]:
+                            return self._graph.nodes[node_name]['fg']
+                        
+                    case Qt.ItemDataRole.BackgroundRole:
+                        if 'bg' in self._graph.nodes[node_name]:
+                            return self._graph.nodes[node_name]['bg']
+
+            case 1:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        return f"{self._graph.nodes[node_name].get('footer')}"
                     
         return None
 

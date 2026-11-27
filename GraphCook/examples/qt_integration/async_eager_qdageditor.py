@@ -20,7 +20,6 @@ from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QListView, QSizePolicy,
 from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
 from qtpy.QtWidgets import QPlainTextEdit
 
-from qdageditor5.core.item_data_roles import NodeDataRole
 from qdageditor5.core.inspector_roles import InspectorRoles
 from qdageditor5.models.abstract_dag_model import (
     AbstractDAGModel, 
@@ -379,12 +378,12 @@ class AsyncEagerGraphModel(AbstractDAGModel):
     def __init__(
         self,
         graph: ObservableGraph[NodeId],
-        operator_signature: Callable[[OperatorHandle], OperatorSignature | None],
+        operator_signatures: dict[OperatorHandle, OperatorSignature | None],
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent=parent)
         self._config_graph = graph
-        self._operator_signature = operator_signature
+        self._operator_signatures = operator_signatures
         self._node_status: dict[NodeName, NodeStatus] = dict()
 
     # Adapter
@@ -428,7 +427,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         if handle is None:
             return None
         assert isinstance(handle, OperatorHandle)
-        return self._operator_signature(handle)
+        return self._operator_signatures.get(handle)
 
     def refreshOperatorSignatures(self, operators: Iterable[OperatorHandle]) -> None:
         """Refresh ports and inspector editors after the registry changes."""
@@ -445,28 +444,30 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                 return f"{node_name}"
         return None
 
-    def nodeData(self, node_name: NodeName, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def nodeData(self, node_name: NodeName, column:int, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         node_data: Mapping[str, Any] = self._config_graph.attributes(self.mapToSource(node_name))
         node_status = self._node_status.get(self.mapToSource(node_name), None)
-        match role:
-            case Qt.ItemDataRole.DisplayRole:
-                operator_handle = node_data.get(OPERATOR_ATTRIBUTE)
-                return operator_handle.name if operator_handle is not None else '-no op-'
+        match column:
+            case 0:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        operator_handle = node_data.get(OPERATOR_ATTRIBUTE)
+                        return operator_handle.name if operator_handle is not None else '-no op-'
 
-            case Qt.ItemDataRole.ForegroundRole:
-                match node_status:
-                    case FailedStatus():
-                        return Qt.GlobalColor.red
-                    case RunningStatus():
-                        return Qt.GlobalColor.yellow
-                    case SucceededStatus():
-                        return None
-                    case DirtyStatus():
-                        return None
-                    case _:
-                        return None
+                    case Qt.ItemDataRole.ForegroundRole:
+                        match node_status:
+                            case FailedStatus():
+                                return Qt.GlobalColor.red
+                            case RunningStatus():
+                                return Qt.GlobalColor.yellow
+                            case SucceededStatus():
+                                return None
+                            case DirtyStatus():
+                                return None
+                            case _:
+                                return None
                     
-            case NodeDataRole.TrailingRole:
+            case 1:
                 match node_status:
                     case FailedStatus() as failed:
                         return f"💥{type(failed.reason).__name__}: {failed.reason}"
@@ -603,7 +604,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
 
     def updateNodeStatus(self, node: NodeName, status: NodeStatus) -> bool:
         self._node_status[node] = status
-        self.nodesDataChanged.emit((node,), [])
+        self.nodesDataChanged.emit([node],[0], [])
         return True
 
     def closeEvent(self, event):
@@ -701,8 +702,9 @@ class Window(QMainWindow):
         self.editor1.requestLink.connect(lambda src, outlet, dst, inlet: 
             self.model.addLinks([(src, outlet, dst, inlet)]))
         self.inspector.setModel(self.model)
-        self.selection.currentNodeChanged.connect(
-            lambda current, previous: self.inspector.setCurrentNode(current))
+        self.inspector.setSelectionModel(self.selection)
+        # self.selection.currentNodeChanged.connect(
+        #     lambda current, previous: self.inspector.setCurrentNode(current))
 
         self.worker = Worker()
 
@@ -773,7 +775,8 @@ class Window(QMainWindow):
             if operator_handle not in new_signatures:
                 dirty_operators.add(operator_handle)
 
-        self._operator_signatures = new_signatures
+        self._operator_signatures.clear()
+        self._operator_signatures.update(new_signatures)
         self.model.refreshOperatorSignatures(dirty_operators)
         # find dirty nodes affected by operator change
         worker_logger.info("Dirty operators: %s", dirty_operators)
@@ -847,7 +850,7 @@ class Window(QMainWindow):
 
         dialog = SelectionDialog(self.operator_list_model, self)
         try:
-            if dialog.exec() == QDialog.DialogCode.Accepted:
+            if dialog.exec() == SelectionDialog.DialogCode.Accepted:
                 selected_index = dialog.selected_index()
                 operator_name = selected_index.data(Qt.ItemDataRole.EditRole)
                 operator_handle = OperatorHandle(operator_name)

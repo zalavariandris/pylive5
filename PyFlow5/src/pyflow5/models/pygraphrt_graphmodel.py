@@ -342,7 +342,6 @@ class PyGraphRTGraphModel(AbstractDAGModel):
                     self.StateRole, 
                     self.OutputRole, 
                     self.ErrorRole,
-                    NodeDataRole.TrailingRole,
                     Qt.ItemDataRole.BackgroundRole, 
                     Qt.ItemDataRole.ForegroundRole,
                 ],
