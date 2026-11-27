@@ -470,6 +470,54 @@ class EngineClient(Thread):
         self._tasks.put((Future(), None))
         self.join()
 
+from qtpy.QtGui import QTextCursor
+
+class LogWidget(QPlainTextEdit):
+    message_received = Signal(str)
+    text_received = Signal(str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setMaximumBlockCount(2000)
+
+        self.message_received.connect(
+            self.append_message,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.text_received.connect(
+            self._insert_text,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+    def write(self, text: str) -> int:
+        """Accept a text fragment, including from a worker thread."""
+        if text:
+            self.text_received.emit(text)
+        return len(text)
+
+    def flush(self) -> None:
+        """No local buffer; queued text appears when Qt processes events."""
+        pass
+
+    @Slot(str)
+    def append_message(self, message: str) -> None:
+        self._insert_text(message + "\n")
+
+    @Slot(str)
+    def _insert_text(self, text: str) -> None:
+        scrollbar = self.verticalScrollBar()
+        follow_output = scrollbar.value() == scrollbar.maximum()
+
+        cursor = QTextCursor(self.document())
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText(text)
+
+        if follow_output:
+            scrollbar.setValue(scrollbar.maximum())
+
+    # Keep your existing contextMenuEvent method.
+
 ##########
 # MODELS #
 ##########
@@ -491,33 +539,6 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         super().__init__(parent=parent)
         self._local_graph: Graph[NodeName] = Graph() # with OperatorHandles and Signatures
         self._client = client
-        # sync the observable graph with the engine client
-
-
-        # def _sync_local(change: EngineChange) -> None:
-        #     # handle changes from the engine client and update the observable graph
-        #     pass
-
-        # client.listen(_sync_local)
-
-    # # Adapter
-    # def mapFromSource(self, node: 'NodeId', inlet: InletName|None = None)->NodeName|tuple[NodeName, InletName]:
-    #     # note: right now mapping is straightforward. if the DAGModel will use 
-    #     # its own datastructure to represent nodes and inlets, this will become a bit more
-    #     # complex
-    #     if inlet is not None:
-    #         return node, inlet
-    #     else:
-    #         return node
-
-    # def mapToSource(self, node: NodeName, inlet: InletName|None=None) -> 'NodeId|tuple[NodeId, str]':
-    #     # note: right now mapping is straightforward. if the DAGModel will use 
-    #     # its own datastructure to represent nodes and inlets, this will become a bit more
-    #     # complex
-    #     if inlet is not None:
-    #         return node, inlet
-    #     else:
-    #         return node
 
     # READ
     def nodes(self) -> Iterable[NodeName]:
@@ -1121,7 +1142,7 @@ class NodeDataViewer(QWidget):
         data = self._model.nodeData(node, self._column, Qt.ItemDataRole.DisplayRole) if self._model is not None else None
         self._display_widget.display(data)
 
-
+import PySide6QtAds as ads
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1149,7 +1170,6 @@ def hello_world(name:str, greeting:str="Hello"):
         # main menubar
         self.menu_bar = self.menuBar()
 
-        # edit menu
         self.edit_menu = self.menu_bar.addMenu("Edit")
         execute_script_action = self.edit_menu.addAction("execute script")
         execute_script_action.triggered.connect(self._engine_model.request_script_execution)
@@ -1182,16 +1202,97 @@ def hello_world(name:str, greeting:str="Hello"):
         self.output_viewer.setModel(self._engine_model.graph)
         self.output_viewer.setSelectionModel(self.graphselection)
 
-        # layout views
-        main_layout = QHBoxLayout()
-        main_layout.addWidget(self.script_edit)
-        main_layout.addWidget(self.operators_view)
-        main_layout.addWidget(self.graph_edit)
-        main_layout.addWidget(self.inspector)
-        main_layout.addWidget(self.output_viewer)
-        central_widget = QWidget()
-        central_widget.setLayout(main_layout)
-        self.setCentralWidget(central_widget)
+        # Docking layout
+        def _create_dock(
+            title: str,
+            name: str,
+            widget: QWidget,
+        ) -> ads.CDockWidget:
+            dock = ads.CDockWidget(self.dock_manager, title)
+            dock.setObjectName(name)
+            dock.setWidget(widget)
+            self.view_menu.addAction(dock.toggleViewAction())
+            return dock
+        
+        self.dock_manager = ads.CDockManager(self)
+        self.view_menu = self.menu_bar.addMenu("View")
+
+        self.graph_dock = _create_dock(
+            "Graph", "graph", self.graph_edit,
+        )
+        self.script_dock = _create_dock(
+            "Script", "script", self.script_edit,
+        )
+        self.operators_dock = _create_dock(
+            "Operators", "operators", self.operators_view,
+        )
+        self.inspector_dock = _create_dock(
+            "Inspector", "inspector", self.inspector,
+        )
+        self.output_dock = _create_dock(
+            "Output", "output", self.output_viewer,
+        )
+
+        script_area = self.dock_manager.addDockWidget(
+            ads.CenterDockWidgetArea,
+            self.script_dock
+        )
+
+        graph_area = self.dock_manager.addDockWidget(
+            ads.CenterDockWidgetArea,
+            self.graph_dock,
+            script_area
+        )
+
+        inspector_area = self.dock_manager.addDockWidget(
+            ads.RightDockWidgetArea,
+            self.inspector_dock,
+            graph_area,
+        )
+
+        self.dock_manager.addDockWidget(
+            ads.RightDockWidgetArea,
+            self.output_dock
+        )
+
+        self.dock_manager.addDockWidget(
+            ads.RightDockWidgetArea,
+            self.operators_dock,
+            script_area,
+        )
+        self.operators_dock.toggleView(False)
+
+        self.dock_manager.setStyleSheet(
+            self.dock_manager.styleSheet() + """
+            ads--CDockSplitter {
+                qproperty-handleWidth: 4;
+            }
+
+            ads--CDockContainerWidget ads--CDockSplitter::handle {
+                background: palette(window);
+            }
+
+            ads--CDockContainerWidget ads--CDockSplitter::handle:hover {
+                background: palette(window);
+            }
+            """
+        )
+
+
+
+
+        self.resize(1400, 900)
+
+        # # Simple Layout
+        # main_layout = QHBoxLayout()
+        # main_layout.addWidget(self.script_edit)
+        # main_layout.addWidget(self.operators_view)
+        # main_layout.addWidget(self.graph_edit)
+        # main_layout.addWidget(self.inspector)
+        # main_layout.addWidget(self.output_viewer)
+        # central_widget = QWidget()
+        # central_widget.setLayout(main_layout)
+        # self.setCentralWidget(central_widget)
 
     def open_new_node_dialog(self, scene_pos, source, editor):
         dialog = SelectionDialog(self._engine_model.operators, self)

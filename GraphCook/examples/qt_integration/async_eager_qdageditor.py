@@ -97,7 +97,7 @@ class LogWidget(QPlainTextEdit):
         menu.deleteLater()
 
 
-class QtLogHandler(logging.Handler):
+class MyLogHandler(logging.Handler):
     def __init__(self, send_message: Callable[[str], None]) -> None:
         super().__init__()
         self._send_message = send_message
@@ -450,6 +450,9 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                 return f"{node_name}"
         return None
 
+    def nodeColumnCount(self, node: NodeName) -> int:
+        return 1
+
     def nodeData(self, node_name: NodeName, column:int, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         node_data: Mapping[str, Any] = self._config_graph.attributes(self.mapToSource(node_name))
         node_status = self._node_status.get(self.mapToSource(node_name), None)
@@ -719,7 +722,7 @@ class Window(QMainWindow):
         log_dock.setWidget(self.log_widget)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
         
-        self.log_handler = QtLogHandler(self.log_widget.message_received.emit)
+        self.log_handler = MyLogHandler(self.log_widget.message_received.emit)
         self.log_handler.setFormatter(
             logging.Formatter(
                 "%(asctime)s %(levelname)s: %(message)s",
