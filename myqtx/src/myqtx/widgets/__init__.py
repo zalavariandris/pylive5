@@ -9,3 +9,6 @@ from .numeric_tuple_edit import NumericTupleEdit
 from .qfloatslider import QFloatSlider
 from .qpathedit import QPathEdit
 from .responsive_label import ResponsiveLabel
+
+from .QHLine import QHLine
+from .QHeading import QHeading

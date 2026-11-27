@@ -18,44 +18,20 @@ from qtpy.QtCore import (
     Qt, 
     Signal, 
     SignalInstance,
-    Slot,
+    Slot
 )
 
 from qtpy.QtGui import (
     QContextMenuEvent, 
-    QAction
+    QAction,
+    QFont
 )
+
+from myqtx.widgets import QHLine, QHeading
 
 from ..models.abstract_dag_model import AbstractDAGModel, NodeName, InletName
 from ..views.node_inspector_delegate import NodeInspectorDelegate
 
-
-class QHLine(QFrame):
-    def __init__(self):
-        super(QHLine, self).__init__()
-        self.setFrameShape(QFrame.Shape.HLine)
-        self.setFrameShadow(QFrame.Shadow.Sunken)
-
-from qtpy.QtGui import QFont
-
-class QHeading(QLabel):
-    def __init__(
-        self,
-        text: str,
-        level: int = 1,
-        parent: QWidget | None = None,
-    ) -> None:
-        if not 1 <= level <= 6:
-            raise ValueError("Heading level must be between 1 and 6")
-
-        super().__init__(text, parent)
-
-        scales = (2.0, 1.5, 1.25, 1.0, 0.875, 0.75)
-
-        font = self.font()
-        font.setBold(True)
-        font.setPointSize(round(font.pointSize() * scales[level - 1]))
-        self.setFont(font)
 
 class NodeInspectorView(QFrame):
     EMPTY = None
@@ -166,6 +142,7 @@ class NodeInspectorView(QFrame):
 
         for signal, slot in self._selection_connections:
             signal.disconnect(slot)
+            
         self._selection_connections.clear()
         self._selection_model = selection_model
 

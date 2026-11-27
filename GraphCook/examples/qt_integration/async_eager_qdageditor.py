@@ -66,6 +66,7 @@ worker_logger = logging.getLogger("graphcook.worker")
 from myutils.source_diff import ast_functions_diff, FunctionsDiff
 from qtpy.QtGui import QContextMenuEvent
 
+
 class LogWidget(QPlainTextEdit):
     message_received = Signal(str)
 
@@ -106,6 +107,7 @@ class QtLogHandler(logging.Handler):
             self._send_message(self.format(record))
         except Exception:
             self.handleError(record)
+
 
 from concurrent.futures import Future
 class Worker(Thread):
@@ -205,6 +207,7 @@ class Worker(Thread):
         self._tasks.put(None)
         self.join()
 
+
 class Executor:
     def __init__(self):
         # internal state?
@@ -220,6 +223,7 @@ class Executor:
 
     def execute_subgraph(self, subgraph: Graph[NodeId]) -> dict[NodeId, NodeStatus]:
         ...
+
 
 from graphcook.core.graph import descendants
 class Invalidator:
@@ -370,9 +374,11 @@ class EngineClient(Thread):
     def request_execute_graph(self, subgraph: Graph[NodeId]) -> Future[dict[NodeId, NodeStatus]]:
         return self.submit(lambda server: server.executor.execute_subgraph(subgraph))
 
+
 ##########
 # MODELS #
 ##########
+
 
 class AsyncEagerGraphModel(AbstractDAGModel):
     def __init__(
