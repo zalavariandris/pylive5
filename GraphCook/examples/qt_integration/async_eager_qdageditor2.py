@@ -12,7 +12,7 @@ import logging
 from graphcook.core.changes import ObservableValue
 from qasync import QEventLoop, asyncSlot
 
-from qtpy.QtCore import QAbstractListModel, QModelIndex, QPointF, Qt, QObject
+from qtpy.QtCore import QAbstractListModel, QModelIndex, QPointF, QTimer, Qt, QObject
 from qtpy.QtCore import QStringListModel
 from qtpy.QtCore import Qt
 from qtpy.QtCore import Signal, Slot
@@ -556,7 +556,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
             status=DirtyStatus(),
         )
         self._endResetInlets()
-        self.nodesDataChanged.emit([node],[0], [])
+        self.nodesDataChanged.emit([node],[0, 1], [])
 
     def refreshOperatorSignatures(
         self,
@@ -577,6 +577,9 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                 return f"{node_name}"
         return None
 
+    def nodeColumnCount(self, node: NodeName) -> int:
+        return 2 # Two columns: operator and status
+
     def nodeData(self, node_name: NodeName, column:int, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         node_data: _NodeShadow = self._local_graph.attributes(node_name)
         match column:
@@ -585,7 +588,23 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                     case Qt.ItemDataRole.DisplayRole:
                         operator_handle = node_data.get('operator')
                         return operator_handle.name if operator_handle is not None else '-no op-'
-
+                    
+            case 1:
+                match role:
+                    case Qt.ItemDataRole.DisplayRole:
+                        match node_data.get('status'):
+                            case FailedStatus() as failed:
+                                return f"💥{type(failed.reason).__name__}: {failed.reason}"
+                            case RunningStatus():
+                                return "🧠 running..."
+                            case SucceededStatus() as success:
+                                return f"✨ {success.value!r}"
+                                return f"✨" + (f" {success.duration_seconds}s" if success.duration_seconds is not None else "")
+                            case DirtyStatus():
+                                return "🕸️"
+                            case _:
+                                return None
+                            
                     case Qt.ItemDataRole.ForegroundRole:
                         match node_data.get('status'):
                             case FailedStatus():
@@ -598,20 +617,6 @@ class AsyncEagerGraphModel(AbstractDAGModel):
                                 return None
                             case _:
                                 return None
-                    
-            case 1:
-                match node_data.get('status'):
-                    case FailedStatus() as failed:
-                        return f"💥{type(failed.reason).__name__}: {failed.reason}"
-                    case RunningStatus():
-                        return "🧠 running..."
-                    case SucceededStatus() as success:
-                        return f"✨ {success.value!r}"
-                        return f"✨" + (f" {success.duration_seconds}s" if success.duration_seconds is not None else "")
-                    case DirtyStatus():
-                        return "🕸️"
-                    case _:
-                        return None
                     
         return None
 
@@ -708,7 +713,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         self._beginRemoveLinks(links)
         for link in links:
             src, outlet, dst, inlet = link
-            self._local_graph.remove_edge(src, dst, inlet)
+            self._local_graph.remove_link(src, dst, inlet)
         self._endRemoveLinks()
         return True
 
@@ -736,15 +741,15 @@ class AsyncEagerGraphModel(AbstractDAGModel):
             status=DirtyStatus(),
         )
         self.inletDataChanged.emit(node, (inlet,), [])
-        self.nodesDataChanged.emit([node],[0], [])
+        self.nodesDataChanged.emit([node],[1], [])
         return True
 
-    def setNodeData(self, node: NodeName, value: Any, role: int=Qt.ItemDataRole.EditRole) -> bool:
+    def setNodeData(self, node: NodeName, column: int, value: Any, role: int=Qt.ItemDataRole.EditRole) -> bool:
         return False
 
     def updateNodeStatus(self, node: NodeName, status: NodeStatus) -> bool:
         self._local_graph.set(node, 'status', status)
-        self.nodesDataChanged.emit([node], [0], [])
+        self.nodesDataChanged.emit([node], [1], [])
         return True
 
     def closeEvent(self, event):
@@ -778,7 +783,33 @@ class EngineModel(QObject):
         self._client.start()
         self.graph = AsyncEagerGraphModel(self._client)
 
+        # Graph Execution Scheduler
+        self._script_pending = False
+        self._graph_pending = False
+        self._draining = False
+        self._script_valid = False
+
+        self._execution_timer = QTimer(self)
+        self._execution_timer.setSingleShot(True)
+        self._execution_timer.setInterval(150)
+        self._execution_timer.timeout.connect(self._drain_execution)
+
+        self.script.contentsChanged.connect(self.request_script_execution)
+        self.graph.nodesDataChanged.connect(self._on_node_data_changed)
+
+        for signal in (
+            self.graph.nodesAdded,
+            self.graph.nodesRemoved,
+            self.graph.inletDataChanged,
+            self.graph.linksAdded,
+            self.graph.linksRemoved,
+        ):
+            signal.connect(self.request_graph_execution)
+
     def close(self) -> None:
+        self._execution_timer.stop()
+        self._script_pending = False
+        self._graph_pending = False
         self._client.close()
 
     def create_node(self, handle: OperatorHandle) -> NodeName:
@@ -823,6 +854,10 @@ class EngineModel(QObject):
                 self._client.request_execute_script()
             )
         except Exception as exc:
+            if self._script_pending:
+                return
+
+            self._script_valid = False
             self._operator_signatures.clear()
             self.operators.setStringList([])
             self.scriptStatusChanged.emit(
@@ -832,7 +867,10 @@ class EngineModel(QObject):
             # update graphmodel
             self.graph.refreshOperatorSignatures({})
         else:
-            
+            if self._script_pending:
+                return
+
+            self._script_valid = True
             self._operator_signatures = signatures
             self.operators.setStringList(
                 sorted(handle.name for handle in signatures)
@@ -880,6 +918,10 @@ class EngineModel(QObject):
                 self._client.request_execute_graph(compute_graph)
             )
 
+            # Edits made during execution belong to the next snapshot.
+            if self._script_pending or self._graph_pending:
+                return
+
             for node, status in statuses.items():
                 if node in self.graph.nodes():
                     self.graph.updateNodeStatus(node, status)
@@ -903,13 +945,55 @@ class EngineModel(QObject):
                 )
 
         except Exception as exc:
+            if self._script_pending or self._graph_pending:
+                return
+
             self.graphStatusChanged.emit(
                 f"{type(exc).__name__}: {exc}", True
             )
         finally:
             self._executing = False
 
+    # Graph scheduling methods
+    def _on_node_data_changed(
+        self,
+        nodes: list[NodeName],
+        columns: list[int],
+        roles: list[int],
+    ) -> None:
+        if 0 in columns:
+            self.request_graph_execution()
 
+    def request_script_execution(self, *_args: object) -> None:
+        self._script_pending = True
+        self._graph_pending = True
+        self._execution_timer.start()
+
+    def request_graph_execution(self, *_args: object) -> None:
+        self._graph_pending = True
+        self._execution_timer.start()
+
+    @asyncSlot()
+    async def _drain_execution(self) -> None:
+        if self._draining:
+            return
+
+        self._draining = True
+        try:
+            while self._script_pending or self._graph_pending:
+                if self._script_pending:
+                    self._script_pending = False
+                    await self.execute_script()
+
+                    if self._script_pending:
+                        continue
+
+                if self._graph_pending:
+                    self._graph_pending = False
+                    if self._script_valid:
+                        await self.execute_graph()
+        finally:
+            self._draining = False
 
 from qdageditor5.views.node_inspector_view import NodeInspectorView
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
@@ -922,6 +1006,16 @@ from myqtx.selection_dialog_view import SelectionDialog
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
+        dedent("""\
+def the_name():
+    return "Mása"
+
+def the_greeting():
+    return "Hey!"
+
+def hello_world(name:str, greeting:str="Hello"):
+    return f"{greeting}, {name}!"
+        """)
         # model
         self._engine_model = EngineModel()
         self.graphselection = GraphSelectionModel(self._engine_model.graph)
@@ -933,38 +1027,16 @@ class Window(QMainWindow):
             self._show_status
         )
 
-        # auto execute script
-        self._engine_model.script.contentsChanged.connect(
-            lambda: self._engine_model.execute_script()   
-        )
-
-        # auto execute graph
-        self._engine_model.graph.nodesDataChanged.connect(
-            lambda: self._engine_model.execute_graph()   
-        )
-        self._engine_model.graph.inletDataChanged.connect(
-            lambda: self._engine_model.execute_graph()   
-        )
-        self._engine_model.graph.linksAdded.connect(
-            lambda: self._engine_model.execute_graph()   
-        )
-        self._engine_model.graph.linksRemoved.connect(
-            lambda: self._engine_model.execute_graph()   
-        )
-        self.graphselection.currentNodeChanged.connect(
-            lambda: self._engine_model.execute_graph()   
-        )
-
         # main menubar
         self.menu_bar = self.menuBar()
 
         # edit menu
         self.edit_menu = self.menu_bar.addMenu("Edit")
         execute_script_action = self.edit_menu.addAction("execute script")
-        execute_script_action.triggered.connect(self._engine_model.execute_script)
+        execute_script_action.triggered.connect(self._engine_model.request_script_execution)
 
         execute_graph_action = self.edit_menu.addAction("execute graph")
-        execute_graph_action.triggered.connect(self._engine_model.execute_graph)
+        execute_graph_action.triggered.connect(self._engine_model.request_graph_execution)
         
         # views
         self.script_edit = ScriptEditAdvanced()

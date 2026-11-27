@@ -95,7 +95,7 @@ class AbstractDAGModel(QObject, metaclass=_AbstractQObjectMeta):
     nodesAdded = Signal(tuple) # list[NodeT]
     nodesAboutToBeRemoved = Signal(tuple) # list[NodeT]
     nodesRemoved = Signal(tuple) # list[NodeT]
-    nodesDataChanged = Signal(tuple, list, list) # tuple[NodeName, ...], columns: list[int], roles: list[int]
+    nodesDataChanged = Signal(list, list, list) # tuple[NodeName, ...], columns: list[int], roles: list[int]
     nodeAboutToMove = Signal(object) # NodeT
     nodeMoved = Signal(object) # NodeT #todo: handle multiple nodes to be consistent with the resf of the api
     

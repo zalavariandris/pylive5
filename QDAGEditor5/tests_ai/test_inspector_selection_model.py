@@ -148,7 +148,7 @@ def test_new_model_preserves_the_old_shared_selection(
     assert selection is not None and selection is not old_selection
     assert selection.model() is new_model
     assert selection.currentNode() is None
-    assert inspector._form.rowCount() == 0
+    assert inspector._inlets_form.rowCount() == 0
     assert inspector._title.text() == "- no selection -"
     assert old_selection.model() is old_model
     assert old_selection.currentNode() == "first"
@@ -157,7 +157,7 @@ def test_new_model_preserves_the_old_shared_selection(
 
     old_selection.setCurrentNode("second")
     assert text_editor(other).text() == "Second"
-    assert inspector._form.rowCount() == 0
+    assert inspector._inlets_form.rowCount() == 0
     inspector.setCurrentNode("first")
     old_model.setInletData("first", "text", "Old model", Qt.ItemDataRole.EditRole)
     assert text_editor(inspector).text() == "Replacement"
@@ -174,13 +174,13 @@ def test_replacing_selection_adopts_its_current_node(inspector: NodeInspectorVie
     replacement.setCurrentNode("second")
     inspector.setSelectionModel(replacement)
     assert text_editor(inspector).text() == "Second"
-    assert inspector._form.rowCount() == 1
+    assert inspector._inlets_form.rowCount() == 1
 
     old_selection.setCurrentNode(None)
     assert text_editor(inspector).text() == "Second"
     inspector.setCurrentNode("first")
     assert replacement.currentNode() == "first"
-    assert inspector._form.rowCount() == 1
+    assert inspector._inlets_form.rowCount() == 1
 
 
 def test_mismatched_selection_is_rejected_without_detaching(inspector: NodeInspectorView) -> None:
@@ -209,7 +209,7 @@ def test_detaching_model_clears_the_form_and_old_connections(inspector: NodeInsp
     inspector.setModel(None)
     assert inspector.model() is None
     assert inspector.selectionModel() is None
-    assert inspector._form.rowCount() == 0
+    assert inspector._inlets_form.rowCount() == 0
     assert inspector._title.text() == "- no selection -"
     assert inspector._subtitle.text() == "- info -"
     assert selection.currentNode() == "first"
@@ -217,7 +217,7 @@ def test_detaching_model_clears_the_form_and_old_connections(inspector: NodeInsp
     selection.setCurrentNode("second")
     model.setInletData("second", "text", "Detached", Qt.ItemDataRole.EditRole)
     inspector.setCurrentNode(None)
-    assert inspector._form.rowCount() == 0
+    assert inspector._inlets_form.rowCount() == 0
 
     inspector.setModel(model)
     assert inspector.selectionModel() is not selection
@@ -232,7 +232,7 @@ def test_shared_selection_updates_the_form_and_current_input(inspector: NodeInsp
     inspector.setSelectionModel(selection)
     selection.setCurrentNode("first")
     selection.setCurrentNode("second")
-    assert inspector._form.rowCount() == 1
+    assert inspector._inlets_form.rowCount() == 1
     assert text_editor(inspector).text() == "Second"
 
     model.setInletData("first", "text", "Ignored", Qt.ItemDataRole.EditRole)
@@ -251,7 +251,7 @@ def test_shared_selection_updates_the_form_and_current_input(inspector: NodeInsp
     assert text_editor(inspector).isEnabled()
 
     selection.setCurrentNode(None)
-    assert inspector._form.rowCount() == 0
+    assert inspector._inlets_form.rowCount() == 0
     assert inspector._title.text() == "- no selection -"
 
 
@@ -271,7 +271,7 @@ def test_removal_or_reset_clears_current_node(
     selection = inspector.selectionModel()
     assert selection is not None and selection.currentNode() is None
     assert inspector._current_node is None
-    assert inspector._form.rowCount() == 0
+    assert inspector._inlets_form.rowCount() == 0
     assert inspector._title.text() == "- no selection -"
 
 
@@ -282,5 +282,5 @@ def test_inlet_reset_rebuilds_the_selected_node(inspector: NodeInspectorView) ->
     model._beginResetInlets("first")
     model.inputs["first"]["extra"] = "New inlet"
     model._endResetInlets()
-    assert inspector._form.rowCount() == 2
+    assert inspector._inlets_form.rowCount() == 2
     assert text_editor(inspector, "extra").text() == "New inlet"

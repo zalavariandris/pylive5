@@ -19,6 +19,7 @@ from qdageditor5.views.node_inspector_delegate import NodeInspectorDelegate
 from myqtx.widgets.coloredit import ColorEdit
 from qtpy.QtWidgets import QSplitter, QWidget
 
+
 class StandardNodeInspectorDelegate(NodeInspectorDelegate):
     def createEditor(self, model:AbstractDAGModel, node: NodeName, inlet: InletName) -> QWidget:
         value = model.inletData(node, inlet, Qt.ItemDataRole.EditRole)

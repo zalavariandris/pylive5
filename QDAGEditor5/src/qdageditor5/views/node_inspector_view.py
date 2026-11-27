@@ -29,6 +29,34 @@ from qtpy.QtGui import (
 from ..models.abstract_dag_model import AbstractDAGModel, NodeName, InletName
 from ..views.node_inspector_delegate import NodeInspectorDelegate
 
+
+class QHLine(QFrame):
+    def __init__(self):
+        super(QHLine, self).__init__()
+        self.setFrameShape(QFrame.Shape.HLine)
+        self.setFrameShadow(QFrame.Shadow.Sunken)
+
+from qtpy.QtGui import QFont
+
+class QHeading(QLabel):
+    def __init__(
+        self,
+        text: str,
+        level: int = 1,
+        parent: QWidget | None = None,
+    ) -> None:
+        if not 1 <= level <= 6:
+            raise ValueError("Heading level must be between 1 and 6")
+
+        super().__init__(text, parent)
+
+        scales = (2.0, 1.5, 1.25, 1.0, 0.875, 0.75)
+
+        font = self.font()
+        font.setBold(True)
+        font.setPointSize(round(font.pointSize() * scales[level - 1]))
+        self.setFont(font)
+
 class NodeInspectorView(QFrame):
     EMPTY = None
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -54,16 +82,17 @@ class NodeInspectorView(QFrame):
         self._heading.setFrameShape(QFrame.Shape.NoFrame)
         # self._heading.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         
-        heading_layout =QVBoxLayout(self._heading)
+        heading_layout = QVBoxLayout(self._heading)
         heading_layout.setContentsMargins(0,0,0,0)
         heading_layout.setSpacing(2)
-        from qtpy.QtGui import QFont
 
-        self._title = QLabel("- no selection -", self._heading)
-        font = self._title.font()
-        font.setBold(True)
-        font.setPointSize(int(font.pointSize() * 1.25))
-        self._title.setFont(font)
+
+        # self._title = QLabel("- no selection -", self._heading)
+        # font = self._title.font()
+        # font.setBold(True)
+        # font.setPointSize(int(font.pointSize() * 1.25))
+        # self._title.setFont(font)
+        self._title = QHeading("- no selection -", 1, self._heading)
         heading_layout.addWidget(self._title)
 
         self._subtitle = QLabel("- info -", self._heading)
@@ -74,14 +103,19 @@ class NodeInspectorView(QFrame):
 
         main_layout.addWidget(self._heading)
 
-        separator = QFrame(self)
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        main_layout.addWidget(separator)
+
+        # separator = QFrame(self)
+        # separator.setFrameShape(QFrame.Shape.HLine)
+        # separator.setFrameShadow(QFrame.Shadow.Sunken)
+        main_layout.addWidget(QHLine())
+        main_layout.addWidget(QHeading("Inlets", 3))
+
+        main_layout.addStrut(16)
+
         ## Body
-        self._form = QFormLayout()
-        self._form.setSpacing(8)
-        main_layout.addLayout(self._form)
+        self._inlets_form = QFormLayout()
+        self._inlets_form.setSpacing(8)
+        main_layout.addLayout(self._inlets_form)
 
         main_layout.addStretch()
 
@@ -155,7 +189,7 @@ class NodeInspectorView(QFrame):
         self._selection_model.setCurrentNode(node)
 
     def _on_current_node_changed(self, node: NodeName | None, previous: NodeName | None) -> None:
-        self._clear_form()
+        self._clear_inlets_form()
         self._current_node = node
 
         if node is None:
@@ -166,19 +200,18 @@ class NodeInspectorView(QFrame):
         assert self._model is not None
         self._title.setText(self._model.nodeHeaderData(node, Qt.ItemDataRole.DisplayRole))
         self._subtitle.setText(self._model.nodeData(node, 0, Qt.ItemDataRole.DisplayRole))
-        self._build_form()
+        self._build_inlets_form()
 
-
-    def _clear_form(self) -> None:
+    def _clear_inlets_form(self) -> None:
         for signal, handler in self._editor_connections:
             signal.disconnect(handler)
         self._editor_connections.clear()
         self._editors.clear()
         self._labels.clear()
-        while self._form.rowCount():
-            self._form.removeRow(0)
+        while self._inlets_form.rowCount():
+            self._inlets_form.removeRow(0)
 
-    def _build_form(self) -> None:
+    def _build_inlets_form(self) -> None:
         node = self._current_node
         assert self._model is not None
         assert node is not None
@@ -198,7 +231,7 @@ class NodeInspectorView(QFrame):
             effect.setEnabled(False)
             editor.setGraphicsEffect(effect)
             self._editors[inlet_name] = editor
-            self._form.addRow(label, editor)
+            self._inlets_form.addRow(label, editor)
 
             # Initialize before connecting signals.
             self._update_inlet_presentation(node, inlet_name)
@@ -276,8 +309,8 @@ class NodeInspectorView(QFrame):
 
     def _handle_inlets_reset(self, node: NodeName) -> None:
         if node == self._current_node:
-            self._clear_form()
-            self._build_form()
+            self._clear_inlets_form()
+            self._build_inlets_form()
 
     def _handle_inlet_data_change(
         self, node: NodeName, inlets: tuple[InletName, ...], roles: list[int],
