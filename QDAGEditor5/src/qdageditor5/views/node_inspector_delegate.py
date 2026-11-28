@@ -1,7 +1,8 @@
+import pathlib
 from typing import Any
 import inspect
 from qtpy.QtGui import QPalette
-from qtpy.QtWidgets import QLabel
+from qtpy.QtWidgets import QFileDialog, QLabel
 from qtpy.QtCore import Qt, QObject, QSignalBlocker
 from qtpy.QtWidgets import  (
     QDoubleSpinBox, 
@@ -19,6 +20,7 @@ from ..models.abstract_dag_model import (
 
 from ..core.inspector_roles import InspectorRoles
 
+from myqtx.widgets import QPathEdit
 
 class NodeInspectorDelegate(QObject):
     EMPTY = None
@@ -65,6 +67,10 @@ class NodeInspectorDelegate(QObject):
             editor = QDoubleSpinBox()
             editor.setRange(-999, 999)
             editor.clear()
+
+        if datatype is pathlib.Path:
+            editor = QPathEdit()
+
 
         if editor is None:
             if datatype is None:

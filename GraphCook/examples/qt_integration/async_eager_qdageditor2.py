@@ -8,7 +8,7 @@ from threading import Thread
 from queue import Queue
 import concurrent.futures
 import logging
-
+from unique_names_generator import get_random_name
 from graphcook.core.changes import ObservableValue
 from qasync import QEventLoop, asyncSlot
 
@@ -16,7 +16,7 @@ from qtpy.QtCore import QAbstractListModel, QModelIndex, QPointF, QTimer, Qt, QO
 from qtpy.QtCore import QStringListModel
 from qtpy.QtCore import Qt
 from qtpy.QtCore import Signal, Slot
-from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QHBoxLayout, QListView, QSizePolicy, QSplitter, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QFrame, QGridLayout, QHBoxLayout, QListView, QSizePolicy, QSplitter, QStackedLayout, QStackedWidget, QTabWidget, QVBoxLayout, QWidget
 from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
 from qtpy.QtWidgets import QPlainTextEdit
 
@@ -403,7 +403,9 @@ class EngineClient(Thread):
             try:
                 response = task(engine)
             except Exception as exc:
+                import traceback
                 worker_logger.error("Task failed with exception: %s", exc)
+                traceback.print_exc()
                 future.set_exception(exc)
             else:
                 future.set_result(response)
@@ -413,24 +415,13 @@ class EngineClient(Thread):
         self._tasks.put((future, process))
         return future
 
-    def request_get_signatures(self) -> Future[dict[OperatorHandle, OperatorSignature]]:
-        return self.submit(lambda server: {
-            handle: OperatorSignature.from_func(func, revision=revision)
-            for handle, (func, revision) in server.executor.get_signatures().items()
-        })
-
-    def request_get_script(self) -> Future[str]:
-        return self.submit(lambda server: server.script.get())
-
-    def request_set_script(self, new_script: str) -> Future[None]:
-        return self.submit(lambda server: server.script.set(new_script))
-
     def request_execute_script(
-        self,
+        self, new_script:str
     ) -> Future[dict[OperatorHandle, OperatorSignature]]:
         def execute(
             engine: Engine,
         ) -> dict[OperatorHandle, OperatorSignature]:
+            engine.script.set(new_script)
             operators = engine.executor.execute_script(engine.script.get())
             return {
                 handle: OperatorSignature.from_func(func, revision=revision)
@@ -439,19 +430,19 @@ class EngineClient(Thread):
 
         return self.submit(execute)
 
-    def request_get_graph(self) -> Future[Graph[NodeId]]:
-        def map_graph_to_view(engine_graph: Graph[NodeId]) -> Graph[NodeId]:
-            view_graph:Graph[NodeId] = Graph()
-            for node_id in engine_graph.nodes():
-                attributes = engine_graph.attributes(node_id)
-                view_attributes = dict(**attributes)
-                func = attributes[OPERATOR_ATTRIBUTE]
-                assert callable(func)
-                view_attributes[OPERATOR_ATTRIBUTE] = OperatorSignature.from_func(func, 0)
-                view_graph.add_node(node_id, **view_attributes)
-            return view_graph
+    # def request_get_graph(self) -> Future[Graph[NodeId]]:
+    #     def map_graph_to_view(engine_graph: Graph[NodeId]) -> Graph[NodeId]:
+    #         view_graph:Graph[NodeId] = Graph()
+    #         for node_id in engine_graph.nodes():
+    #             attributes = engine_graph.attributes(node_id)
+    #             view_attributes = dict(**attributes)
+    #             func = attributes[OPERATOR_ATTRIBUTE]
+    #             assert callable(func)
+    #             view_attributes[OPERATOR_ATTRIBUTE] = OperatorSignature.from_func(func, 0)
+    #             view_graph.add_node(node_id, **view_attributes)
+    #         return view_graph
 
-        return self.submit(lambda server: map_graph_to_view(server.graph))
+    #     return self.submit(lambda server: map_graph_to_view(server.graph))
 
     def request_execute_graph(self, subgraph: Graph[NodeId]) -> Future[dict[NodeId, NodeStatus]]:
         return self.submit(lambda server: server.executor.execute_subgraph(subgraph))
@@ -549,7 +540,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
             handle: OperatorHandle | None = None, 
             operator: OperatorSignature | None = None
         ) -> NodeName:
-        from unique_names_generator import get_random_name
+        
         node_id = NodeId(get_random_name())
         self._beginAddNodes([node_id])
         self._local_graph.add_node(
@@ -868,11 +859,11 @@ class EngineModel(QObject):
 
         try:
             # These requests enter the same FIFO queue.
-            await asyncio.wrap_future(
-                self._client.request_set_script(self.script.toPlainText())
-            )
+            # await asyncio.wrap_future(
+            #     self._client.request_set_script(self.script.toPlainText())
+            # )
             signatures:Mapping[OperatorHandle, OperatorSignature] = await asyncio.wrap_future(
-                self._client.request_execute_script()
+                self._client.request_execute_script(self.script.toPlainText())
             )
         except Exception as exc:
             if self._script_pending:
@@ -1185,6 +1176,7 @@ def hello_world(name:str, greeting:str="Hello"):
         self.operators_view.setModel(self._engine_model.operators)
 
         self.graph_edit = DirectionalGraphView5()
+        self.graph_edit.setFrameShape(QFrame.Shape.NoFrame)
         self.graph_edit.setModel(self._engine_model.graph)
         self.graph_edit.setSelectionModel(self.graphselection)
         self.graph_edit.requestNode.connect(lambda pos, source, editor=self.graph_edit: 
@@ -1194,6 +1186,7 @@ def hello_world(name:str, greeting:str="Hello"):
             self._engine_model.graph.addLinks([(src, outlet, dst, inlet)]))
 
         self.inspector = NodeInspectorView()
+        self.inspector.setFrameShape(QFrame.Shape.NoFrame)
         self.inspector.setModel(self._engine_model.graph)
         self.inspector.setSelectionModel(self.graphselection)
 
@@ -1202,6 +1195,10 @@ def hello_world(name:str, greeting:str="Hello"):
         self.output_viewer.setModel(self._engine_model.graph)
         self.output_viewer.setSelectionModel(self.graphselection)
 
+        self.resize(1200, 700)
+        self.__simple_layout()
+
+    def __docking_layout(self):
         # Docking layout
         def _create_dock(
             title: str,
@@ -1278,21 +1275,28 @@ def hello_world(name:str, greeting:str="Hello"):
             """
         )
 
-
-
-
-        self.resize(1400, 900)
-
-        # # Simple Layout
-        # main_layout = QHBoxLayout()
-        # main_layout.addWidget(self.script_edit)
-        # main_layout.addWidget(self.operators_view)
-        # main_layout.addWidget(self.graph_edit)
-        # main_layout.addWidget(self.inspector)
-        # main_layout.addWidget(self.output_viewer)
-        # central_widget = QWidget()
-        # central_widget.setLayout(main_layout)
-        # self.setCentralWidget(central_widget)
+    def __simple_layout(self):
+        # Simple Layout
+        splitter = QSplitter()
+        left_area = QTabWidget()
+        left_area.addTab(self.script_edit, "Script")
+        graph_with_inspector = QWidget()
+        grid_layout = QGridLayout()
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.addWidget(self.graph_edit, 0, 0)
+        grid_layout.addWidget(
+            self.inspector,
+            0, 0,
+            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight
+        )
+        graph_with_inspector.setLayout(grid_layout)
+        left_area.addTab(graph_with_inspector, "Graph")
+        right_area = QTabWidget()
+        right_area.addTab(self.output_viewer, "Output")
+        splitter.addWidget(left_area)
+        splitter.addWidget(right_area)
+        splitter.setSizes([self.width() // 2, self.width() // 2])
+        self.setCentralWidget(splitter)
 
     def open_new_node_dialog(self, scene_pos, source, editor):
         dialog = SelectionDialog(self._engine_model.operators, self)

@@ -11,7 +11,10 @@ authors = [
 description = "Runtime for Python dataflow graphs."
 requires-python = ">=3.10"
 dependencies = [
+    "PySide6",
+    "PySide6-QtAds",
     "typing-extensions>=4.12",
+    "unique_names_generator"
 ]
 
 [tool.setuptools.packages.find]
