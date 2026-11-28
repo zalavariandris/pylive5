@@ -113,7 +113,7 @@ def test_missing_operator_preserves_inputs_links_and_recovers(qtbot: QtBot) -> N
     handle = OperatorHandle("source")
     node = model.addNode(handle)
     upstream = model.addNode(OperatorHandle("upstream"))
-    graph.set(node, "extra", 7)
+    graph.set_attribute(node, "extra", 7)
     graph.add_link(upstream, node, "linked")
     view = NodeInspectorView()
     qtbot.addWidget(view)
@@ -159,7 +159,7 @@ async def test_execution_snapshot_uses_stored_handles(qtbot: QtBot) -> None:
     model = AsyncEagerGraphModel(graph, registry.get)
     handle = OperatorHandle("source")
     node = model.addNode(handle)
-    graph.set(node, "value", 9)
+    graph.set_attribute(node, "value", 9)
     submit = AsyncMock(return_value={})
     window = SimpleNamespace(
         model=model,

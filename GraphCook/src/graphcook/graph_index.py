@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from typing import Generic, Hashable, TypeVar
 
-from .core.graph import GraphProtocol, NodeT
+from .core.graph import GraphProtocol, NodeKeyT
 from .observable_graph import GraphChange
 from myutils.relations import ManyToOneRelation
 
 ValueT = TypeVar("ValueT", bound=Hashable)
 
 
-class GraphAttributeIndex(Generic[NodeT, ValueT]):
+class GraphAttributeIndex(Generic[NodeKeyT, ValueT]):
     """Index nodes by a non-None, hashable attribute value of the requested type.
 
     The graph is the source of truth; this is only a derived reverse lookup.
@@ -20,22 +20,22 @@ class GraphAttributeIndex(Generic[NodeT, ValueT]):
     update it before acting on the same change (e.g. cache invalidation).
     """
 
-    def __init__(self, graph: GraphProtocol[NodeT], attribute: str,
+    def __init__(self, graph: GraphProtocol[NodeKeyT], attribute: str,
                  value_type: type[ValueT]) -> None:
         self.graph = graph
         self.attribute = attribute
         self.value_type = value_type
-        self._relation = ManyToOneRelation[NodeT, ValueT]()
+        self._relation = ManyToOneRelation[NodeKeyT, ValueT]()
         for node in graph.nodes():
             self._sync(node)
 
-    def value_of(self, node: NodeT) -> ValueT | None:
+    def value_of(self, node: NodeKeyT) -> ValueT | None:
         return self._relation.parent_of(node)
 
-    def nodes_with(self, value: ValueT) -> frozenset[NodeT]:
+    def nodes_with(self, value: ValueT) -> frozenset[NodeKeyT]:
         return self._relation.children_of(value)
 
-    def update(self, change: GraphChange[NodeT]) -> None:
+    def update(self, change: GraphChange[NodeKeyT]) -> None:
         # The graph already contains the resulting state.
         node_changes = change.get("nodes", {})
         removed_nodes = node_changes.get("removed", {})
@@ -58,12 +58,12 @@ class GraphAttributeIndex(Generic[NodeT, ValueT]):
             ):
                 self._sync(node)
 
-    def _remove(self, node: NodeT) -> None:
+    def _remove(self, node: NodeKeyT) -> None:
         previous = self._relation.parent_of(node)
         if previous is not None:
             self._relation.delete(node, previous)
 
-    def _sync(self, node: NodeT) -> None:
+    def _sync(self, node: NodeKeyT) -> None:
         value = self.graph.attributes(node).get(self.attribute)
         previous = self._relation.parent_of(node)
         if value is None or not isinstance(value, self.value_type):

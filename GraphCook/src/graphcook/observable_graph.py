@@ -1,7 +1,7 @@
 
 from collections.abc import Callable, Hashable, Mapping
 from typing import TypedDict
-from .core.graph import Graph, NodeT, Link
+from .core.graph import Graph, NodeKeyT, NodeValueT, Link
 
 
 from .core.changes import (
@@ -18,31 +18,32 @@ class GraphChange[N: Hashable](TypedDict, total=False):
     nodes: MappingChanges[N, Mapping[Hashable, object], AttributeChanges]
     links: SetChanges[Link[N]]
 
-class ObservableGraph(Graph[NodeT]):
+
+class ObservableGraph(Graph[NodeKeyT, NodeValueT]):
     """Observable graph whose events describe completed mutations.
     Node-removal events include all incident links removed with the node.
     """
     def __init__(self) -> None:
         super().__init__()
-        self._listeners: list[Callable[[GraphChange[NodeT]], None]] = []
+        self._listeners: list[Callable[[GraphChange[NodeKeyT]], None]] = []
 
-    def listen(self, callback: Callable[[GraphChange[NodeT]], None]) -> Callable[[], None]:
+    def listen(self, callback: Callable[[GraphChange[NodeKeyT]], None]) -> Callable[[], None]:
         self._listeners.append(callback)
         def unsubscribe() -> None:
             self._listeners.remove(callback)
         return unsubscribe
 
-    def _notify(self, change: GraphChange[NodeT]) -> None:
+    def _notify(self, change: GraphChange[NodeKeyT]) -> None:
         for callback in tuple(self._listeners):
             callback(change)
 
-    def add_node(self, node: NodeT, **attributes: object) -> None:
+    def add_node(self, node: NodeKeyT, **attributes: object) -> None:
         super().add_node(node, **attributes)
         self._notify(GraphChange(
             nodes=MappingChanges(kind="map", added={node: dict(attributes)}),
         ))
 
-    def remove_node(self, node: NodeT) -> None:
+    def remove_node(self, node: NodeKeyT) -> None:
         attributes = dict(self.attributes(node))
         removed_links = set(self.in_links(node)).union(self.out_links(node))
         super().remove_node(node)
@@ -52,7 +53,7 @@ class ObservableGraph(Graph[NodeT]):
             links=SetChanges(kind="set", removed=removed_links)
         ))
 
-    def update(self, node: NodeT, /, **attributes: object) -> None:
+    def update_attributes(self, node: NodeKeyT, /, **attributes: object) -> None:
         """Merge attributes and emit one notification after the mutation."""
         old = self.attributes(node)
 
@@ -65,7 +66,7 @@ class ObservableGraph(Graph[NodeT]):
             for key, value in attributes.items()
             if key in old
         }
-        super().update(node, **attributes)
+        super().update_attributes(node, **attributes)
 
         self._notify(GraphChange(
             nodes=MappingChanges(
@@ -74,13 +75,13 @@ class ObservableGraph(Graph[NodeT]):
             ),
         ))
 
-    def unset(self, node: NodeT, name: str) -> None:
+    def unset_attribute(self, node: NodeKeyT, name: str) -> None:
         attributes = self.attributes(node)
         if name not in attributes:
             return # Attribute not present, nothing to unset #todo: consider raising an error
         old = attributes[name]
 
-        super().unset(node, name)
+        super().unset_attribute(node, name)
 
         self._notify(GraphChange(
             nodes=MappingChanges(
@@ -90,7 +91,7 @@ class ObservableGraph(Graph[NodeT]):
         ))
 
     def add_link(
-        self, source: NodeT, target: NodeT, inlet: str
+        self, source: NodeKeyT, target: NodeKeyT, inlet: str
     ) -> None:
         super().add_link(source, target, inlet)
 
@@ -102,7 +103,7 @@ class ObservableGraph(Graph[NodeT]):
         ))
 
     def remove_link(
-        self, source: NodeT, target: NodeT, inlet: str
+        self, source: NodeKeyT, target: NodeKeyT, inlet: str
     ) -> None:
         super().remove_link(source, target, inlet)
 

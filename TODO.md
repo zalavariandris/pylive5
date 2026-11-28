@@ -188,6 +188,11 @@ gaffer/cortex
 ## GraphView
 
 - [ ] a delegate, to draw custom nodes. with potentially custom roles in a custom GraphModel.
+- [ ] revisit DirectionalGraphView5 caching (`qdageditor5/views/directional_graph_view_5.py`)
+      - when the model's underlying data changes without emitting appropriate signals,
+      even on repaint, it will show stale geometry.
+      -> we probably better off using a cache keys that includes
+      the relevant (that effects the geometry) as well
 
 
 ## Inspector

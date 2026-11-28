@@ -597,12 +597,12 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         if role == Qt.ItemDataRole.EditRole:
             if value is self.EMPTY:
                 node_id, inlet_id = self.mapToSource(node, inlet)
-                self._config_graph.unset(node_id, inlet_id)
+                self._config_graph.unset_attribute(node_id, inlet_id)
                 self.inletDataChanged.emit(node, tuple([inlet]), [])
                 return True
             else:
                 node_id, inlet_id = self.mapToSource(node, inlet)
-                self._config_graph.set(node_id, inlet_id, value)
+                self._config_graph.set_attribute(node_id, inlet_id, value)
                 self.inletDataChanged.emit(node, tuple([inlet]), [])
                 return True
 

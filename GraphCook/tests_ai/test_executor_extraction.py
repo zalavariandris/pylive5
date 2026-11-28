@@ -44,7 +44,7 @@ def test_executor_starts_once_and_works_without_engine() -> None:
         assert signature is not None
         assert signature.inlets["value"].annotation is int
         assert executor.evaluate_node(node)[node] == 3
-        graph.update(node, value=4)
+        graph.update_attributes(node, value=4)
         assert isinstance(executor.nodes_status(node), DirtyStatus)
         assert executor.evaluate_node(node)[node] == 4
     finally:

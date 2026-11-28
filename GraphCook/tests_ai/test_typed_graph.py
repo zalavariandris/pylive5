@@ -75,9 +75,9 @@ def test_default_dictionary_api_and_keyword_names_are_preserved() -> None:
     graph.add_node("explicit", empty)
     assert graph.attributes("empty") == {}
     assert graph.attributes("explicit") is empty
-    graph.update("keywords", data=4, key=5, value=6)
-    graph.set("keywords", "optional", None)
-    graph.unset("keywords", "key")
+    graph.update_attributes("keywords", data=4, key=5, value=6)
+    graph.set_attribute("keywords", "optional", None)
+    graph.unset_attribute("keywords", "key")
     assert graph.attributes("keywords") == {"data": 4, "value": 6, "optional": None}
 
 
@@ -107,13 +107,13 @@ def test_observable_dictionary_api_still_emits_attribute_deltas() -> None:
     events: list[GraphChange[str]] = []
     graph.listen(events.append)
 
-    graph.update("node", label="New", added=2)
+    graph.update_attributes("node", label="New", added=2)
     change = events[-1].attributes["node"]
     assert change.updated["label"].old == "Old"
     assert change.updated["label"].new == "New"
     assert change.added == {"added": 2}
 
-    graph.unset("node", "removable")
+    graph.unset_attribute("node", "removable")
     assert events[-1].attributes["node"].removed == {"removable": 1}
 
     replacement: dict[str, object] = {"label": "Replacement", "fresh": 3}
@@ -149,9 +149,9 @@ def test_typed_observable_edits_preserve_identity_and_notify_after_mutation() ->
         snapshots.append(dict(graph.attributes("node")))
 
     graph.listen(on_change)
-    graph.set("node", "label", "After")
-    graph.set("node", "optional", None)
-    graph.unset("node", "optional")
+    graph.set_attribute("node", "label", "After")
+    graph.set_attribute("node", "optional", None)
+    graph.unset_attribute("node", "optional")
     assert graph.attributes("node") is data
     assert len(events) == 3
     change = events[0].attributes["node"].updated["label"]
@@ -177,10 +177,10 @@ def test_invalid_attribute_edits_do_not_mutate_or_notify(
     events: list[GraphChange[str]] = []
     graph.listen(events.append)
     with pytest.raises(TypeError):
-        graph.set("node", *args, **keywords)
+        graph.set_attribute("node", *args, **keywords)
     with pytest.raises(KeyError):
-        graph.unset("node", "missing")
+        graph.unset_attribute("node", "missing")
     with pytest.raises(KeyError):
-        graph.update("missing", label="New")
+        graph.update_attributes("missing", label="New")
     assert graph.attributes("node") == {"label": "Before"}
     assert events == []

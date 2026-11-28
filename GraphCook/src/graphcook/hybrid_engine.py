@@ -12,7 +12,7 @@ from .core.base_engine import (BaseEngine, EngineChange, OPERATOR_ATTRIBUTE,
                          OperatorHandle, OperatorProvider, ProviderSnapshot, UNSET,
                          UnresolvedOperatorError)
 from .core.cache import CacheProtocol, MemoryCache
-from .core.graph import Graph, NodeT, ObservableGraph
+from .core.graph import Graph, NodeKeyT, ObservableGraph
 
 
 class Context(Protocol):
@@ -32,35 +32,35 @@ class HybridOperator(Protocol):
 
 
 @dataclass(frozen=True, kw_only=True)
-class JobEvent(EngineChange[NodeT]):
+class JobEvent(EngineChange[NodeKeyT]):
     """Hybrid-specific execution event with a correlation ID."""
     job_id: int
 
 
-class HybridJob(Generic[NodeT]):
-    def __init__(self, graph: Graph[NodeT], provider: ProviderSnapshot,
-                 cached: Mapping[NodeT, Any], job_id: int,
-                 callback: Callable[[JobEvent[NodeT]], None]) -> None:
+class HybridJob(Generic[NodeKeyT]):
+    def __init__(self, graph: Graph[NodeKeyT], provider: ProviderSnapshot,
+                 cached: Mapping[NodeKeyT, Any], job_id: int,
+                 callback: Callable[[JobEvent[NodeKeyT]], None]) -> None:
         self.graph = graph
         self.provider = provider
         self.cached = dict(cached)
         self.job_id = job_id
-        self.completed: dict[NodeT, Any] = {}
+        self.completed: dict[NodeKeyT, Any] = {}
         self._callback = callback
-        self.requested: dict[NodeT, Context] = {}
-        self._planning: set[NodeT] = set()
-        self._computing: set[NodeT] = set()
+        self.requested: dict[NodeKeyT, Context] = {}
+        self._planning: set[NodeKeyT] = set()
+        self._computing: set[NodeKeyT] = set()
 
     def _report(self, kind: Literal["started", "executed", "failed", "cache_hit"],
-                node: NodeT, *, result: Any = UNSET,
+                node: NodeKeyT, *, result: Any = UNSET,
                 error: BaseException | None = None) -> None:
         self._callback(JobEvent(kind, node, result, error, job_id=self.job_id))
 
-    def run(self, node: NodeT, context: Context) -> ContextualValue:
+    def run(self, node: NodeKeyT, context: Context) -> ContextualValue:
         self._plan(node, context)
         return self._pull(node, context)
 
-    def _plan(self, node: NodeT, context: Context) -> None:
+    def _plan(self, node: NodeKeyT, context: Context) -> None:
         if node in self._planning:
             raise ValueError(f"Cycle detected during request at {node!r}")
         previous = self.requested.get(node)
@@ -92,7 +92,7 @@ class HybridJob(Generic[NodeT]):
         finally:
             self._planning.remove(node)
 
-    def _pull(self, node: NodeT, context: Context) -> ContextualValue:
+    def _pull(self, node: NodeKeyT, context: Context) -> ContextualValue:
         existing = self.completed.get(node, self.cached.get(node, UNSET))
         if existing is not UNSET:
             try:
@@ -137,22 +137,22 @@ class HybridJob(Generic[NodeT]):
             self._computing.remove(node)
 
 
-class HybridEngine(BaseEngine[NodeT]):
-    def __init__(self, graph: ObservableGraph[NodeT], provider: OperatorProvider,
-                 cache: CacheProtocol[NodeT, Any] | None = None) -> None:
+class HybridEngine(BaseEngine[NodeKeyT]):
+    def __init__(self, graph: ObservableGraph[NodeKeyT], provider: OperatorProvider,
+                 cache: CacheProtocol[NodeKeyT, Any] | None = None) -> None:
         super().__init__(graph, provider)
-        self.cache: CacheProtocol[NodeT, Any] = cache if cache is not None else MemoryCache()
-        self._cache_revisions: dict[NodeT, int] = {}
+        self.cache: CacheProtocol[NodeKeyT, Any] = cache if cache is not None else MemoryCache()
+        self._cache_revisions: dict[NodeKeyT, int] = {}
         self._revision_counter = 0
         self._next_job_id = 1
 
-    def invalidate_hook(self, nodes: frozenset[NodeT]) -> None:
+    def invalidate_hook(self, nodes: frozenset[NodeKeyT]) -> None:
         self._revision_counter += 1
         for node in nodes:
             self._cache_revisions[node] = self._revision_counter
             self.cache.remove(node)
 
-    def evaluate(self, node: NodeT, context: Context) -> ContextualValue:
+    def evaluate(self, node: NodeKeyT, context: Context) -> ContextualValue:
         job_id = self._next_job_id
         self._next_job_id += 1
         revisions = dict(self._cache_revisions)

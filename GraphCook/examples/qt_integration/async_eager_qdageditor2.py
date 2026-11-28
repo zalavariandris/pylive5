@@ -2,12 +2,13 @@ import asyncio
 from copy import copy
 from inspect import Parameter
 from textwrap import dedent
-from typing import Iterable, Any, cast
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, Iterable, Literal, Any, cast
+
 from threading import Thread
 from queue import Queue
 import concurrent.futures
 import logging
+
 from unique_names_generator import get_random_name
 from graphcook.core.changes import ObservableValue
 from qasync import QEventLoop, asyncSlot
@@ -16,9 +17,12 @@ from qtpy.QtCore import QAbstractListModel, QModelIndex, QPointF, QTimer, Qt, QO
 from qtpy.QtCore import QStringListModel
 from qtpy.QtCore import Qt
 from qtpy.QtCore import Signal, Slot
-from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QFrame, QGridLayout, QHBoxLayout, QListView, QSizePolicy, QSplitter, QStackedLayout, QStackedWidget, QTabWidget, QVBoxLayout, QWidget
+from qtpy.QtGui import QTextDocument
+from qtpy.QtGui import QTextCursor
+from qtpy.QtWidgets import QAbstractScrollArea, QDialog, QFrame, QGridLayout, QHBoxLayout, QListView, QMenuBar, QSizePolicy, QSplitter, QStackedLayout, QStackedWidget, QStatusBar, QTabWidget, QVBoxLayout, QWidget
 from qtpy.QtWidgets import QDockWidget, QMainWindow, QSplitter
 from qtpy.QtWidgets import QPlainTextEdit
+
 
 from qdageditor5.core.inspector_roles import InspectorRoles
 from qdageditor5.models.abstract_dag_model import (
@@ -29,6 +33,8 @@ from qdageditor5.models.abstract_dag_model import (
     OutletName,
     DirectionalLinkId
 )
+
+from concurrent.futures import Future
 
 from qdageditor5.views.node_inspector_view import NodeInspectorView
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
@@ -66,150 +72,19 @@ worker_logger = logging.getLogger("graphcook.worker")
 from myutils.source_diff import ast_functions_diff, FunctionsDiff
 from qtpy.QtGui import QContextMenuEvent
 
-class LogWidget(QPlainTextEdit):
-    message_received = Signal(str)
+from rich.console import Console
+from rich.markup import escape
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setMaximumBlockCount(2000)
-        self.message_received.connect(
-            self.append_message,
-            Qt.ConnectionType.QueuedConnection,
-        )
+console = Console(stderr=True, force_terminal=True)
+from typing import TypedDict, Any, Callable
 
-    @Slot(str)
-    def append_message(self, message: str) -> None:
-        self.appendPlainText(message)
-
-    def contextMenuEvent(self, event: QContextMenuEvent | None) -> None:
-        if event is None:
-            return
-
-        menu = self.createStandardContextMenu()
-        if menu is None:
-            return
-
-        menu.addSeparator()
-        menu.addAction("Clear", self.clear)
-        menu.exec(event.globalPos())
-        menu.deleteLater()
-
-
-class QtLogHandler(logging.Handler):
-    def __init__(self, send_message: Callable[[str], None]) -> None:
-        super().__init__()
-        self._send_message = send_message
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            self._send_message(self.format(record))
-        except Exception:
-            self.handleError(record)
-
-from concurrent.futures import Future
-class Worker(Thread):
-    def __init__(self):
-        super().__init__()
-        self._tasks: Queue[
-            tuple[Future, Callable[[Engine], Any] | None]
-        ] = Queue()
-        self._resolved_functions: dict[OperatorHandle, Callable|None] = {}
-        self._source: str = ""
-        self._signatures: dict[OperatorHandle, OperatorSignature] = {}
-        self.cache = MemoryCache[NodeId, Any]()
-
-    def run(self) -> None:
-        while True:
-            task = self._tasks.get()
-
-            if task is None:
-                break
-
-            message, future, payload = task
-
-            if not future.set_running_or_notify_cancel():
-                continue
-
-            self.process(message, future, payload)
-
-    async def submit(self, message: str, payload: Any) -> Any:
-        
-        future = Future()
-        self._tasks.put((message, future, payload))
-        return await asyncio.wrap_future(future)
-
-    def process(self, 
-        message: str, 
-        future: concurrent.futures.Future, 
-        payload: Any
-    ) -> None:
-        worker_logger.info(f"{message}...")
-        match message:
-            case "execute_script":
-                assert isinstance(payload, str)
-                new_script: str = payload
-                try:
-                    ast_diff: FunctionsDiff = ast_functions_diff(self._source, new_script)
-                    operators: dict[OperatorHandle, Callable] = _execute_provider(new_script)
-                    signatures: dict[OperatorHandle, OperatorSignature] = {}
-                    for handle, func in operators.items():
-                        previous = self._signatures.get(handle)
-                        revision = previous.revision if previous is not None else 0
-                        if previous is not None and handle.name in ast_diff.changed:
-                            revision += 1
-                        signatures[handle] = OperatorSignature.from_func(func, revision=revision)
-                except BaseException as exc:
-                    worker_logger.exception("Script execution failed")
-                    future.set_exception(exc)
-                else:
-                    worker_logger.info("Loaded %d operators", len(operators))
-                    # Only successful submissions become the next comparison baseline.
-                    self._source = new_script
-                    self._resolved_functions = operators
-                    self._signatures = signatures
-                    future.set_result(signatures)
-
-            case 'execute_graph':
-                G = cast(Graph[NodeId], payload)
-                def callback(node_id: NodeId, status: NodeStatus) -> None:
-                    worker_logger.info("Node %s status: %s", node_id, status)
-                
-                try:
-                    results = _execute_graph(
-                        G, 
-                        self._resolved_functions, 
-                        cache=self.cache, 
-                        callback=callback
-                    )
-                except Exception as exc:
-                    future.set_exception(exc)
-                else:
-                    future.set_result(results)
-
-            case "invalidate":
-                nodes = payload
-                for node in nodes:
-                    # Invalidate logic here, e.g., mark nodes as dirty and clear cache
-                    if node in self.cache:
-                        self.cache.remove(node)
-                future.set_result(None)
-
-        if exc:=future.exception():
-            worker_logger.error(f"{message} failed with exception: {exc}")
-        elif future.done():
-            worker_logger.info(f"{message} succeeded with result: {future.result()}")
-        else:
-            worker_logger.info(f"{message} {future}")
-
-    def close(self):
-        # signal the thread to exit
-        self._tasks.put(None)
-        self.join()
+class _NodeConfig(TypedDict):
+    __operator__: OperatorHandle
+    kwargs: dict[str, Any]
 
 
 class Executor:
-    def __init__(self):
+    def __init__(self)->None:
         # internal state?
         self._source: str = "" # hold the current script to compare against new submissions
         self.operators: dict[OperatorHandle, Callable] = dict()
@@ -217,7 +92,7 @@ class Executor:
         self.cache = MemoryCache[NodeId, Any]()
 
         # computed
-        self.node_statuses = dict()
+        self.node_statuses: dict[NodeId, NodeStatus] = dict()
 
     def execute_script(
         self, script: str
@@ -253,7 +128,7 @@ class Executor:
 
     def execute_subgraph(
         self,
-        subgraph: Graph[NodeId],
+        subgraph: Graph[NodeId, _NodeConfig],
     ) -> dict[NodeId, NodeStatus]:
         statuses: dict[NodeId, NodeStatus] = {
             node: DirtyStatus() for node in subgraph.nodes()
@@ -282,186 +157,163 @@ class Executor:
 
 
 from graphcook.core.graph import descendants
-class Invalidator:
-    def __init__(self, graph: ObservableGraph[NodeId]) -> None:
-        self.graph = graph
-        self._subscribers: list[Callable[[list[NodeId]], None]] = []
-        self._unsubscribe_graph: Callable[[], None] | None = graph.listen(self._handle_graph_change)
+# class Invalidator:
+#     def __init__(self, graph: ObservableGraph[NodeId]) -> None:
+#         self.graph = graph
+#         self._subscribers: list[Callable[[list[NodeId]], None]] = []
+#         self._unsubscribe_graph: Callable[[], None] | None = graph.listen(self._handle_graph_change)
 
-    def close(self) -> None:
-        """Stop observing the graph. Safe to call more than once."""
-        if self._unsubscribe_graph is not None:
-            self._unsubscribe_graph()
-            self._unsubscribe_graph = None
+#     def close(self) -> None:
+#         """Stop observing the graph. Safe to call more than once."""
+#         if self._unsubscribe_graph is not None:
+#             self._unsubscribe_graph()
+#             self._unsubscribe_graph = None
 
-    def _handle_graph_change(self, change: GraphChange) -> None:
-        nodes_to_invalidate: set[NodeId] = set()
-        if nodes_change:=change.get("nodes"):
-            for node_id in nodes_change.get("added", []):
-                nodes_to_invalidate.add(node_id)
+#     def _handle_graph_change(self, change: GraphChange) -> None:
+#         nodes_to_invalidate: set[NodeId] = set()
+#         if nodes_change:=change.get("nodes"):
+#             for node_id in nodes_change.get("added", []):
+#                 nodes_to_invalidate.add(node_id)
 
-            for node_id in nodes_change.get("removed", []):
-                ...
+#             for node_id in nodes_change.get("removed", []):
+#                 ...
 
-            for node_id in nodes_change.get("updated", []):
-                nodes_to_invalidate.add(node_id)
-                for dep in descendants(self.graph, node_id):
-                    nodes_to_invalidate.add(dep)
+#             for node_id in nodes_change.get("updated", []):
+#                 nodes_to_invalidate.add(node_id)
+#                 for dep in descendants(self.graph, node_id):
+#                     nodes_to_invalidate.add(dep)
 
-        if links_change:=change.get("links"):
-            for link in links_change.get("added", []):
-                src, dst, inlet = link
-                nodes_to_invalidate.add(dst)
-                for dep in descendants(self.graph, dst):
-                    nodes_to_invalidate.add(dep)
+#         if links_change:=change.get("links"):
+#             for link in links_change.get("added", []):
+#                 src, dst, inlet = link
+#                 nodes_to_invalidate.add(dst)
+#                 for dep in descendants(self.graph, dst):
+#                     nodes_to_invalidate.add(dep)
 
-            for link in links_change.get("removed", []):
-                src, dst, inlet = link
-                if dst not in self.graph.nodes():
-                    continue
-                nodes_to_invalidate.add(dst)
-                for dep in descendants(self.graph, dst):
-                    nodes_to_invalidate.add(dep)
+#             for link in links_change.get("removed", []):
+#                 src, dst, inlet = link
+#                 if dst not in self.graph.nodes():
+#                     continue
+#                 nodes_to_invalidate.add(dst)
+#                 for dep in descendants(self.graph, dst):
+#                     nodes_to_invalidate.add(dep)
 
-        if nodes_to_invalidate:
-            self._notify_subscribers(nodes_to_invalidate)
+#         if nodes_to_invalidate:
+#             self._notify_subscribers(nodes_to_invalidate)
 
-    def _notify_subscribers(self, nodes: set[NodeId]) -> None:
-        for subscriber in tuple(self._subscribers):
-            subscriber(list(nodes))
+#     def _notify_subscribers(self, nodes: set[NodeId]) -> None:
+#         for subscriber in tuple(self._subscribers):
+#             subscriber(list(nodes))
 
-    def invalidate(self, *nodes: NodeId) -> None:
-        """manually trigger invalidation for the given nodes and their descendants"""
-        nodes_to_invalidate: set[NodeId] = set(nodes)
-        for node in nodes:
-            for dep in descendants(self.graph, node):
-                nodes_to_invalidate.add(dep)
+#     def invalidate(self, *nodes: NodeId) -> None:
+#         """manually trigger invalidation for the given nodes and their descendants"""
+#         nodes_to_invalidate: set[NodeId] = set(nodes)
+#         for node in nodes:
+#             for dep in descendants(self.graph, node):
+#                 nodes_to_invalidate.add(dep)
 
-        if nodes_to_invalidate:
-            self._notify_subscribers(nodes_to_invalidate)
+#         if nodes_to_invalidate:
+#             self._notify_subscribers(nodes_to_invalidate)
 
-    def listen(self, callback: Callable[[Iterable[NodeId]], None]) -> Callable[[], None]:
-        """listen for nodes invalidated"""
-        self._subscribers.append(callback)
-        def unsubscribe():
-            self._subscribers.remove(callback)
-        return unsubscribe
+#     def listen(self, callback: Callable[[Iterable[NodeId]], None]) -> Callable[[], None]:
+#         """listen for nodes invalidated"""
+#         self._subscribers.append(callback)
+#         def unsubscribe():
+#             self._subscribers.remove(callback)
+#         return unsubscribe
 
 
 class Engine:
-    def __init__(self):
-        self.script:ObservableValue[str] = ObservableValue("")
-        self.graph:ObservableGraph[NodeId] = ObservableGraph()
-        self.invalidator: Invalidator = Invalidator(self.graph)
-        self.invalidator.listen(lambda nodes: self._handle_invalidation(nodes))
+    def __init__(self)->None:
+        # self.script:ObservableValue[str] = ObservableValue("")
+        # self.graph:ObservableGraph[NodeId] = ObservableGraph()
+        # self.invalidator: Invalidator = Invalidator(self.graph)
+        # self.invalidator.listen(lambda nodes: self._handle_invalidation(nodes))
         self.executor: Executor = Executor()
-        self._operators: dict[OperatorHandle, object] = dict()
-        self._status: dict[NodeId, Any] = dict() # consider using an ObservableDict?
+        # self._operators: dict[OperatorHandle, object] = dict()
+        # self._status: dict[NodeId, Any] = dict() # consider using an ObservableDict?
 
-    def operator_handle(self, node: NodeId) -> OperatorHandle|None:
-        attributes = self.graph.attributes(node)
-        handle: OperatorHandle|None = attributes.get('operator', None)
-        return handle
+    # def operator_handle(self, node: NodeId) -> OperatorHandle|None:
+    #     attributes = self.graph.attributes(node)
+    #     handle: OperatorHandle|None = attributes.get('operator', None)
+    #     return handle
 
-    def _handle_script_change(self, new_script: str) -> None:
-        """ Handle script changes here """
-        # - notify connected clients
-        ...
+    # def _handle_script_change(self, new_script: str) -> None:
+    #     """ Handle script changes here """
+    #     # - notify connected clients
+    #     ...
 
-        # - execute operators and update relevant nodes with the changed oprators
-        ...
+    #     # - execute operators and update relevant nodes with the changed oprators
+    #     ...
 
-    def _handle_invalidation(self, nodes: Iterable[NodeId]) -> None:
-        """ Handle invalidated nodes here """
-        # - notify connected clients about the invalidated nodes
-        ...
+    # def _handle_invalidation(self, nodes: Iterable[NodeId]) -> None:
+    #     """ Handle invalidated nodes here """
+    #     # - notify connected clients about the invalidated nodes
+    #     ...
 
-        # - execute nodes that have been invalidated and update their state accordingly using the executor
-        ...
+    #     # - execute nodes that have been invalidated and update their state accordingly using the executor
+    #     ...
 
-        # notify clients about the new status
-        self._handle_status_change({node: self._status.get(node) for node in nodes})
+    #     # notify clients about the new status
+    #     self._handle_status_change({node: self._status.get(node) for node in nodes})
 
-    def _handle_status_change(self, changes: dict[NodeId, NodeStatus]) -> None:
-        """ Handle state changes here """
-        # notify connected clients about the state changes
-        ...
+    # def _handle_status_change(self, changes: dict[NodeId, NodeStatus]) -> None:
+    #     """ Handle state changes here """
+    #     # notify connected clients about the state changes
+    #     ...
 
 
-class EngineClient(Thread):
-    def __init__(self):
+class ExecutorWorker(Thread):
+    def __init__(self, tasks: Queue[tuple[Future, Callable[[Executor], Any]]])->None:
         super().__init__()
-        self._tasks: Queue[tuple[Future, Callable[[Engine], Any]]] = Queue()
-        self._listeners: list[Callable[[Any], None]] = []
+        self._tasks = tasks
 
-    def run(self):
-        engine = Engine()
+    def run(self) -> None:
+        executor = Executor()
         while True:
             future, task = self._tasks.get()
             if task is None:
                 break
+            task_repr = getattr(task, "__qualname__", task)
             try:
-                response = task(engine)
+                response = task(executor)
             except Exception as exc:
-                import traceback
-                worker_logger.error("Task failed with exception: %s", exc)
-                traceback.print_exc()
                 future.set_exception(exc)
+                console.print(f"[bold red]✗ {escape(str(task_repr))}[/] failed: {escape(str(exc))}")
+                console.print_exception(show_locals=False, max_frames=8)
             else:
                 future.set_result(response)
-
-    def submit(self, process: Callable[[Engine], Any])->Future:
-        future = Future()
-        self._tasks.put((future, process))
-        return future
-
-    def request_execute_script(
-        self, new_script:str
-    ) -> Future[dict[OperatorHandle, OperatorSignature]]:
-        def execute(
-            engine: Engine,
-        ) -> dict[OperatorHandle, OperatorSignature]:
-            engine.script.set(new_script)
-            operators = engine.executor.execute_script(engine.script.get())
-            return {
-                handle: OperatorSignature.from_func(func, revision=revision)
-                for handle, (func, revision) in operators.items()
-            }
-
-        return self.submit(execute)
-
-    # def request_get_graph(self) -> Future[Graph[NodeId]]:
-    #     def map_graph_to_view(engine_graph: Graph[NodeId]) -> Graph[NodeId]:
-    #         view_graph:Graph[NodeId] = Graph()
-    #         for node_id in engine_graph.nodes():
-    #             attributes = engine_graph.attributes(node_id)
-    #             view_attributes = dict(**attributes)
-    #             func = attributes[OPERATOR_ATTRIBUTE]
-    #             assert callable(func)
-    #             view_attributes[OPERATOR_ATTRIBUTE] = OperatorSignature.from_func(func, 0)
-    #             view_graph.add_node(node_id, **view_attributes)
-    #         return view_graph
-
-    #     return self.submit(lambda server: map_graph_to_view(server.graph))
-
-    def request_execute_graph(self, subgraph: Graph[NodeId]) -> Future[dict[NodeId, NodeStatus]]:
-        return self.submit(lambda server: server.executor.execute_subgraph(subgraph))
-
-    def listen(self, callback: Callable[[Any], None]) -> Callable[[Any], None]:
-        self._listeners.append(callback)
-        def unsubscribe(callback: Callable[[Any], None]) -> None:
-            self._listeners.remove(callback)
-        return unsubscribe
-
-    def _notify(self, result: Any) -> None:
-        for listener in self._listeners:
-            listener(result)
+                console.print(f"[green]✓ {escape(str(task_repr))}[/]")
 
     def close(self) -> None:
         self._tasks.put((Future(), None))
         self.join()
 
-from qtpy.QtGui import QTextCursor
+
+class ExecutorClient:
+    def __init__(self, tasks: Queue[tuple[Future, Callable[[Executor], Any]]]) -> None:
+        self._tasks = tasks
+
+    async def submit(self, process: Callable[[Executor], Any]) -> Any:
+        future = Future[Any]()
+        self._tasks.put((future, process))
+        return await asyncio.wrap_future(future)
+
+    async def execute_script(self, new_script: str) -> dict[OperatorHandle, OperatorSignature]:
+        def execute(
+            executor: Executor,
+        ) -> dict[OperatorHandle, OperatorSignature]:
+            operators = executor.execute_script(new_script)
+            return {
+                handle: OperatorSignature.from_func(func, revision=revision)
+                for handle, (func, revision) in operators.items()
+            }
+
+        return await self.submit(execute)
+
+    async def execute_graph(self, subgraph: Graph[NodeId, _NodeConfig]) -> dict[NodeId, NodeStatus]:
+        return await self.submit(lambda executor: executor.execute_subgraph(subgraph))
+
 
 class LogWidget(QPlainTextEdit):
     message_received = Signal(str)
@@ -514,6 +366,7 @@ class LogWidget(QPlainTextEdit):
 ##########
 from typing import TypedDict
 
+
 class _NodeShadow(TypedDict):
     operator_handle: OperatorHandle
     operator: OperatorSignature
@@ -521,15 +374,19 @@ class _NodeShadow(TypedDict):
     status: NodeStatus
 
 
-class AsyncEagerGraphModel(AbstractDAGModel):
+class _NodeAdditionalState(TypedDict):
+    operator: OperatorSignature
+    status: NodeStatus
+
+class ProxyGraphModel(AbstractDAGModel):
     def __init__(
         self,
-        client: EngineClient,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent=parent)
-        self._local_graph: Graph[NodeName] = Graph() # with OperatorHandles and Signatures
-        self._client = client
+        self._config_graph: Graph[NodeName, _NodeConfig] = Graph()
+        self._nodes_additional_state: dict[NodeName, _NodeAdditionalState] = {}
+        self._local_graph: Graph[NodeName, _NodeShadow] = Graph() # with OperatorHandles and Signatures
 
     # READ
     def nodes(self) -> Iterable[NodeName]:
@@ -543,11 +400,19 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         
         node_id = NodeId(get_random_name())
         self._beginAddNodes([node_id])
-        self._local_graph.add_node(
-            node_id, 
-            operator_handle=handle,
-            operator = operator,
-            inputs={},
+        # self._local_graph.add_node(
+        #     node_id, 
+        #     operator_handle=handle,
+        #     operator = operator,
+        #     inputs={},
+        #     status=DirtyStatus()
+        # )
+        self._config_graph.add_node(node_id, _NodeConfig(
+            node_id,
+            inputs={}
+        ))
+        self._nodes_additional_state[node_id] = _NodeAdditionalState(
+            operator=operator,
             status=DirtyStatus()
         )
         self._endAddNodes()
@@ -562,7 +427,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
             return
 
         self._beginResetInlets(node)
-        self._local_graph.update(
+        self._local_graph.update_attributes(
             node,
             operator=operator,
             status=DirtyStatus(),
@@ -747,7 +612,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         else:
             inputs[inlet] = value
 
-        self._local_graph.update(
+        self._local_graph.update_attributes(
             node,
             inputs=inputs,
             status=DirtyStatus(),
@@ -760,7 +625,7 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         return False
 
     def updateNodeStatus(self, node: NodeName, status: NodeStatus) -> bool:
-        self._local_graph.set(node, 'status', status)
+        self._local_graph.set_attribute(node, 'status', status)
         self.nodesDataChanged.emit([node], [1], [])
         return True
 
@@ -768,10 +633,25 @@ class AsyncEagerGraphModel(AbstractDAGModel):
         self._unsubscribe()
         super().closeEvent(event)
 
-from dataclasses import dataclass
+    def toGraph(self) -> Graph[NodeId, _NodeConfig]:
+        compute_graph = Graph[NodeId, _NodeConfig]()
+
+        for node in self._local_graph.nodes():
+            data = cast(_NodeShadow, self._local_graph.attributes(node))
+            compute_graph.add_node(
+                node,
+                __operator__=data["operator_handle"],
+                kwargs=dict(data["inputs"]),
+            )
+
+        for link in self._local_graph.links():
+            compute_graph.add_link(
+                link.source, link.target, link.inlet
+            )
+
+        return compute_graph
 
 
-from qtpy.QtGui import QTextDocument
 
 class EngineModel(QObject):
     scriptStatusChanged = Signal(str, bool)
@@ -784,18 +664,22 @@ class EngineModel(QObject):
             OperatorHandle, OperatorSignature
         ] = {}
 
-
-        self._client = EngineClient()
-        self._client.listen(self._handle_client_changes)
+        self._tasks: Queue[tuple[Future, Callable[[Executor], Any]]] = Queue()
+        self.worker = ExecutorWorker(self._tasks)
+        self.client = ExecutorClient(self._tasks)
 
         # models
         self.script = QTextDocument()
         self.operators = QStringListModel(self)
 
-        self._client.start()
-        self.graph = AsyncEagerGraphModel(self._client)
+        self.worker.start()
+        self.graph = ProxyGraphModel()
 
         # Graph Execution Scheduler
+        class Scheduler(QObject):
+            def __init__(self, parent: QObject|None = None):
+                super().__init__(parent=parent)
+
         self._script_pending = False
         self._graph_pending = False
         self._draining = False
@@ -807,7 +691,8 @@ class EngineModel(QObject):
         self._execution_timer.timeout.connect(self._drain_execution)
 
         self.script.contentsChanged.connect(self.request_script_execution)
-        self.graph.nodesDataChanged.connect(self._on_node_data_changed)
+        self.graph.nodesDataChanged.connect(lambda nodes, columns, roles: 
+            self.request_graph_execution() if 0 in columns else None)
 
         for signal in (
             self.graph.nodesAdded,
@@ -822,7 +707,7 @@ class EngineModel(QObject):
         self._execution_timer.stop()
         self._script_pending = False
         self._graph_pending = False
-        self._client.close()
+        self.worker.close()
 
     def create_node(self, handle: OperatorHandle) -> NodeName:
         signature = self._operator_signatures[handle]
@@ -830,7 +715,7 @@ class EngineModel(QObject):
 
     def _handle_client_changes(self, changes):
         if operator_changes:=changes.get("operators", dict):
-            fut = self._client.get_operators()
+            fut = self.client.get_operators()
             def refresh_operator_model(oparetos: dict):
                 self.operators.setStringList([op["name"] for op in oparetos.values()])
 
@@ -858,12 +743,8 @@ class EngineModel(QObject):
         self.scriptStatusChanged.emit("Evaluating script...", False)
 
         try:
-            # These requests enter the same FIFO queue.
-            # await asyncio.wrap_future(
-            #     self._client.request_set_script(self.script.toPlainText())
-            # )
-            signatures:Mapping[OperatorHandle, OperatorSignature] = await asyncio.wrap_future(
-                self._client.request_execute_script(self.script.toPlainText())
+            signatures = await self.client.execute_script(
+                self.script.toPlainText()
             )
         except Exception as exc:
             if self._script_pending:
@@ -907,28 +788,8 @@ class EngineModel(QObject):
         self.graphStatusChanged.emit("Executing graph...", False)
 
         try:
-            local_graph = cast(Graph[NodeId], self.graph._local_graph)
-            compute_graph = Graph[NodeId]()
-
-            for node in local_graph.nodes():
-                data = cast(_NodeShadow, local_graph.attributes(node))
-                compute_graph.add_node(
-                    node,
-                    __operator__=data["operator_handle"],
-                    kwargs=dict(data["inputs"]),
-                )
-
-            for link in local_graph.links():
-                compute_graph.add_link(
-                    link.source, link.target, link.inlet
-                )
-
-            for node in compute_graph.nodes():
-                self.graph.updateNodeStatus(node, DirtyStatus())
-
-            statuses = await asyncio.wrap_future(
-                self._client.request_execute_graph(compute_graph)
-            )
+            compute_graph:Graph[NodeId, _NodeConfig] = self.graph.toGraph()
+            statuses = await self.client.execute_graph(compute_graph)
 
             # Edits made during execution belong to the next snapshot.
             if self._script_pending or self._graph_pending:
@@ -966,16 +827,6 @@ class EngineModel(QObject):
         finally:
             self._executing = False
 
-    # Graph scheduling methods
-    def _on_node_data_changed(
-        self,
-        nodes: list[NodeName],
-        columns: list[int],
-        roles: list[int],
-    ) -> None:
-        if 0 in columns:
-            self.request_graph_execution()
-
     def request_script_execution(self, *_args: object) -> None:
         self._script_pending = True
         self._graph_pending = True
@@ -1007,12 +858,16 @@ class EngineModel(QObject):
         finally:
             self._draining = False
 
+
+
 from qdageditor5.views.node_inspector_view import NodeInspectorView
+from qdageditor5.views.node_data_viewer import NodeDataViewer
 from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qdageditor5.views.directional_graph_view_5 import DirectionalGraphView5
 
 
 from myqtx.selection_dialog_view import SelectionDialog
+from myqtx.logview import LogView
 
 from qtpy.QtCore import (
     QEvent, 
@@ -1023,118 +878,8 @@ from qtpy.QtCore import (
     Slot
 )
 
-class NodeDataViewer(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Node Output Viewer")
-        self.setMinimumSize(400, 300)
-
-        self._model: AbstractDAGModel | None = None
-        self._selection_model: GraphSelectionModel | None = None
-        self._model_connections: list[tuple[SignalInstance, Callable]] = []
-        self._selection_connections: list[tuple[SignalInstance, Callable]] = []
-
-        main_layout = QVBoxLayout()
-        self.setLayout(main_layout)
-
-        self._display_widget = DisplayWidget()
-        main_layout.addWidget(self._display_widget)
-        self._column = 0
-
-    def setDisplayColumn(self, column: int) -> None:
-        if column == self._column:
-            return
-
-        self._column = column
-        current = (
-            self._selection_model.currentNode()
-            if self._selection_model is not None
-            else None
-        )
-        self._refresh_display_widget(current)
-
-    def displayColumn(self) -> int:
-        return self._column
-
-    def setModel(self, model: AbstractDAGModel | None) -> None:
-        if model is self._model:
-            return
-
-        for signal, slot in self._model_connections:
-            signal.disconnect(slot)
-
-        self._model_connections.clear()
-        self._model = model
-
-        if model is not None:
-            self._model_connections.append(
-                (model.nodesDataChanged, self._handle_node_data_changed)
-            )
-            for signal, slot in self._model_connections:
-                signal.connect(slot)
-
-        self.setSelectionModel(
-            GraphSelectionModel(model, parent=self) if model is not None else None
-        )
-
-    def model(self) -> AbstractDAGModel | None:
-        return self._model
-
-    def selectionModel(self) -> GraphSelectionModel | None:
-        return self._selection_model
-
-    def setSelectionModel(self, selection_model: GraphSelectionModel | None) -> None:
-        if selection_model is self._selection_model:
-            return
-
-        if selection_model is not None and (
-            self._model is None or selection_model.model() is not self._model
-        ):
-            raise ValueError("The selection model must use the inspector's model")
-
-        if selection_model is self._selection_model:
-            return
-
-        for signal, slot in self._selection_connections:
-            signal.disconnect(slot)
-            
-        self._selection_connections.clear()
-        self._selection_model = selection_model
-
-        if selection_model is not None:
-            self._selection_connections = [
-                (selection_model.currentNodeChanged, self._handle_current_node_changed)
-            ]
-            for signal, slot in self._selection_connections:
-                signal.connect(slot)
-
-        # Refresh the display widget with the current node of the new selection model.
-        current = (
-            selection_model.currentNode()
-            if selection_model is not None
-            else None
-        )
-        self._refresh_display_widget(current)
-
-    def _handle_current_node_changed(self, node: NodeName | None, previous: NodeName | None) -> None:
-        self._refresh_display_widget(node)
-
-    def _handle_node_data_changed(self, nodes, columns:list[int], roles: list[Qt.ItemDataRole]) -> None:
-        if self._selection_model is None:
-            return
-        current = self._selection_model.currentNode()
-        if current in nodes and self._column in columns:
-            self._refresh_display_widget(current)
-
-    def _refresh_display_widget(self, node: NodeName | None) -> None:
-        if node is None:
-            self._display_widget.display("- no selection -")
-            return
-        data = self._model.nodeData(node, self._column, Qt.ItemDataRole.DisplayRole) if self._model is not None else None
-        self._display_widget.display(data)
-
 import PySide6QtAds as ads
-class Window(QMainWindow):
+class Window(QWidget):
     def __init__(self):
         super().__init__()
         dedent("""\
@@ -1159,9 +904,9 @@ def hello_world(name:str, greeting:str="Hello"):
         )
 
         # main menubar
-        self.menu_bar = self.menuBar()
+        self.menubar = QMenuBar()
 
-        self.edit_menu = self.menu_bar.addMenu("Edit")
+        self.edit_menu = self.menubar.addMenu("Edit")
         execute_script_action = self.edit_menu.addAction("execute script")
         execute_script_action.triggered.connect(self._engine_model.request_script_execution)
 
@@ -1195,8 +940,19 @@ def hello_world(name:str, greeting:str="Hello"):
         self.output_viewer.setModel(self._engine_model.graph)
         self.output_viewer.setSelectionModel(self.graphselection)
 
-        self.resize(1200, 700)
+        self.statusbar = QStatusBar()
+
+        # setup logging
+        self.log_view = LogView()
+
+        self.resize(1300, 700)
         self.__simple_layout()
+
+    def menuBar(self):
+        return self.menubar
+
+    def statusBar(self):
+        return self.statusbar
 
     def __docking_layout(self):
         # Docking layout
@@ -1212,7 +968,7 @@ def hello_world(name:str, greeting:str="Hello"):
             return dock
         
         self.dock_manager = ads.CDockManager(self)
-        self.view_menu = self.menu_bar.addMenu("View")
+        self.view_menu = self.menubar.addMenu("View")
 
         self.graph_dock = _create_dock(
             "Graph", "graph", self.graph_edit,
@@ -1291,12 +1047,19 @@ def hello_world(name:str, greeting:str="Hello"):
         )
         graph_with_inspector.setLayout(grid_layout)
         left_area.addTab(graph_with_inspector, "Graph")
+        left_area.setCurrentWidget(graph_with_inspector)
         right_area = QTabWidget()
         right_area.addTab(self.output_viewer, "Output")
+        
         splitter.addWidget(left_area)
         splitter.addWidget(right_area)
         splitter.setSizes([self.width() // 2, self.width() // 2])
-        self.setCentralWidget(splitter)
+        main_layout = QVBoxLayout()
+        main_layout.setMenuBar(self.menubar)
+        main_layout.addWidget(splitter)
+        main_layout.addWidget(self.log_view)
+        self.setLayout(main_layout)
+        # self.setCentralWidget(main_layout)
 
     def open_new_node_dialog(self, scene_pos, source, editor):
         dialog = SelectionDialog(self._engine_model.operators, self)
@@ -1318,6 +1081,12 @@ def hello_world(name:str, greeting:str="Hello"):
         )
         status_bar.showMessage(message)
 
+    def closeEvent(self, event):
+        self._engine_model.close()
+        self._engine_model.close()
+        self.log_view.setLogger(None)
+        event.accept()
+
 
 if __name__ == "__main__":
     import sys
@@ -1328,15 +1097,14 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
 
     editor = Window()
+
     editor.show()
     # loop.call_soon(editor.submit_execute_script)
     with loop:
         try:
             loop.run_forever()
         finally:
-            editor._engine_model.close()
-            # editor.worker.close()
-            # worker_logger.removeHandler(editor.log_handler)
-            # editor.log_handler.close()
+            pass
+
 
 

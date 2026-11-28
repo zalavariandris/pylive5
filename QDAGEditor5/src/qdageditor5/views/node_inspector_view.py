@@ -1,7 +1,6 @@
 from typing import Callable, cast, Any
 from bidict import bidict
 
-from qdageditor5.models.graph_selection_model import GraphSelectionModel
 from qtpy.QtWidgets import (
     QFormLayout, 
     QFrame, 
@@ -20,7 +19,6 @@ from qtpy.QtCore import (
     SignalInstance,
     Slot
 )
-
 from qtpy.QtGui import (
     QContextMenuEvent, 
     QAction,
@@ -30,6 +28,7 @@ from qtpy.QtGui import (
 from myqtx.widgets import QHLine, QHeading
 
 from ..models.abstract_dag_model import AbstractDAGModel, NodeName, InletName
+from ..models.graph_selection_model import GraphSelectionModel
 from ..views.node_inspector_delegate import NodeInspectorDelegate
 
 

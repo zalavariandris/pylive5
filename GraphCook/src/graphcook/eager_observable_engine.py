@@ -544,14 +544,14 @@ class EagerEngine:
 
     def set(self, node: NodeId, name: str, value: object) -> None:
         """Assign one node attribute."""
-        self._graph_config.set(node, name, value)
+        self._graph_config.set_attribute(node, name, value)
 
     def update(self, node: NodeId, /, **attributes: object) -> None:
         """Merge several node attributes in one graph mutation."""
-        self._graph_config.update(node, **attributes)
+        self._graph_config.update_attributes(node, **attributes)
 
     def unset(self, node: NodeId, name: str) -> None:
-        self._graph_config.unset(node, name)
+        self._graph_config.unset_attribute(node, name)
 
     def add_link(self, src: NodeId, dst: NodeId, inlet: str) -> None:
         """Add a link from src to dst at the specified inlet.

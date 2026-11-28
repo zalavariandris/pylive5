@@ -18,15 +18,15 @@ def test_set_and_update_preserve_other_attributes_and_links(
     attributes = graph.attributes("target")
     links = tuple(graph.links())
 
-    graph.set("target", "greeting", "Hey")
-    graph.set("target", "optional", None)
-    graph.update("target", greeting="Hi", enabled=False)
+    graph.set_attribute("target", "greeting", "Hey")
+    graph.set_attribute("target", "optional", None)
+    graph.update_attributes("target", greeting="Hi", enabled=False)
 
     assert attributes == {
         "greeting": "Hi", "untouched": 42, "optional": None, "enabled": False,
     }
     assert tuple(graph.links()) == links
-    graph.unset("target", "optional")
+    graph.unset_attribute("target", "optional")
     assert "optional" not in attributes
 
 
@@ -36,8 +36,8 @@ def test_attribute_names_do_not_collide_with_update_parameters(
 ) -> None:
     graph = graph_type()
     graph.add_node("target")
-    graph.set("target", "node", "first")
-    graph.update("target", node="second", name="label", value=None)
+    graph.set_attribute("target", "node", "first")
+    graph.update_attributes("target", node="second", name="label", value=None)
     assert graph.attributes("target") == {
         "node": "second", "name": "label", "value": None,
     }
@@ -54,9 +54,9 @@ def test_observers_receive_one_delta_after_each_mutation() -> None:
         snapshots.append(dict(graph.attributes("target")))
 
     graph.listen(observe)
-    graph.set("target", "greeting", "Hey")
-    graph.set("target", "optional", None)
-    graph.update("target", greeting="Hi", enabled=False)
+    graph.set_attribute("target", "greeting", "Hey")
+    graph.set_attribute("target", "optional", None)
+    graph.update_attributes("target", greeting="Hi", enabled=False)
 
     assert len(events) == 3
     deltas = [event["nodes"]["updated"]["target"] for event in events]
@@ -74,7 +74,7 @@ def test_observers_receive_one_delta_after_each_mutation() -> None:
         {"greeting": "Hi", "optional": None, "enabled": False},
     ]
 
-    graph.update("target")
+    graph.update_attributes("target")
     assert len(events) == 3
 
 
@@ -85,13 +85,13 @@ def test_missing_nodes_and_invalid_calls_do_not_notify_or_mutate() -> None:
     graph.listen(events.append)
 
     with pytest.raises(KeyError):
-        graph.set("missing", "greeting", "Hey")
+        graph.set_attribute("missing", "greeting", "Hey")
     with pytest.raises(KeyError):
-        graph.update("missing", greeting="Hey")
+        graph.update_attributes("missing", greeting="Hey")
     with pytest.raises(TypeError):
-        graph.set("target", greeting="Hey")  # type: ignore[call-arg]
+        graph.set_attribute("target", greeting="Hey")  # type: ignore[call-arg]
     with pytest.raises(TypeError):
-        graph.set("target", 123, "Hey")  # type: ignore[arg-type]
+        graph.set_attribute("target", 123, "Hey")  # type: ignore[arg-type]
 
     assert events == []
     assert graph.attributes("target") == {"greeting": "Hello"}

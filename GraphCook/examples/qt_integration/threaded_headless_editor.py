@@ -29,29 +29,29 @@ class DAG(Graph[NodeId]):
         self.add_node(node_id, {OPERATOR_ATTRIBUTE: operator, **inputs})
         return node_id
 
-    def update(self, node_id: NodeId, /, **inputs: object) -> None:
+    def update_attributes(self, node_id: NodeId, /, **inputs: object) -> None:
         # also add links for any inputs that are NodeIds
         for key, value in inputs.items():
             if isinstance(value, NodeId):
                 super().add_link(Link(value, "", node_id, key))  # Example link, adjust as needed
-        super().update(node_id, **inputs)
+        super().update_attributes(node_id, **inputs)
 
-    def unset(self, node_id: NodeId, inlet) -> None:
+    def unset_attribute(self, node_id: NodeId, inlet) -> None:
         # also remove any links associated with this inlet before unsetting it
         for link in self.in_links(node_id):
             if link.inlet == inlet:
                 super().remove_link(link)
-        super().unset(node_id, inlet)
+        super().unset_attribute(node_id, inlet)
 
     def add_link(self, link: Link[NodeId]) -> None:
         super().add_link(link)
         # also set inputs
-        self.set(link.target, link.inlet, link.source)
+        self.set_attribute(link.target, link.inlet, link.source)
 
     def remove_link(self, link: Link[NodeId]) -> None:
         super().remove_link(link)
         # also unset inputs
-        self.unset(link.target, link.inlet)
+        self.unset_attribute(link.target, link.inlet)
 
 
 class ProviderState:

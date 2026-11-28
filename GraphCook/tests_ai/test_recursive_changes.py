@@ -101,14 +101,14 @@ def test_graph_events_replay_membership_attributes_and_links() -> None:
     replay()
     graph.add_link("a", "b", "value")
     replay()
-    graph.update("a", greeting="Hey", enabled=False)
+    graph.update_attributes("a", greeting="Hey", enabled=False)
     assert events[-1]["nodes"]["updated"]["a"] == {
         "kind": "map",
         "added": {"enabled": False},
         "updated": {"greeting": {"kind": "value", "old": "Hello", "new": "Hey"}},
     }
     replay()
-    graph.unset("a", "greeting")
+    graph.unset_attribute("a", "greeting")
     assert events[-1]["nodes"]["updated"]["a"] == {
         "kind": "map", "removed": {"greeting": "Hey"},
     }
@@ -123,14 +123,14 @@ def test_index_handles_nested_attribute_changes() -> None:
     index = GraphAttributeIndex(graph, "kind", str)
     graph.listen(index.update)
     graph.add_node("a", kind="one")
-    graph.update("a", unrelated=1)
+    graph.update_attributes("a", unrelated=1)
     assert index.nodes_with("one") == frozenset({"a"})
-    graph.update("a", kind="two")
+    graph.update_attributes("a", kind="two")
     assert index.nodes_with("one") == frozenset()
     assert index.nodes_with("two") == frozenset({"a"})
-    graph.unset("a", "kind")
+    graph.unset_attribute("a", "kind")
     assert index.value_of("a") is None
-    graph.update("a", kind="three")
+    graph.update_attributes("a", kind="three")
     graph.remove_node("a")
     assert index.nodes_with("three") == frozenset()
     index.update({})

@@ -7,7 +7,8 @@ from typing import Any, Generic, Hashable, Iterable, Mapping, Protocol, Set
 from typing_extensions import TypeVar
 from typing import NamedTuple
 
-NodeT = TypeVar("NodeT", bound=Hashable)
+NodeKeyT = TypeVar("NodeKeyT", bound=Hashable)
+NodeValueT = TypeVar("NodeValueT", bound=Mapping[str, object])
 # TypedDict is compatible with Mapping, but not with mutable dict annotations.
 # Mapping keys are invariant; Any allows schemas with different key types.
 # Storage validates actual dictionaries at runtime and exposes read-only views.
@@ -24,34 +25,34 @@ AttributesT = TypeVar(
     default=Mapping[str, object],
 )
 
-class Link(Generic[NodeT], NamedTuple):
-    source: NodeT
-    target: NodeT
+class Link(Generic[NodeKeyT], NamedTuple):
+    source: NodeKeyT
+    target: NodeKeyT
     inlet: str
 
 
 
-class GraphProtocol(Protocol[NodeT]):
-    def nodes(self) -> Iterable[NodeT]: ...
-    def attributes(self, node: NodeT) -> Mapping[str, object]: ...
-    def in_links(self, node: NodeT) -> Iterable[Link[NodeT]]: ...
-    def out_links(self, node: NodeT) -> Iterable[Link[NodeT]]: ...
-    def links(self) -> Iterable[Link[NodeT]]: ...
+class GraphProtocol(Protocol[NodeKeyT]):
+    def nodes(self) -> Iterable[NodeKeyT]: ...
+    def attributes(self, node: NodeKeyT) -> Mapping[str, object]: ...
+    def in_links(self, node: NodeKeyT) -> Iterable[Link[NodeKeyT]]: ...
+    def out_links(self, node: NodeKeyT) -> Iterable[Link[NodeKeyT]]: ...
+    def links(self) -> Iterable[Link[NodeKeyT]]: ...
 
 
 class MutableGraphProtocol(
-    GraphProtocol[NodeT], Protocol[NodeT],
+    GraphProtocol[NodeKeyT], Protocol[NodeKeyT],
 ):
-    def add_node(self, node: NodeT, **attributes: object) -> None: ...
-    def remove_node(self, node: NodeT) -> None: ...
-    def add_link(self, source: NodeT, target: NodeT, inlet: str) -> None: ...
-    def remove_link(self, source: NodeT, target: NodeT, inlet: str) -> None: ...
-    def set(self, node: NodeT, name: str, value: object) -> None: ...
-    def update(self, node: NodeT, /, **attributes: object) -> None: ...
-    def unset(self, node: NodeT, name: str) -> None: ...
+    def add_node(self, node: NodeKeyT, **attributes: object) -> None: ...
+    def remove_node(self, node: NodeKeyT) -> None: ...
+    def add_link(self, source: NodeKeyT, target: NodeKeyT, inlet: str) -> None: ...
+    def remove_link(self, source: NodeKeyT, target: NodeKeyT, inlet: str) -> None: ...
+    def set(self, node: NodeKeyT, name: str, value: object) -> None: ...
+    def update(self, node: NodeKeyT, /, **attributes: object) -> None: ...
+    def unset(self, node: NodeKeyT, name: str) -> None: ...
 
 
-def ancestors(graph: GraphProtocol[NodeT], node: NodeT) -> set[NodeT]:
+def ancestors(graph: GraphProtocol[NodeKeyT], node: NodeKeyT) -> set[NodeKeyT]:
     if node not in graph.nodes():
         raise ValueError("Node is not in graph")
     found, pending = set(), [link.source for link in graph.in_links(node)]
@@ -63,7 +64,7 @@ def ancestors(graph: GraphProtocol[NodeT], node: NodeT) -> set[NodeT]:
     return found
 
 
-def descendants(graph: GraphProtocol[NodeT], node: NodeT) -> set[NodeT]:
+def descendants(graph: GraphProtocol[NodeKeyT], node: NodeKeyT) -> set[NodeKeyT]:
     if node not in graph.nodes():
         raise ValueError("Node is not in graph")
     found, pending = set(), [link.target for link in graph.out_links(node)]
@@ -75,18 +76,18 @@ def descendants(graph: GraphProtocol[NodeT], node: NodeT) -> set[NodeT]:
     return found
 
 
-def topological_sort(graph: GraphProtocol[NodeT], *roots: NodeT) -> tuple[NodeT, ...]:
+def topological_sort(graph: GraphProtocol[NodeKeyT], *roots: NodeKeyT) -> tuple[NodeKeyT, ...]:
     nodes = tuple(graph.nodes())
     known_nodes = set(nodes)
     for root in roots:
         if root not in known_nodes:
             raise ValueError(f"Root is not in graph: {root!r}")
 
-    visited: set[NodeT] = set()
-    active: set[NodeT] = set()
-    order: list[NodeT] = []
+    visited: set[NodeKeyT] = set()
+    active: set[NodeKeyT] = set()
+    order: list[NodeKeyT] = []
 
-    def visit(node: NodeT) -> None:
+    def visit(node: NodeKeyT) -> None:
         if node in active:
             raise ValueError("Graph contains a cycle")
         if node in visited:
@@ -104,8 +105,7 @@ def topological_sort(graph: GraphProtocol[NodeT], *roots: NodeT) -> tuple[NodeT,
     return tuple(order)
 
 
-
-class Graph(Generic[NodeT]):
+class Graph(Generic[NodeKeyT, NodeValueT]):
     """Store node dictionaries and one incoming link per (target, inlet).
 
     Incoming dictionaries are shallow-copied. attributes() returns a live,
@@ -115,28 +115,28 @@ class Graph(Generic[NodeT]):
     """
 
     def __init__(self) -> None:
-        self._nodes: dict[NodeT, Mapping[str, object]] = {}
-        self._inputs: dict[NodeT, dict[str, NodeT]] = {} # [dst, [inlet: source]]
-        self._outputs: dict[NodeT, dict[NodeT, Set[str]]] = {} # [src, [dst: {in1, in2, ...}]]
+        self._nodes: dict[NodeKeyT, Mapping[str, object]] = {}
+        self._inputs: dict[NodeKeyT, dict[str, NodeKeyT]] = {} # [dst, [inlet: source]]
+        self._outputs: dict[NodeKeyT, dict[NodeKeyT, Set[str]]] = {} # [src, [dst: {in1, in2, ...}]]
 
-    def nodes(self) -> tuple[NodeT, ...]:
+    def nodes(self) -> tuple[NodeKeyT, ...]:
         return tuple(self._nodes)
 
-    def out_links(self, node: NodeT) -> Iterable[Link[NodeT]]:
+    def out_links(self, node: NodeKeyT) -> Iterable[Link[NodeKeyT]]:
         for dst, inlets in self._outputs[node].items():
             for inlet in inlets:
                 yield Link(node, dst, inlet)
 
-    def in_links(self, node: NodeT) -> Iterable[Link[NodeT]]:
+    def in_links(self, node: NodeKeyT) -> Iterable[Link[NodeKeyT]]:
         for inlet, src in self._inputs[node].items():
             yield Link(src, node, inlet)
 
-    def links(self) -> Iterable[Link[NodeT]]:
+    def links(self) -> Iterable[Link[NodeKeyT]]:
         for dst, inlets in self._inputs.items():
             for inlet, src in inlets.items():
                 yield Link(src, dst, inlet)
 
-    def add_node(self, node: NodeT, **attributes: object) -> None:
+    def add_node(self, node: NodeKeyT, **attributes: object) -> None:
         """Add a node with one positional dictionary or keyword attributes.
 
         Passing no data creates an empty dictionary. Positional data keeps
@@ -149,7 +149,7 @@ class Graph(Generic[NodeT]):
         self._outputs[node] = {}
         self._inputs[node] = {}
 
-    def remove_node(self, node: NodeT) -> None:
+    def remove_node(self, node: NodeKeyT) -> None:
         if node not in self._nodes:
             raise KeyError(node)
 
@@ -163,7 +163,7 @@ class Graph(Generic[NodeT]):
         del self._outputs[node]
         del self._nodes[node]
 
-    def add_link(self, source: NodeT, target: NodeT, inlet: str) -> None:
+    def add_link(self, source: NodeKeyT, target: NodeKeyT, inlet: str) -> None:
         """Add a link from source to target.inlet.
         Raises if the inlet is already connected.
         """
@@ -176,7 +176,7 @@ class Graph(Generic[NodeT]):
         self._inputs[target].setdefault(inlet, source)
         self._outputs[source].setdefault(target, set()).add(inlet)
 
-    def remove_link(self, source: NodeT, target: NodeT, inlet: str) -> None:
+    def remove_link(self, source: NodeKeyT, target: NodeKeyT, inlet: str) -> None:
         """Remove a link from source to target.inlet.
         Raises if the link does not exist.
         """
@@ -194,7 +194,7 @@ class Graph(Generic[NodeT]):
 
         self.__remove_link(source, target, inlet)
 
-    def __remove_link(self, source: NodeT, target: NodeT, inlet: str) -> None:
+    def __remove_link(self, source: NodeKeyT, target: NodeKeyT, inlet: str) -> None:
         """Remove a link from source to target.inlet"""
         self._inputs[target].pop(inlet, None)
         if target in self._outputs[source]:
@@ -202,18 +202,18 @@ class Graph(Generic[NodeT]):
             if not self._outputs[source][target]:
                 del self._outputs[source][target]
 
-    def attributes(self, node: NodeT) -> MappingProxyType[str, object]:
+    def attributes(self, node: NodeKeyT) -> NodeValueT:
         """Return a live, shallow read-only view of the node's attributes."""
         return MappingProxyType(self._nodes[node])
 
-    def set(self, node: NodeT, name: str, value: object) -> None:
+    def set_attribute(self, node: NodeKeyT, name: str, value: object) -> None:
         """Assign one attribute, preserving the node's other attributes."""
-        self.update(node, **{name: value})
+        self.update_attributes(node, **{name: value})
 
-    def update(self, node: NodeT, /, **attributes: object) -> None:
+    def update_attributes(self, node: NodeKeyT, /, **attributes: object) -> None:
         """Merge keyword attributes into the node's existing dictionary."""
         self._nodes[node].update(attributes)
 
-    def unset(self, node: NodeT, name: str) -> None:
+    def unset_attribute(self, node: NodeKeyT, name: str) -> None:
         """Remove one attribute; missing nodes or keys raise KeyError."""
         del self._nodes[node][name]
